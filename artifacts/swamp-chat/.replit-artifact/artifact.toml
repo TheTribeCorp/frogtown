@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "SWAMP"
+description = "A wallet-native social chat platform for XRPL users. Connect with Xaman, use your XRPL address as your identity, message any ledger address, and build encrypted one-on-one or group conversations."
+version = "1.0.0"
+id = "artifacts/swamp-chat"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19364
+
+[services.development]
+run = "pnpm --filter @workspace/swamp-chat run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/swamp-chat", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/swamp-chat/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19364"
+BASE_PATH = "/"
