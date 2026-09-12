@@ -10,6 +10,12 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: wallet
+    description: Xaman wallet connection operations
+  - name: conversations
+    description: Direct and group chat operations
+  - name: groups
+    description: Group discovery and membership operations
 paths:
   /healthz:
     get:
@@ -24,7 +30,191 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /wallet/sessions:
+    post:
+      operationId: createWalletSession
+      tags: [wallet]
+      summary: Create an Xaman wallet sign-in session
+      responses:
+        "201":
+          description: Xaman session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletSession"
+        "502":
+          description: Xaman service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /wallet/sessions/{sessionId}:
+    get:
+      operationId: getWalletSession
+      tags: [wallet]
+      summary: Check the status of an Xaman wallet sign-in session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Current wallet session state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletSessionStatus"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [conversations]
+      summary: List conversations for a wallet address
+      parameters:
+        - $ref: "#/components/parameters/WalletAddress"
+      responses:
+        "200":
+          description: Conversation summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+    post:
+      operationId: createDirectConversation
+      tags: [conversations]
+      summary: Start or return a direct conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DirectConversationInput"
+      responses:
+        "201":
+          description: Direct conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+  /conversations/{conversationId}/messages:
+    get:
+      operationId: listConversationMessages
+      tags: [conversations]
+      summary: List messages in a conversation
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+        - $ref: "#/components/parameters/WalletAddress"
+      responses:
+        "200":
+          description: Conversation messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+    post:
+      operationId: sendMessage
+      tags: [conversations]
+      summary: Send an encrypted chat message
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "201":
+          description: Sent message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /groups:
+    get:
+      operationId: listGroups
+      tags: [groups]
+      summary: List public and joined groups
+      parameters:
+        - $ref: "#/components/parameters/WalletAddress"
+      responses:
+        "200":
+          description: Group list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Group"
+    post:
+      operationId: createGroup
+      tags: [groups]
+      summary: Create a group conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupInput"
+      responses:
+        "201":
+          description: New group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+  /groups/{groupId}/join:
+    post:
+      operationId: joinGroup
+      tags: [groups]
+      summary: Join a group
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinGroupInput"
+      responses:
+        "200":
+          description: Joined group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
 components:
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema:
+        type: string
+    WalletAddress:
+      name: walletAddress
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 25
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +223,136 @@ components:
           type: string
       required:
         - status
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    WalletSession:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        qrUrl:
+          type: string
+        deeplink:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+      required: [sessionId, qrUrl, deeplink, expiresAt]
+    WalletSessionStatus:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        status:
+          type: string
+          enum: [pending, connected, expired]
+        walletAddress:
+          type: ["string", "null"]
+        network:
+          type: string
+      required: [sessionId, status, walletAddress, network]
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [direct, group]
+        title:
+          type: string
+        participantLabel:
+          type: string
+        lastMessage:
+          type: ["string", "null"]
+        lastMessageAt:
+          type: ["string", "null"]
+          format: date-time
+        unreadCount:
+          type: integer
+        encrypted:
+          type: boolean
+        memberCount:
+          type: integer
+      required: [id, type, title, participantLabel, lastMessage, lastMessageAt, unreadCount, encrypted, memberCount]
+    DirectConversationInput:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+          minLength: 25
+        fromWalletAddress:
+          type: string
+          minLength: 25
+      required: [walletAddress, fromWalletAddress]
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        conversationId:
+          type: string
+        senderAddress:
+          type: string
+        body:
+          type: string
+        sentAt:
+          type: string
+          format: date-time
+        isMine:
+          type: boolean
+        encrypted:
+          type: boolean
+      required: [id, conversationId, senderAddress, body, sentAt, isMine, encrypted]
+    MessageInput:
+      type: object
+      properties:
+        senderAddress:
+          type: string
+          minLength: 25
+        body:
+          type: string
+          minLength: 1
+      required: [senderAddress, body]
+    Group:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        memberCount:
+          type: integer
+        onlineCount:
+          type: integer
+        isJoined:
+          type: boolean
+        conversationId:
+          type: string
+      required: [id, name, description, memberCount, onlineCount, isJoined, conversationId]
+    GroupInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+        description:
+          type: string
+        creatorAddress:
+          type: string
+          minLength: 25
+      required: [name, description, creatorAddress]
+    JoinGroupInput:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+          minLength: 25
+      required: [walletAddress]
 

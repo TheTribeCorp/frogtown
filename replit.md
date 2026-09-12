@@ -1,6 +1,6 @@
-# [Project name]
+# SWAMP
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+SWAMP is a wallet-native XRPL chat platform where Xaman-connected wallet addresses are the user's identity for direct and group conversations.
 
 ## Run & Operate
 
@@ -22,15 +22,22 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/swamp-chat` — responsive React/Vite web app and chat workspace
+- `artifacts/api-server/src/routes/swamp.ts` — Xaman sessions, conversations, messages, and groups
+- `artifacts/api-server/src/lib/message-crypto.ts` — AES-256-GCM message encryption at rest
+- `lib/api-spec/openapi.yaml` — source of truth for generated API clients
+- `lib/db/src/schema/swamp.ts` — Drizzle schema for conversations, messages, and groups
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Xaman sign-in is the identity layer; there is no separate profile or password account.
+- Direct and group chat membership is keyed by XRPL wallet address.
+- Message bodies and conversation previews are encrypted at rest with `SESSION_SECRET`; the API decrypts them only when serving an authorized conversation.
+- The frontend uses generated OpenAPI hooks so chat and wallet polling stay aligned with the server contract.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Users connect Xaman, use their XRPL address as their username, message any ledger address directly, and discover, create, and join encrypted group rooms. The app supports QR/deep-link wallet sessions, message persistence, polling, mobile navigation, settings, and connection health feedback.
 
 ## User preferences
 
@@ -38,7 +45,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Keep Xaman credentials in Replit Secrets as `XAMAN_API_KEY` and `XAMAN_API_SECRET`; never expose them in the browser.
+- Re-run API codegen after changing `lib/api-spec/openapi.yaml`.
 
 ## Pointers
 
