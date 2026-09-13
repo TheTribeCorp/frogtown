@@ -1,6 +1,6 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   CreateDirectConversationBody,
   CreateGroupBody,
@@ -33,6 +33,8 @@ type XamanSession = {
 
 const xamanSessions = new Map<string, XamanSession>();
 let groupSeedPromise: Promise<void> | undefined;
+const AUTH_COOKIE = "swamp_session";
+const AUTH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const isWalletAddress = (value: string) => /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(value);
 
@@ -94,10 +96,77 @@ function requireAddress(value: string) {
   return value;
 }
 
+function sessionSecret() {
+  return process.env.SESSION_SECRET;
+}
+
+function encodeSession(walletAddress: string) {
+  const expiresAt = Date.now() + AUTH_TTL_MS;
+  const payload = Buffer.from(JSON.stringify({ walletAddress, expiresAt })).toString("base64url");
+  const signature = createHmac("sha256", sessionSecret() ?? "").update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function readCookie(req: Request) {
+  const cookies = req.headers.cookie?.split(";") ?? [];
+  const match = cookies.find((cookie) => cookie.trim().startsWith(`${AUTH_COOKIE}=`));
+  return match ? decodeURIComponent(match.trim().slice(AUTH_COOKIE.length + 1)) : null;
+}
+
+function getAuthenticatedWallet(req: Request) {
+  const token = readCookie(req);
+  const secret = sessionSecret();
+  if (!token || !secret) return null;
+
+  const [payload, encodedSignature] = token.split(".");
+  if (!payload || !encodedSignature) return null;
+  try {
+    const expectedSignature = createHmac("sha256", secret).update(payload).digest("base64url");
+    const actual = Buffer.from(encodedSignature);
+    const expected = Buffer.from(expectedSignature);
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+      walletAddress?: string;
+      expiresAt?: number;
+    };
+    if (!parsed.walletAddress || !parsed.expiresAt || parsed.expiresAt <= Date.now()) return null;
+    return isWalletAddress(parsed.walletAddress) ? parsed.walletAddress : null;
+  } catch {
+    return null;
+  }
+}
+
+function setAuthCookie(res: Response, walletAddress: string) {
+  res.cookie(AUTH_COOKIE, encodeSession(walletAddress), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: AUTH_TTL_MS,
+    path: "/",
+  });
+}
+
+function requireAuth(req: Request, res: Response) {
+  const walletAddress = getAuthenticatedWallet(req);
+  if (!walletAddress) {
+    res.status(401).json({ error: "Your wallet session has expired. Connect with Xaman again." });
+    return null;
+  }
+  return walletAddress;
+}
+
+function requireMatchingWallet(sessionWallet: string, claimedWallet: string, res: Response) {
+  if (sessionWallet !== claimedWallet) {
+    res.status(403).json({ error: "This wallet is not the authenticated wallet." });
+    return false;
+  }
+  return true;
+}
+
 router.post("/wallet/sessions", async (_req, res) => {
   const apiKey = process.env.XAMAN_API_KEY;
   const apiSecret = process.env.XAMAN_API_SECRET;
-  if (!apiKey || !apiSecret) {
+  if (!apiKey || !apiSecret || !sessionSecret()) {
     res.status(503).json({ error: "Xaman is not configured for this environment." });
     return;
   }
@@ -173,6 +242,10 @@ router.get("/wallet/sessions/:sessionId", async (req, res) => {
     };
     const walletAddress = payload.response?.account ?? null;
     const connected = payload.meta?.resolved === true && payload.meta?.signed === true && walletAddress;
+    if (connected) {
+      requireAddress(walletAddress);
+      setAuthCookie(res, walletAddress);
+    }
     res.json({
       sessionId,
       status: connected ? "connected" : "pending",
@@ -184,10 +257,24 @@ router.get("/wallet/sessions/:sessionId", async (req, res) => {
   }
 });
 
+router.get("/wallet/me", (req, res) => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  res.json({ walletAddress, network: "XRPL Mainnet" });
+});
+
+router.post("/wallet/logout", (_req, res) => {
+  res.clearCookie(AUTH_COOKIE, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/" });
+  res.status(204).send();
+});
+
 router.get("/conversations", async (req, res) => {
   try {
+    const sessionWallet = requireAuth(req, res);
+    if (!sessionWallet) return;
     const { walletAddress } = ListConversationsQueryParams.parse(req.query);
     requireAddress(walletAddress);
+    if (!requireMatchingWallet(sessionWallet, walletAddress, res)) return;
     const memberships = await db
       .select({ conversationId: conversationMembersTable.conversationId })
       .from(conversationMembersTable)
@@ -209,9 +296,16 @@ router.get("/conversations", async (req, res) => {
 
 router.post("/conversations", async (req, res) => {
   try {
+    const sessionWallet = requireAuth(req, res);
+    if (!sessionWallet) return;
     const input = CreateDirectConversationBody.parse(req.body);
     requireAddress(input.walletAddress);
     requireAddress(input.fromWalletAddress);
+    if (!requireMatchingWallet(sessionWallet, input.fromWalletAddress, res)) return;
+    if (input.walletAddress === input.fromWalletAddress) {
+      res.status(400).json({ error: "Choose a different wallet address." });
+      return;
+    }
 
     const memberships = await db
       .select()
@@ -266,9 +360,21 @@ router.post("/conversations", async (req, res) => {
 
 router.get("/conversations/:conversationId/messages", async (req, res) => {
   try {
+    const sessionWallet = requireAuth(req, res);
+    if (!sessionWallet) return;
     const { conversationId } = ListConversationMessagesParams.parse(req.params);
     const { walletAddress } = ListConversationMessagesQueryParams.parse(req.query);
     requireAddress(walletAddress);
+    if (!requireMatchingWallet(sessionWallet, walletAddress, res)) return;
+    const membership = await db
+      .select({ conversationId: conversationMembersTable.conversationId })
+      .from(conversationMembersTable)
+      .where(and(eq(conversationMembersTable.conversationId, conversationId), eq(conversationMembersTable.walletAddress, sessionWallet)))
+      .limit(1);
+    if (!membership[0]) {
+      res.status(403).json({ error: "You are not a member of this conversation." });
+      return;
+    }
     const rows = await db
       .select()
       .from(messagesTable)
@@ -286,9 +392,16 @@ router.get("/conversations/:conversationId/messages", async (req, res) => {
 
 router.post("/conversations/:conversationId/messages", async (req, res) => {
   try {
+    const sessionWallet = requireAuth(req, res);
+    if (!sessionWallet) return;
     const { conversationId } = SendMessageParams.parse(req.params);
     const input = SendMessageBody.parse(req.body);
     requireAddress(input.senderAddress);
+    if (!requireMatchingWallet(sessionWallet, input.senderAddress, res)) return;
+    if (!input.body.trim()) {
+      res.status(400).json({ error: "Message cannot be empty." });
+      return;
+    }
 
     const membership = await db
       .select()
@@ -326,9 +439,12 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
 
 router.get("/groups", async (req, res) => {
   try {
+    const sessionWallet = requireAuth(req, res);
+    if (!sessionWallet) return;
     await ensureSeedGroups();
     const { walletAddress } = ListGroupsQueryParams.parse(req.query);
     requireAddress(walletAddress);
+    if (!requireMatchingWallet(sessionWallet, walletAddress, res)) return;
     const groups = await db.select().from(groupsTable);
     const memberships = await db
       .select()
@@ -343,8 +459,11 @@ router.get("/groups", async (req, res) => {
 
 router.post("/groups", async (req, res) => {
   try {
+    const sessionWallet = requireAuth(req, res);
     const input = CreateGroupBody.parse(req.body);
+    if (!sessionWallet) return;
     requireAddress(input.creatorAddress);
+    if (!requireMatchingWallet(sessionWallet, input.creatorAddress, res)) return;
     const groupId = `group-${randomUUID()}`;
     const conversationId = `conversation-${randomUUID()}`;
     const group = {
@@ -378,9 +497,12 @@ router.post("/groups", async (req, res) => {
 
 router.post("/groups/:groupId/join", async (req, res) => {
   try {
+    const sessionWallet = requireAuth(req, res);
     const { groupId } = JoinGroupParams.parse(req.params);
     const { walletAddress } = JoinGroupBody.parse(req.body);
+    if (!sessionWallet) return;
     requireAddress(walletAddress);
+    if (!requireMatchingWallet(sessionWallet, walletAddress, res)) return;
     const group = await db.select().from(groupsTable).where(eq(groupsTable.id, groupId)).limit(1);
     if (!group[0]) {
       res.status(404).json({ error: "Group not found." });

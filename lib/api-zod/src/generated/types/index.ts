@@ -8,6 +8,7 @@
 
 export * from './conversation';
 export * from './conversationType';
+export * from './currentWallet';
 export * from './directConversationInput';
 export * from './errorResponse';
 export * from './group';

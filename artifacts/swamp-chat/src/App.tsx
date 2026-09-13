@@ -37,6 +37,7 @@ import {
 import { Link, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import {
   getGetWalletSessionQueryKey,
+  getGetCurrentWalletQueryKey,
   getHealthCheckQueryKey,
   getListConversationMessagesQueryKey,
   getListConversationsQueryKey,
@@ -44,12 +45,14 @@ import {
   useCreateDirectConversation,
   useCreateGroup,
   useCreateWalletSession,
+  useGetCurrentWallet,
   useGetWalletSession,
   useHealthCheck,
   useJoinGroup,
   useListConversationMessages,
   useListConversations,
   useListGroups,
+  useLogoutWallet,
   useSendMessage,
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -463,11 +466,61 @@ function RouterView() {
   return <Switch><Route path="/" component={() => <HomePage />} /><Route path="/groups" component={() => <GroupsPage onOpenGroup={(id) => { window.sessionStorage.setItem('swamp-selected-conversation', id); setLocation('/'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: id })), 0); }} />} /><Route path="/settings" component={SettingsPage} /><Route component={() => <HomePage />} /></Switch>;
 }
 
+function AuthGate() {
+  const storedAddress = window.localStorage.getItem('swamp-wallet-address') ?? '';
+  const [walletAddress, setWalletAddressState] = useState(storedAddress);
+  const [authReady, setAuthReady] = useState(!storedAddress);
+  const walletQuery = useGetCurrentWallet({
+    query: {
+      enabled: Boolean(storedAddress),
+      queryKey: getGetCurrentWalletQueryKey(),
+      retry: false,
+      staleTime: 30_000,
+    },
+  });
+  const logoutWallet = useLogoutWallet();
+
+  useEffect(() => {
+    if (!storedAddress) {
+      setAuthReady(true);
+      return;
+    }
+    if (walletQuery.isSuccess) {
+      setWalletAddressState(walletQuery.data.walletAddress);
+      window.localStorage.setItem('swamp-wallet-address', walletQuery.data.walletAddress);
+      setAuthReady(true);
+      return;
+    }
+    if (walletQuery.isError) {
+      const status = (walletQuery.error as { status?: number } | undefined)?.status;
+      if (status === 401) {
+        setWalletAddressState('');
+        window.localStorage.removeItem('swamp-wallet-address');
+      }
+      setAuthReady(true);
+    }
+  }, [storedAddress, walletQuery.data, walletQuery.error, walletQuery.isError, walletQuery.isSuccess]);
+
+  const setWalletAddress = (address: string) => {
+    setWalletAddressState(address);
+    window.localStorage.setItem('swamp-wallet-address', address);
+  };
+  const disconnect = () => {
+    logoutWallet.mutate(undefined, { onSettled: () => queryClient.clear() });
+    setWalletAddressState('');
+    window.localStorage.removeItem('swamp-wallet-address');
+    setAuthReady(true);
+  };
+
+  if (!authReady) {
+    return <div className="swamp-app noise flex min-h-[100dvh] items-center justify-center p-6"><div className="flex items-center gap-3 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.8)] px-5 py-4 text-sm text-[hsl(var(--muted-foreground))] shadow-lg"><RefreshCw className="size-4 animate-spin text-[hsl(var(--primary))]" /> Checking wallet session…</div></div>;
+  }
+
+  return <WalletContext.Provider value={{ walletAddress, setWalletAddress, disconnect }}><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><ErrorBoundary resetKey={window.location.pathname}><RouterView /></ErrorBoundary></WouterRouter></WalletContext.Provider>;
+}
+
 function App() {
-  const [walletAddress, setWalletAddressState] = useState(() => window.localStorage.getItem('swamp-wallet-address') ?? '');
-  const setWalletAddress = (address: string) => { setWalletAddressState(address); window.localStorage.setItem('swamp-wallet-address', address); };
-  const disconnect = () => { setWalletAddressState(''); window.localStorage.removeItem('swamp-wallet-address'); };
-  return <QueryClientProvider client={queryClient}><WalletContext.Provider value={{ walletAddress, setWalletAddress, disconnect }}><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><ErrorBoundary resetKey={window.location.pathname}><RouterView /></ErrorBoundary></WouterRouter></WalletContext.Provider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><AuthGate /></QueryClientProvider>;
 }
 
 export default App;

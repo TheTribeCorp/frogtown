@@ -68,6 +68,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /wallet/me:
+    get:
+      operationId: getCurrentWallet
+      tags: [wallet]
+      summary: Return the wallet bound to the current browser session
+      responses:
+        "200":
+          description: Authenticated wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentWallet"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /wallet/logout:
+    post:
+      operationId: logoutWallet
+      tags: [wallet]
+      summary: Clear the current browser wallet session
+      responses:
+        "204":
+          description: Session cleared
   /conversations:
     get:
       operationId: listConversations
@@ -255,6 +281,14 @@ components:
         network:
           type: string
       required: [sessionId, status, walletAddress, network]
+    CurrentWallet:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        network:
+          type: string
+      required: [walletAddress, network]
     Conversation:
       type: object
       properties:

@@ -37,6 +37,11 @@ export interface WalletSessionStatus {
   network: string;
 }
 
+export interface CurrentWallet {
+  walletAddress: string;
+  network: string;
+}
+
 export type ConversationType = typeof ConversationType[keyof typeof ConversationType];
 
 

@@ -21,6 +21,7 @@ import type {
 
 import type {
   Conversation,
+  CurrentWallet,
   DirectConversationInput,
   ErrorResponse,
   Group,
@@ -291,6 +292,157 @@ export function useGetWalletSession<TData = Awaited<ReturnType<typeof getWalletS
 
 
 
+
+export const getGetCurrentWalletUrl = () => {
+
+
+
+
+  return `/api/wallet/me`
+}
+
+/**
+ * @summary Return the wallet bound to the current browser session
+ */
+export const getCurrentWallet = async ( options?: Parameters<typeof customFetch>[1]): Promise<CurrentWallet> => {
+
+  return customFetch<CurrentWallet>(getGetCurrentWalletUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCurrentWalletQueryKey = () => {
+    return [
+    `/api/wallet/me`
+    ] as const;
+    }
+
+
+export const getGetCurrentWalletQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentWallet>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCurrentWalletQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentWallet>>> = ({ signal }) => getCurrentWallet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentWallet>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCurrentWalletQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentWallet>>>
+export type GetCurrentWalletQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Return the wallet bound to the current browser session
+ */
+
+export function useGetCurrentWallet<TData = Awaited<ReturnType<typeof getCurrentWallet>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCurrentWalletQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getLogoutWalletUrl = () => {
+
+
+
+
+  return `/api/wallet/logout`
+}
+
+/**
+ * @summary Clear the current browser wallet session
+ */
+export const logoutWallet = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getLogoutWalletUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getLogoutWalletMutationKey = () => ['logoutWallet'] as const;
+
+export const getLogoutWalletMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutWallet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof logoutWallet>>, TError,void, TContext> => {
+
+const mutationKey = getLogoutWalletMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logoutWallet>>, void> = () => {
+
+
+          return  logoutWallet(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LogoutWalletMutationResult = NonNullable<Awaited<ReturnType<typeof logoutWallet>>>
+
+    export type LogoutWalletMutationError = ErrorType<unknown>
+
+
+    /**
+ * @summary Clear the current browser wallet session
+ */
+export const useLogoutWallet = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutWallet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof logoutWallet>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getLogoutWalletMutationOptions(options));
+    }
 
 export const getListConversationsUrl = (params: ListConversationsParams,) => {
   const normalizedParams = new URLSearchParams();

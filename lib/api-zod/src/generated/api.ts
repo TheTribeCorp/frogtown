@@ -44,6 +44,21 @@ export const GetWalletSessionResponse = zod.object({
 
 
 /**
+ * @summary Return the wallet bound to the current browser session
+ */
+export const GetCurrentWalletResponse = zod.object({
+  "walletAddress": zod.string(),
+  "network": zod.string()
+})
+
+
+/**
+ * @summary Clear the current browser wallet session
+ */
+export const LogoutWalletResponse = zod.void()
+
+
+/**
  * @summary List conversations for a wallet address
  */
 export const listConversationsQueryWalletAddressMin = 25;

@@ -15,3 +15,4 @@ export * from "./generated/types/walletAddressParameter";
 export * from "./generated/types/walletSession";
 export * from "./generated/types/walletSessionStatus";
 export * from "./generated/types/walletSessionStatusStatus";
+export * from "./generated/types/currentWallet";
