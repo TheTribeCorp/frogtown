@@ -329,6 +329,14 @@ function AppShell({ children, title, eyebrow, onNewChat }: { children: ReactNode
   );
 }
 
+function XrpNetworkMark() {
+  return (
+    <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+      <path d="M5 7c4 0 4.6 6 11 6s7-6 11-6M5 25c4 0 4.6-6 11-6s7 6 11 6" />
+    </svg>
+  );
+}
+
 function WalletEntry() {
   const { setWalletAddress } = useWallet();
   const [, setLocation] = useLocation();
@@ -390,6 +398,21 @@ function WalletEntry() {
           <div className="ft-entry-art" aria-label="An illustrative private conversation in Frogtown">
             <div className="ft-entry-orbit ft-entry-orbit-one" />
             <div className="ft-entry-orbit ft-entry-orbit-two" />
+            <div className="ft-entry-xrp-network" aria-hidden="true">
+              <svg className="ft-entry-xrp-lines" viewBox="0 0 500 360" preserveAspectRatio="none">
+                <path d="M30 65 210 14 395 65 460 104M30 65 30 234M30 234Q245 308 460 104" />
+                <circle cx="30" cy="65" r="2.5" />
+                <circle cx="210" cy="14" r="2.5" />
+                <circle cx="395" cy="65" r="2.5" />
+                <circle cx="460" cy="104" r="2.5" />
+                <circle cx="30" cy="234" r="2.5" />
+              </svg>
+              <span className="ft-entry-xrp-node ft-xrp-node-a"><XrpNetworkMark /><b>XRP</b></span>
+              <span className="ft-entry-xrp-node ft-xrp-node-b"><XrpNetworkMark /><b>XRP</b></span>
+              <span className="ft-entry-xrp-node ft-xrp-node-c"><XrpNetworkMark /><b>XRP</b></span>
+              <span className="ft-entry-xrp-node ft-xrp-node-d"><XrpNetworkMark /><b>XRP</b></span>
+              <span className="ft-entry-xrp-node ft-xrp-node-e"><XrpNetworkMark /><b>XRP</b></span>
+            </div>
             <div className="ft-entry-mascot-wrap">
               <div className="ft-entry-mascot-glow" />
               <img className="ft-entry-mascot" src="/images/hermit-mascot.jpg" alt="$HERMIT frog mascot wearing a red hood" />
