@@ -224,11 +224,11 @@ function Notice({ message, tone = 'info', onClose }: { message: string; tone?: '
   );
 }
 
-function FrogtownMark({ compact = false }: { compact?: boolean }) {
+function FrogtownMark({ compact = false, glyph = '≈' }: { compact?: boolean; glyph?: string }) {
   return (
     <div className={`flex items-center gap-2.5 ${compact ? '' : 'select-none'}`}>
       <div className="relative flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] shadow-[3px_3px_0_hsl(var(--accent))]">
-        <span className="mono text-lg font-medium tracking-[-.2em]">≈</span>
+        <span className="mono text-lg font-medium tracking-[-.2em]">{glyph}</span>
         <span className="absolute -bottom-1 -right-1 size-2 rounded-full bg-[hsl(var(--sidebar-accent))]" />
       </div>
       {!compact && <span className="text-lg font-bold tracking-[-.04em] text-[hsl(var(--sidebar-foreground))]">Frogtown</span>}
@@ -383,7 +383,7 @@ function WalletEntry() {
       <div className="ft-entry-shell">
         <section className="ft-entry-scene" aria-labelledby="frogtown-welcome-title">
           <header className="ft-entry-header">
-            <FrogtownMark />
+            <FrogtownMark glyph="F" />
             <span className="ft-entry-network"><span className="ft-entry-network-dot" /> XRPL / $HERMIT</span>
           </header>
           <div className="ft-entry-intro">
@@ -445,7 +445,7 @@ function WalletEntry() {
         <section className="ft-entry-access" aria-labelledby="frogtown-entry-title">
           <div className="ft-entry-access-top">
             <span className="ft-entry-overline">YOUR FRONT DOOR</span>
-            <span className="ft-entry-access-tag">XRPL MAINNET</span>
+            <a className="ft-entry-help-link" href="#frogtown-entry-promises">How it works <span aria-hidden="true">↗</span></a>
           </div>
           <div className="ft-entry-access-body">
             <div className="ft-entry-welcome"><span /> Welcome in</div>
@@ -487,7 +487,7 @@ function WalletEntry() {
               </div>
             )}
 
-            <div className="ft-entry-promise-list">
+            <div className="ft-entry-promise-list" id="frogtown-entry-promises">
               <div className="ft-entry-promise">
                 <span className="ft-entry-promise-icon private"><LockKeyhole aria-hidden="true" /></span>
                 <div><strong>Private means private.</strong><span>Direct and group chats are end-to-end encrypted on-device.</span></div>
