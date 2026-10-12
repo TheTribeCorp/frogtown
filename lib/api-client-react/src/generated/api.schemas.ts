@@ -163,6 +163,14 @@ export interface TimelinePostInput {
   body: string;
 }
 
+export interface TimelinePostUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 5000
+     */
+  body: string;
+}
+
 export interface TimelinePostReaction {
   postId: string;
   likeCount: number;
@@ -185,6 +193,14 @@ export interface TimelineCommentsPage {
 }
 
 export interface TimelineCommentInput {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  body: string;
+}
+
+export interface TimelineCommentUpdateInput {
   /**
      * @minLength 1
      * @maxLength 2000
@@ -236,6 +252,85 @@ export interface TimelineReportResult {
   subjectType: TimelineReportResultSubjectType;
   subjectId: string;
   reported: boolean;
+}
+
+export interface TimelineModeratorAccess {
+  isModerator: boolean;
+}
+
+export type TimelineModerationReportCategory = typeof TimelineModerationReportCategory[keyof typeof TimelineModerationReportCategory];
+
+
+export const TimelineModerationReportCategory = {
+  spam: 'spam',
+  harassment: 'harassment',
+  hate: 'hate',
+  violence: 'violence',
+  misinformation: 'misinformation',
+  other: 'other',
+} as const;
+
+export interface TimelineModerationReport {
+  walletAddress: string;
+  category: TimelineModerationReportCategory;
+  /** @nullable */
+  details: string | null;
+  createdAt: string;
+}
+
+export type TimelineModerationItemSubjectType = typeof TimelineModerationItemSubjectType[keyof typeof TimelineModerationItemSubjectType];
+
+
+export const TimelineModerationItemSubjectType = {
+  post: 'post',
+  comment: 'comment',
+} as const;
+
+export interface TimelineModerationItem {
+  subjectType: TimelineModerationItemSubjectType;
+  subjectId: string;
+  body: string;
+  authorAddress: string;
+  reports: TimelineModerationReport[];
+}
+
+export interface TimelineModerationQueue {
+  items: TimelineModerationItem[];
+}
+
+export type TimelineModerationActionInputAction = typeof TimelineModerationActionInputAction[keyof typeof TimelineModerationActionInputAction];
+
+
+export const TimelineModerationActionInputAction = {
+  dismiss: 'dismiss',
+  remove: 'remove',
+} as const;
+
+export interface TimelineModerationActionInput {
+  action: TimelineModerationActionInputAction;
+}
+
+export type TimelineModerationActionResultSubjectType = typeof TimelineModerationActionResultSubjectType[keyof typeof TimelineModerationActionResultSubjectType];
+
+
+export const TimelineModerationActionResultSubjectType = {
+  post: 'post',
+  comment: 'comment',
+} as const;
+
+export type TimelineModerationActionResultAction = typeof TimelineModerationActionResultAction[keyof typeof TimelineModerationActionResultAction];
+
+
+export const TimelineModerationActionResultAction = {
+  dismiss: 'dismiss',
+  remove: 'remove',
+} as const;
+
+export interface TimelineModerationActionResult {
+  subjectType: TimelineModerationActionResultSubjectType;
+  subjectId: string;
+  action: TimelineModerationActionResultAction;
+  resolved: boolean;
 }
 
 export type WalletAddressParameter = string;

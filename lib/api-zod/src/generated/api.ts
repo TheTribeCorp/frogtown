@@ -383,6 +383,43 @@ export const ReportTimelineContentResponse = zod.object({
 
 
 /**
+ * @summary Edit a timeline post owned by the authenticated wallet
+ */
+export const UpdateTimelinePostParams = zod.object({
+  "postId": zod.coerce.string()
+})
+
+export const updateTimelinePostBodyBodyMax = 5000;
+
+
+
+export const UpdateTimelinePostBody = zod.object({
+  "body": zod.string().min(1).max(updateTimelinePostBodyBodyMax)
+})
+
+export const UpdateTimelinePostResponse = zod.object({
+  "id": zod.string(),
+  "authorAddress": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "likeCount": zod.number().int(),
+  "commentCount": zod.number().int(),
+  "likedByMe": zod.boolean(),
+  "reportedByMe": zod.boolean()
+})
+
+
+/**
+ * @summary Remove a timeline post owned by the authenticated wallet
+ */
+export const DeleteTimelinePostParams = zod.object({
+  "postId": zod.coerce.string()
+})
+
+export const DeleteTimelinePostResponse = zod.void()
+
+
+/**
  * @summary Like a timeline post as the authenticated wallet
  */
 export const LikeTimelinePostParams = zod.object({
@@ -462,6 +499,90 @@ export const CreateTimelineCommentResponse = zod.object({
   "body": zod.string(),
   "createdAt": zod.coerce.date(),
   "reportedByMe": zod.boolean()
+})
+
+
+/**
+ * @summary Edit a timeline comment owned by the authenticated wallet
+ */
+export const UpdateTimelineCommentParams = zod.object({
+  "postId": zod.coerce.string(),
+  "commentId": zod.coerce.string()
+})
+
+export const updateTimelineCommentBodyBodyMax = 2000;
+
+
+
+export const UpdateTimelineCommentBody = zod.object({
+  "body": zod.string().min(1).max(updateTimelineCommentBodyBodyMax)
+})
+
+export const UpdateTimelineCommentResponse = zod.object({
+  "id": zod.string(),
+  "postId": zod.string(),
+  "authorAddress": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "reportedByMe": zod.boolean()
+})
+
+
+/**
+ * @summary Remove a timeline comment owned by the authenticated wallet
+ */
+export const DeleteTimelineCommentParams = zod.object({
+  "postId": zod.coerce.string(),
+  "commentId": zod.coerce.string()
+})
+
+export const DeleteTimelineCommentResponse = zod.void()
+
+
+/**
+ * @summary Check whether the authenticated wallet can review community reports
+ */
+export const GetTimelineModerationAccessResponse = zod.object({
+  "isModerator": zod.boolean()
+})
+
+
+/**
+ * @summary List unresolved reports for an authorized moderator
+ */
+export const ListTimelineModerationReportsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "subjectType": zod.enum(['post', 'comment']),
+  "subjectId": zod.string(),
+  "body": zod.string(),
+  "authorAddress": zod.string(),
+  "reports": zod.array(zod.object({
+  "walletAddress": zod.string(),
+  "category": zod.enum(['spam', 'harassment', 'hate', 'violence', 'misinformation', 'other']),
+  "details": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+})
+
+
+/**
+ * @summary Dismiss reports or remove reported content as a moderator
+ */
+export const ResolveTimelineModerationReportParams = zod.object({
+  "subjectType": zod.enum(['post', 'comment']),
+  "subjectId": zod.coerce.string()
+})
+
+export const ResolveTimelineModerationReportBody = zod.object({
+  "action": zod.enum(['dismiss', 'remove'])
+})
+
+export const ResolveTimelineModerationReportResponse = zod.object({
+  "subjectType": zod.enum(['post', 'comment']),
+  "subjectId": zod.string(),
+  "action": zod.enum(['dismiss', 'remove']),
+  "resolved": zod.boolean()
 })
 
 

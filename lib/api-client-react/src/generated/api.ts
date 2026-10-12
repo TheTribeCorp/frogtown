@@ -45,10 +45,16 @@ import type {
   ReadReceiptInput,
   TimelineComment,
   TimelineCommentInput,
+  TimelineCommentUpdateInput,
   TimelineCommentsPage,
+  TimelineModerationActionInput,
+  TimelineModerationActionResult,
+  TimelineModerationQueue,
+  TimelineModeratorAccess,
   TimelinePost,
   TimelinePostInput,
   TimelinePostReaction,
+  TimelinePostUpdateInput,
   TimelinePostsPage,
   TimelineReportInput,
   TimelineReportResult,
@@ -1886,6 +1892,169 @@ export const useReportTimelineContent = <TError = ErrorType<ErrorResponse>,
       return useMutation(getReportTimelineContentMutationOptions(options), queryClient);
     }
 
+export const getUpdateTimelinePostUrl = (postId: string,) => {
+
+
+
+
+  return `/api/timeline/posts/${postId}`
+}
+
+/**
+ * @summary Edit a timeline post owned by the authenticated wallet
+ */
+export const updateTimelinePost = async (postId: string,
+    timelinePostUpdateInput: TimelinePostUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<TimelinePost> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TimelinePost>(getUpdateTimelinePostUrl(postId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(timelinePostUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateTimelinePostMutationKey = () => ['updateTimelinePost'] as const;
+
+export const getUpdateTimelinePostMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTimelinePost>>, TError,UpdateTimelinePostMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTimelinePost>>, TError,UpdateTimelinePostMutationVariables, TContext> => {
+
+const mutationKey = getUpdateTimelinePostMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTimelinePost>>, UpdateTimelinePostMutationVariables> = (props) => {
+          const {postId,data} = props ?? {};
+
+          return  updateTimelinePost(postId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTimelinePostMutationResult = NonNullable<Awaited<ReturnType<typeof updateTimelinePost>>>
+    export type UpdateTimelinePostMutationBody = BodyType<TimelinePostUpdateInput>
+    export type UpdateTimelinePostMutationError = ErrorType<ErrorResponse>
+    export type UpdateTimelinePostMutationVariables = {postId: string;data: BodyType<TimelinePostUpdateInput>}
+
+    /**
+ * @summary Edit a timeline post owned by the authenticated wallet
+ */
+export const useUpdateTimelinePost = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTimelinePost>>, TError,UpdateTimelinePostMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateTimelinePost>>,
+        TError,
+        UpdateTimelinePostMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateTimelinePostMutationOptions(options), queryClient);
+    }
+
+export const getDeleteTimelinePostUrl = (postId: string,) => {
+
+
+
+
+  return `/api/timeline/posts/${postId}`
+}
+
+/**
+ * @summary Remove a timeline post owned by the authenticated wallet
+ */
+export const deleteTimelinePost = async (postId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteTimelinePostUrl(postId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteTimelinePostMutationKey = () => ['deleteTimelinePost'] as const;
+
+export const getDeleteTimelinePostMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTimelinePost>>, TError,DeleteTimelinePostMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTimelinePost>>, TError,DeleteTimelinePostMutationVariables, TContext> => {
+
+const mutationKey = getDeleteTimelinePostMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTimelinePost>>, DeleteTimelinePostMutationVariables> = (props) => {
+          const {postId} = props ?? {};
+
+          return  deleteTimelinePost(postId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTimelinePostMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTimelinePost>>>
+
+    export type DeleteTimelinePostMutationError = ErrorType<ErrorResponse>
+    export type DeleteTimelinePostMutationVariables = {postId: string}
+
+    /**
+ * @summary Remove a timeline post owned by the authenticated wallet
+ */
+export const useDeleteTimelinePost = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTimelinePost>>, TError,DeleteTimelinePostMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTimelinePost>>,
+        TError,
+        DeleteTimelinePostMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteTimelinePostMutationOptions(options), queryClient);
+    }
+
 export const getLikeTimelinePostUrl = (postId: string,) => {
 
 
@@ -2237,5 +2406,465 @@ export const useCreateTimelineComment = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getCreateTimelineCommentMutationOptions(options), queryClient);
+    }
+
+export const getUpdateTimelineCommentUrl = (postId: string,
+    commentId: string,) => {
+
+
+
+
+  return `/api/timeline/posts/${postId}/comments/${commentId}`
+}
+
+/**
+ * @summary Edit a timeline comment owned by the authenticated wallet
+ */
+export const updateTimelineComment = async (postId: string,
+    commentId: string,
+    timelineCommentUpdateInput: TimelineCommentUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<TimelineComment> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TimelineComment>(getUpdateTimelineCommentUrl(postId,commentId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(timelineCommentUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateTimelineCommentMutationKey = () => ['updateTimelineComment'] as const;
+
+export const getUpdateTimelineCommentMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTimelineComment>>, TError,UpdateTimelineCommentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTimelineComment>>, TError,UpdateTimelineCommentMutationVariables, TContext> => {
+
+const mutationKey = getUpdateTimelineCommentMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTimelineComment>>, UpdateTimelineCommentMutationVariables> = (props) => {
+          const {postId,commentId,data} = props ?? {};
+
+          return  updateTimelineComment(postId,commentId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTimelineCommentMutationResult = NonNullable<Awaited<ReturnType<typeof updateTimelineComment>>>
+    export type UpdateTimelineCommentMutationBody = BodyType<TimelineCommentUpdateInput>
+    export type UpdateTimelineCommentMutationError = ErrorType<ErrorResponse>
+    export type UpdateTimelineCommentMutationVariables = {postId: string;commentId: string;data: BodyType<TimelineCommentUpdateInput>}
+
+    /**
+ * @summary Edit a timeline comment owned by the authenticated wallet
+ */
+export const useUpdateTimelineComment = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTimelineComment>>, TError,UpdateTimelineCommentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateTimelineComment>>,
+        TError,
+        UpdateTimelineCommentMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateTimelineCommentMutationOptions(options), queryClient);
+    }
+
+export const getDeleteTimelineCommentUrl = (postId: string,
+    commentId: string,) => {
+
+
+
+
+  return `/api/timeline/posts/${postId}/comments/${commentId}`
+}
+
+/**
+ * @summary Remove a timeline comment owned by the authenticated wallet
+ */
+export const deleteTimelineComment = async (postId: string,
+    commentId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteTimelineCommentUrl(postId,commentId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteTimelineCommentMutationKey = () => ['deleteTimelineComment'] as const;
+
+export const getDeleteTimelineCommentMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTimelineComment>>, TError,DeleteTimelineCommentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTimelineComment>>, TError,DeleteTimelineCommentMutationVariables, TContext> => {
+
+const mutationKey = getDeleteTimelineCommentMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTimelineComment>>, DeleteTimelineCommentMutationVariables> = (props) => {
+          const {postId,commentId} = props ?? {};
+
+          return  deleteTimelineComment(postId,commentId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTimelineCommentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTimelineComment>>>
+
+    export type DeleteTimelineCommentMutationError = ErrorType<ErrorResponse>
+    export type DeleteTimelineCommentMutationVariables = {postId: string;commentId: string}
+
+    /**
+ * @summary Remove a timeline comment owned by the authenticated wallet
+ */
+export const useDeleteTimelineComment = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTimelineComment>>, TError,DeleteTimelineCommentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTimelineComment>>,
+        TError,
+        DeleteTimelineCommentMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteTimelineCommentMutationOptions(options), queryClient);
+    }
+
+export const getGetTimelineModerationAccessUrl = () => {
+
+
+
+
+  return `/api/timeline/moderation/access`
+}
+
+/**
+ * @summary Check whether the authenticated wallet can review community reports
+ */
+export const getTimelineModerationAccess = async ( options?: Parameters<typeof customFetch>[1]): Promise<TimelineModeratorAccess> => {
+
+  return customFetch<TimelineModeratorAccess>(getGetTimelineModerationAccessUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTimelineModerationAccessQueryKey = () => {
+    return [
+    `/api/timeline/moderation/access`
+    ] as const;
+    }
+
+
+export const getGetTimelineModerationAccessQueryOptions = <TData = Awaited<ReturnType<typeof getTimelineModerationAccess>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTimelineModerationAccess>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTimelineModerationAccessQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTimelineModerationAccess>>> = ({ signal }) => getTimelineModerationAccess({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTimelineModerationAccess>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetTimelineModerationAccessQueryResult = NonNullable<Awaited<ReturnType<typeof getTimelineModerationAccess>>>
+export type GetTimelineModerationAccessQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetTimelineModerationAccess<TData = Awaited<ReturnType<typeof getTimelineModerationAccess>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTimelineModerationAccess>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTimelineModerationAccess>>,
+          TError,
+          Awaited<ReturnType<typeof getTimelineModerationAccess>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTimelineModerationAccess<TData = Awaited<ReturnType<typeof getTimelineModerationAccess>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTimelineModerationAccess>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTimelineModerationAccess>>,
+          TError,
+          Awaited<ReturnType<typeof getTimelineModerationAccess>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTimelineModerationAccess<TData = Awaited<ReturnType<typeof getTimelineModerationAccess>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTimelineModerationAccess>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Check whether the authenticated wallet can review community reports
+ */
+
+export function useGetTimelineModerationAccess<TData = Awaited<ReturnType<typeof getTimelineModerationAccess>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTimelineModerationAccess>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetTimelineModerationAccessQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListTimelineModerationReportsUrl = () => {
+
+
+
+
+  return `/api/timeline/moderation/reports`
+}
+
+/**
+ * @summary List unresolved reports for an authorized moderator
+ */
+export const listTimelineModerationReports = async ( options?: Parameters<typeof customFetch>[1]): Promise<TimelineModerationQueue> => {
+
+  return customFetch<TimelineModerationQueue>(getListTimelineModerationReportsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTimelineModerationReportsQueryKey = () => {
+    return [
+    `/api/timeline/moderation/reports`
+    ] as const;
+    }
+
+
+export const getListTimelineModerationReportsQueryOptions = <TData = Awaited<ReturnType<typeof listTimelineModerationReports>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationReports>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTimelineModerationReportsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTimelineModerationReports>>> = ({ signal }) => listTimelineModerationReports({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationReports>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListTimelineModerationReportsQueryResult = NonNullable<Awaited<ReturnType<typeof listTimelineModerationReports>>>
+export type ListTimelineModerationReportsQueryError = ErrorType<ErrorResponse>
+
+
+export function useListTimelineModerationReports<TData = Awaited<ReturnType<typeof listTimelineModerationReports>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationReports>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTimelineModerationReports>>,
+          TError,
+          Awaited<ReturnType<typeof listTimelineModerationReports>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTimelineModerationReports<TData = Awaited<ReturnType<typeof listTimelineModerationReports>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationReports>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTimelineModerationReports>>,
+          TError,
+          Awaited<ReturnType<typeof listTimelineModerationReports>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTimelineModerationReports<TData = Awaited<ReturnType<typeof listTimelineModerationReports>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationReports>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List unresolved reports for an authorized moderator
+ */
+
+export function useListTimelineModerationReports<TData = Awaited<ReturnType<typeof listTimelineModerationReports>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationReports>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListTimelineModerationReportsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getResolveTimelineModerationReportUrl = (subjectType: 'post' | 'comment',
+    subjectId: string,) => {
+
+
+
+
+  return `/api/timeline/moderation/reports/${subjectType}/${subjectId}`
+}
+
+/**
+ * @summary Dismiss reports or remove reported content as a moderator
+ */
+export const resolveTimelineModerationReport = async (subjectType: 'post' | 'comment',
+    subjectId: string,
+    timelineModerationActionInput: TimelineModerationActionInput, options?: Parameters<typeof customFetch>[1]): Promise<TimelineModerationActionResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TimelineModerationActionResult>(getResolveTimelineModerationReportUrl(subjectType,subjectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(timelineModerationActionInput)
+  }
+);}
+
+
+
+
+
+export const getResolveTimelineModerationReportMutationKey = () => ['resolveTimelineModerationReport'] as const;
+
+export const getResolveTimelineModerationReportMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveTimelineModerationReport>>, TError,ResolveTimelineModerationReportMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resolveTimelineModerationReport>>, TError,ResolveTimelineModerationReportMutationVariables, TContext> => {
+
+const mutationKey = getResolveTimelineModerationReportMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveTimelineModerationReport>>, ResolveTimelineModerationReportMutationVariables> = (props) => {
+          const {subjectType,subjectId,data} = props ?? {};
+
+          return  resolveTimelineModerationReport(subjectType,subjectId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResolveTimelineModerationReportMutationResult = NonNullable<Awaited<ReturnType<typeof resolveTimelineModerationReport>>>
+    export type ResolveTimelineModerationReportMutationBody = BodyType<TimelineModerationActionInput>
+    export type ResolveTimelineModerationReportMutationError = ErrorType<ErrorResponse>
+    export type ResolveTimelineModerationReportMutationVariables = {subjectType: 'post' | 'comment';subjectId: string;data: BodyType<TimelineModerationActionInput>}
+
+    /**
+ * @summary Dismiss reports or remove reported content as a moderator
+ */
+export const useResolveTimelineModerationReport = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveTimelineModerationReport>>, TError,ResolveTimelineModerationReportMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof resolveTimelineModerationReport>>,
+        TError,
+        ResolveTimelineModerationReportMutationVariables,
+        TContext
+      > => {
+      return useMutation(getResolveTimelineModerationReportMutationOptions(options), queryClient);
     }
 

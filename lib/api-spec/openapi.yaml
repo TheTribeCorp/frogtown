@@ -423,6 +423,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /timeline/posts/{postId}:
+    patch:
+      operationId: updateTimelinePost
+      tags: [timeline]
+      summary: Edit a timeline post owned by the authenticated wallet
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimelinePostUpdateInput"
+      responses:
+        "200":
+          description: Updated post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelinePost"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Post belongs to another wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Post not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteTimelinePost
+      tags: [timeline]
+      summary: Remove a timeline post owned by the authenticated wallet
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "204":
+          description: Post and its comments removed
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Post belongs to another wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Post not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /timeline/posts/{postId}/likes:
     post:
       operationId: likeTimelinePost
@@ -538,6 +603,154 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /timeline/posts/{postId}/comments/{commentId}:
+    patch:
+      operationId: updateTimelineComment
+      tags: [timeline]
+      summary: Edit a timeline comment owned by the authenticated wallet
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+        - $ref: "#/components/parameters/CommentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimelineCommentUpdateInput"
+      responses:
+        "200":
+          description: Updated comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineComment"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Comment belongs to another wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Comment not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteTimelineComment
+      tags: [timeline]
+      summary: Remove a timeline comment owned by the authenticated wallet
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+        - $ref: "#/components/parameters/CommentId"
+      responses:
+        "204":
+          description: Comment removed
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Comment belongs to another wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Comment not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /timeline/moderation/access:
+    get:
+      operationId: getTimelineModerationAccess
+      tags: [timeline]
+      summary: Check whether the authenticated wallet can review community reports
+      responses:
+        "200":
+          description: Moderator access status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineModeratorAccess"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /timeline/moderation/reports:
+    get:
+      operationId: listTimelineModerationReports
+      tags: [timeline]
+      summary: List unresolved reports for an authorized moderator
+      responses:
+        "200":
+          description: Reports grouped by content item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineModerationQueue"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not a configured moderator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /timeline/moderation/reports/{subjectType}/{subjectId}:
+    post:
+      operationId: resolveTimelineModerationReport
+      tags: [timeline]
+      summary: Dismiss reports or remove reported content as a moderator
+      parameters:
+        - $ref: "#/components/parameters/TimelineSubjectType"
+        - $ref: "#/components/parameters/TimelineSubjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimelineModerationActionInput"
+      responses:
+        "200":
+          description: Moderation action completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineModerationActionResult"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not a configured moderator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Reported content not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   parameters:
     SessionId:
@@ -554,6 +767,25 @@ components:
         type: string
     PostId:
       name: postId
+      in: path
+      required: true
+      schema:
+        type: string
+    CommentId:
+      name: commentId
+      in: path
+      required: true
+      schema:
+        type: string
+    TimelineSubjectType:
+      name: subjectType
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [post, comment]
+    TimelineSubjectId:
+      name: subjectId
       in: path
       required: true
       schema:
@@ -803,6 +1035,14 @@ components:
           minLength: 1
           maxLength: 5000
       required: [body]
+    TimelinePostUpdateInput:
+      type: object
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+      required: [body]
     TimelinePostReaction:
       type: object
       properties:
@@ -848,6 +1088,14 @@ components:
           minLength: 1
           maxLength: 2000
       required: [body]
+    TimelineCommentUpdateInput:
+      type: object
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      required: [body]
     TimelineReportInput:
       type: object
       properties:
@@ -876,4 +1124,70 @@ components:
         reported:
           type: boolean
       required: [subjectType, subjectId, reported]
+    TimelineModeratorAccess:
+      type: object
+      properties:
+        isModerator:
+          type: boolean
+      required: [isModerator]
+    TimelineModerationReport:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        category:
+          type: string
+          enum: [spam, harassment, hate, violence, misinformation, other]
+        details:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required: [walletAddress, category, details, createdAt]
+    TimelineModerationItem:
+      type: object
+      properties:
+        subjectType:
+          type: string
+          enum: [post, comment]
+        subjectId:
+          type: string
+        body:
+          type: string
+        authorAddress:
+          type: string
+        reports:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineModerationReport"
+      required: [subjectType, subjectId, body, authorAddress, reports]
+    TimelineModerationQueue:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineModerationItem"
+      required: [items]
+    TimelineModerationActionInput:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [dismiss, remove]
+      required: [action]
+    TimelineModerationActionResult:
+      type: object
+      properties:
+        subjectType:
+          type: string
+          enum: [post, comment]
+        subjectId:
+          type: string
+        action:
+          type: string
+          enum: [dismiss, remove]
+        resolved:
+          type: boolean
+      required: [subjectType, subjectId, action, resolved]
 

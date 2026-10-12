@@ -49,7 +49,13 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${port}`;
   child = spawn(process.execPath, [path.join(apiDir, "dist/index.mjs")], {
     cwd: apiDir,
-    env: { ...process.env, NODE_ENV: "test", PORT: String(port), SESSION_SECRET: testSecret },
+    env: {
+      ...process.env,
+      NODE_ENV: "test",
+      PORT: String(port),
+      SESSION_SECRET: testSecret,
+      FROGTOWN_MODERATOR_WALLETS: walletB,
+    },
     stdio: "ignore",
   });
 
@@ -106,11 +112,18 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/groups/group-test/join", "POST", { walletAddress: walletA }],
     ["/api/timeline/posts", "GET"],
     ["/api/timeline/posts", "POST", { body: "public post" }],
+    ["/api/timeline/posts/post-test", "PATCH", { body: "edited public post" }],
+    ["/api/timeline/posts/post-test", "DELETE"],
     ["/api/timeline/posts/post-test/likes", "POST"],
     ["/api/timeline/posts/post-test/likes", "DELETE"],
     ["/api/timeline/posts/post-test/comments", "GET"],
     ["/api/timeline/posts/post-test/comments", "POST", { body: "comment" }],
+    ["/api/timeline/posts/post-test/comments/comment-test", "PATCH", { body: "edited comment" }],
+    ["/api/timeline/posts/post-test/comments/comment-test", "DELETE"],
     ["/api/timeline/reports", "POST", { subjectType: "post", subjectId: "post-test", category: "spam" }],
+    ["/api/timeline/moderation/access", "GET"],
+    ["/api/timeline/moderation/reports", "GET"],
+    ["/api/timeline/moderation/reports/post/post-test", "POST", { action: "dismiss" }],
   ];
 
   for (const [pathname, method, body] of unauthenticated) {
@@ -188,4 +201,144 @@ test("group discovery uses persisted counts and does not invent online presence"
     assert.ok(Number.isInteger(group.memberCount) && group.memberCount >= 0);
     assert.equal(group.onlineCount, 0);
   }
+});
+
+test("timeline owners can edit and remove their content but cannot change another wallet's content", async () => {
+  const ownerCookie = sessionCookie(walletA);
+  const otherCookie = sessionCookie(walletB);
+  const postResponse = await request("/api/timeline/posts", {
+    method: "POST",
+    cookie: ownerCookie,
+    body: { body: "launch-test original post" },
+  });
+  assert.equal(postResponse.status, 201);
+  const post = await postResponse.json();
+
+  const forbiddenPostEdit = await request(`/api/timeline/posts/${post.id}`, {
+    method: "PATCH",
+    cookie: otherCookie,
+    body: { body: "not the owner" },
+  });
+  assert.equal(forbiddenPostEdit.status, 403);
+
+  const editedPost = await request(`/api/timeline/posts/${post.id}`, {
+    method: "PATCH",
+    cookie: ownerCookie,
+    body: { body: "launch-test edited post" },
+  });
+  assert.equal(editedPost.status, 200);
+  assert.equal((await editedPost.json()).body, "launch-test edited post");
+
+  const commentResponse = await request(`/api/timeline/posts/${post.id}/comments`, {
+    method: "POST",
+    cookie: ownerCookie,
+    body: { body: "launch-test original comment" },
+  });
+  assert.equal(commentResponse.status, 201);
+  const comment = await commentResponse.json();
+
+  const forbiddenCommentEdit = await request(`/api/timeline/posts/${post.id}/comments/${comment.id}`, {
+    method: "PATCH",
+    cookie: otherCookie,
+    body: { body: "not the owner" },
+  });
+  assert.equal(forbiddenCommentEdit.status, 403);
+
+  const editedComment = await request(`/api/timeline/posts/${post.id}/comments/${comment.id}`, {
+    method: "PATCH",
+    cookie: ownerCookie,
+    body: { body: "launch-test edited comment" },
+  });
+  assert.equal(editedComment.status, 200);
+  assert.equal((await editedComment.json()).body, "launch-test edited comment");
+
+  const forbiddenCommentDelete = await request(`/api/timeline/posts/${post.id}/comments/${comment.id}`, {
+    method: "DELETE",
+    cookie: otherCookie,
+  });
+  assert.equal(forbiddenCommentDelete.status, 403);
+
+  const deletedComment = await request(`/api/timeline/posts/${post.id}/comments/${comment.id}`, {
+    method: "DELETE",
+    cookie: ownerCookie,
+  });
+  assert.equal(deletedComment.status, 204);
+
+  const forbiddenDelete = await request(`/api/timeline/posts/${post.id}`, {
+    method: "DELETE",
+    cookie: otherCookie,
+  });
+  assert.equal(forbiddenDelete.status, 403);
+
+  const deletedPost = await request(`/api/timeline/posts/${post.id}`, {
+    method: "DELETE",
+    cookie: ownerCookie,
+  });
+  assert.equal(deletedPost.status, 204);
+});
+
+test("only configured moderators can review reports and dismiss or remove reported content", async () => {
+  const memberCookie = sessionCookie(walletA);
+  const moderatorCookie = sessionCookie(walletB);
+  const memberAccess = await request("/api/timeline/moderation/access", { cookie: memberCookie });
+  assert.equal(memberAccess.status, 200);
+  assert.equal((await memberAccess.json()).isModerator, false);
+  const access = await request("/api/timeline/moderation/access", { cookie: moderatorCookie });
+  assert.equal(access.status, 200);
+  assert.equal((await access.json()).isModerator, true);
+
+  const memberQueue = await request("/api/timeline/moderation/reports", { cookie: memberCookie });
+  assert.equal(memberQueue.status, 403);
+  const memberModerationAction = await request("/api/timeline/moderation/reports/post/unknown", {
+    method: "POST",
+    cookie: memberCookie,
+    body: { action: "remove" },
+  });
+  assert.equal(memberModerationAction.status, 403);
+
+  const postResponse = await request("/api/timeline/posts", {
+    method: "POST",
+    cookie: memberCookie,
+    body: { body: "launch-test reported post" },
+  });
+  assert.equal(postResponse.status, 201);
+  const post = await postResponse.json();
+  const report = await request("/api/timeline/reports", {
+    method: "POST",
+    cookie: memberCookie,
+    body: { subjectType: "post", subjectId: post.id, category: "spam", details: "test fixture" },
+  });
+  assert.equal(report.status, 201);
+
+  const queue = await request("/api/timeline/moderation/reports", { cookie: moderatorCookie });
+  assert.equal(queue.status, 200);
+  const queueBody = await queue.json();
+  assert.ok(queueBody.items.some((item) => item.subjectId === post.id));
+
+  const dismissed = await request(`/api/timeline/moderation/reports/post/${post.id}`, {
+    method: "POST",
+    cookie: moderatorCookie,
+    body: { action: "dismiss" },
+  });
+  assert.equal(dismissed.status, 200);
+
+  const reportedAgain = await request("/api/timeline/reports", {
+    method: "POST",
+    cookie: memberCookie,
+    body: { subjectType: "post", subjectId: post.id, category: "spam" },
+  });
+  assert.equal(reportedAgain.status, 201);
+  const removed = await request(`/api/timeline/moderation/reports/post/${post.id}`, {
+    method: "POST",
+    cookie: moderatorCookie,
+    body: { action: "remove" },
+  });
+  assert.equal(removed.status, 200);
+  assert.equal((await removed.json()).action, "remove");
+
+  const removedOwnerPost = await request(`/api/timeline/posts/${post.id}`, {
+    method: "DELETE",
+    cookie: memberCookie,
+  });
+  assert.equal(removedOwnerPost.status, 404);
 });

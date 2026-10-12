@@ -2,10 +2,12 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Flag, Heart, MessageCircle, Send, RefreshCw, Waves, Radio, ChevronDown } from 'lucide-react';
 import {
+  getGetTimelineModerationAccessQueryKey,
   getListTimelineCommentsQueryKey,
   getListTimelinePostsQueryKey,
   useCreateTimelineComment,
   useCreateTimelinePost,
+  useGetTimelineModerationAccess,
   useLikeTimelinePost,
   useListTimelineComments,
   useListTimelinePosts,
@@ -14,6 +16,8 @@ import {
   type TimelineComment,
   type TimelinePost,
 } from '@workspace/api-client-react';
+import { TimelineModerationPanel } from '@/components/timeline-moderation';
+import { TimelineOwnerActions } from '@/components/timeline-owner-actions';
 
 const POST_LIMIT = 5000;
 const COMMENT_LIMIT = 2000;
@@ -140,10 +144,12 @@ function TimelinePostCard({
   post,
   walletAddress,
   onPostUpdate,
+  onPostDelete,
 }: {
   post: TimelinePost;
   walletAddress: string;
   onPostUpdate: (postId: string, update: Partial<TimelinePost>) => void;
+  onPostDelete: (postId: string) => void;
 }) {
   const client = useQueryClient();
   const [commentOpen, setCommentOpen] = useState(false);
@@ -211,6 +217,15 @@ function TimelinePostCard({
               <time className="mono text-[10px] text-[hsl(var(--muted-foreground))]" dateTime={post.createdAt} data-testid={`time-post-created-${post.id}`}>{timeLabel(post.createdAt)}</time>
             </div>
             <p className="mt-3 whitespace-pre-wrap break-words text-[14px] leading-[1.75] text-[hsl(var(--foreground)/.88)] sm:text-[15px]" data-testid={`text-post-body-${post.id}`}>{post.body}</p>
+            {post.authorAddress === walletAddress && (
+              <TimelineOwnerActions
+                subjectType="post"
+                subjectId={post.id}
+                postId={post.id}
+                body={post.body}
+                onDeleted={() => onPostDelete(post.id)}
+              />
+            )}
           </div>
         </div>
         <div className="mt-5 flex items-center gap-2 border-t border-[hsl(var(--border)/.7)] pt-3">
@@ -291,14 +306,24 @@ function TimelinePostCard({
                     </div>
                     <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-[hsl(var(--foreground)/.85)]" data-testid={`text-comment-body-${comment.id}`}>{comment.body}</p>
                     <div className="mt-2 flex justify-end">
-                      <ReportControl
-                        subjectType="comment"
-                        subjectId={comment.id}
-                        reportedByMe={comment.reportedByMe}
-                        onReported={() => {
-                          void client.invalidateQueries({ queryKey: getListTimelineCommentsQueryKey(post.id) });
-                        }}
-                      />
+                      {comment.authorAddress === walletAddress ? (
+                        <TimelineOwnerActions
+                          subjectType="comment"
+                          subjectId={comment.id}
+                          postId={post.id}
+                          body={comment.body}
+                          onDeleted={() => onPostUpdate(post.id, { commentCount: Math.max(0, post.commentCount - 1) })}
+                        />
+                      ) : (
+                        <ReportControl
+                          subjectType="comment"
+                          subjectId={comment.id}
+                          reportedByMe={comment.reportedByMe}
+                          onReported={() => {
+                            void client.invalidateQueries({ queryKey: getListTimelineCommentsQueryKey(post.id) });
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -336,6 +361,9 @@ function TimelinePostCard({
 
 export function TimelinePage({ walletAddress }: { walletAddress: string }) {
   const client = useQueryClient();
+  const moderationAccess = useGetTimelineModerationAccess({
+    query: { queryKey: getGetTimelineModerationAccessQueryKey() },
+  });
   const [postCursor, setPostCursor] = useState<string | undefined>();
   const [postPages, setPostPages] = useState<Array<{ cursor?: string; items: TimelinePost[] }>>([]);
   const postParams = { cursor: postCursor, limit: 30 };
@@ -375,6 +403,9 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
         items: page.items.map((post) => post.id === postId ? { ...post, ...update } : post),
       }));
     });
+  };
+  const removePost = (postId: string) => {
+    setPostPages((current) => current.map((page) => ({ ...page, items: page.items.filter((post) => post.id !== postId) })));
   };
 
   const submitPost = (event: FormEvent<HTMLFormElement>) => {
@@ -438,6 +469,17 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
             {composerError && <p className="border-t border-[hsl(var(--destructive)/.15)] px-5 py-2.5 text-xs text-[hsl(var(--destructive))]" role="alert" data-testid="error-create-post">{composerError}</p>}
           </form>
 
+          {moderationAccess.isLoading ? (
+            <div className="mb-6 h-20 animate-pulse rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.65)]" aria-label="Checking moderator access" data-testid="loading-moderator-access" />
+          ) : moderationAccess.isError ? (
+            <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.05)] px-4 py-3 text-xs text-[hsl(var(--destructive))]" role="alert" data-testid="error-moderator-access">
+              <span>Moderator tools could not be checked.</span>
+              <button type="button" onClick={() => void moderationAccess.refetch()} className="font-medium underline underline-offset-2" data-testid="button-retry-moderator-access">Try again</button>
+            </div>
+          ) : (
+            <TimelineModerationPanel enabled={Boolean(moderationAccess.data?.isModerator)} />
+          )}
+
           <div className="mb-3 flex items-center justify-between px-1">
             <h2 className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]" data-testid="text-feed-heading">Fresh from the marsh</h2>
             <button type="button" onClick={() => { setPostCursor(undefined); setPostPages([]); void client.invalidateQueries({ queryKey: getListTimelinePostsQueryKey() }); }} disabled={postsQuery.isFetching} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] text-[hsl(var(--muted-foreground))] transition hover:bg-[hsl(var(--card))] hover:text-[hsl(var(--foreground))] disabled:opacity-55" aria-label="Refresh timeline" data-testid="button-refresh-timeline">
@@ -467,7 +509,7 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
             </section>
           ) : (
             <div className="space-y-3.5" data-testid="list-timeline-posts">
-              {posts.map((post) => <TimelinePostCard key={post.id} post={post} walletAddress={walletAddress} onPostUpdate={updatePost} />)}
+              {posts.map((post) => <TimelinePostCard key={post.id} post={post} walletAddress={walletAddress} onPostUpdate={updatePost} onPostDelete={removePost} />)}
               {postsQuery.data?.nextCursor && (
                 <button
                   type="button"

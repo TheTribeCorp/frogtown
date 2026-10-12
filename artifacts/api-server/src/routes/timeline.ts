@@ -7,8 +7,12 @@ import {
   CreateTimelineCommentResponse,
   CreateTimelinePostBody,
   CreateTimelinePostResponse,
+  DeleteTimelineCommentParams,
+  DeleteTimelinePostParams,
+  GetTimelineModerationAccessResponse,
   LikeTimelinePostParams,
   LikeTimelinePostResponse,
+  ListTimelineModerationReportsResponse,
   ListTimelineCommentsParams,
   ListTimelineCommentsQueryParams,
   ListTimelineCommentsResponse,
@@ -16,6 +20,15 @@ import {
   ListTimelinePostsResponse,
   ReportTimelineContentBody,
   ReportTimelineContentResponse,
+  ResolveTimelineModerationReportBody,
+  ResolveTimelineModerationReportParams,
+  ResolveTimelineModerationReportResponse,
+  UpdateTimelineCommentBody,
+  UpdateTimelineCommentParams,
+  UpdateTimelineCommentResponse,
+  UpdateTimelinePostBody,
+  UpdateTimelinePostParams,
+  UpdateTimelinePostResponse,
   UnlikeTimelinePostParams,
   UnlikeTimelinePostResponse,
 } from "@workspace/api-zod";
@@ -157,6 +170,74 @@ function invalidBody(res: Response, message: string) {
   res.status(400).json({ error: message });
 }
 
+function configuredModeratorWallets() {
+  return new Set(
+    (process.env.FROGTOWN_MODERATOR_WALLETS ?? "")
+      .split(",")
+      .map((wallet) => wallet.trim())
+      .filter(Boolean),
+  );
+}
+
+function requireModerator(walletAddress: string, res: Response) {
+  const moderators = configuredModeratorWallets();
+  if (moderators.size === 0) {
+    res.status(503).json({ error: "Moderator access is not configured." });
+    return false;
+  }
+  if (!moderators.has(walletAddress)) {
+    res.status(403).json({ error: "Only configured Frogtown moderators can review reports." });
+    return false;
+  }
+  return true;
+}
+
+async function removeTimelineComment(commentId: string) {
+  await db.transaction(async (transaction) => {
+    await transaction
+      .delete(timelineContentReportsTable)
+      .where(and(
+        eq(timelineContentReportsTable.subjectType, "comment"),
+        eq(timelineContentReportsTable.subjectId, commentId),
+      ));
+    await transaction
+      .delete(timelinePostCommentsTable)
+      .where(eq(timelinePostCommentsTable.id, commentId));
+  });
+}
+
+async function removeTimelinePost(postId: string) {
+  await db.transaction(async (transaction) => {
+    const comments = await transaction
+      .select({ id: timelinePostCommentsTable.id })
+      .from(timelinePostCommentsTable)
+      .where(eq(timelinePostCommentsTable.postId, postId));
+    if (comments.length > 0) {
+      await transaction
+        .delete(timelineContentReportsTable)
+        .where(and(
+          eq(timelineContentReportsTable.subjectType, "comment"),
+          inArray(timelineContentReportsTable.subjectId, comments.map((comment) => comment.id)),
+        ));
+      await transaction
+        .delete(timelinePostCommentsTable)
+        .where(eq(timelinePostCommentsTable.postId, postId));
+    }
+    await transaction
+      .delete(timelineContentReportsTable)
+      .where(and(
+        eq(timelineContentReportsTable.subjectType, "post"),
+        eq(timelineContentReportsTable.subjectId, postId),
+      ));
+    await transaction
+      .delete(timelinePostLikesTable)
+      .where(eq(timelinePostLikesTable.postId, postId));
+    await transaction
+      .delete(timelinePostsTable)
+      .where(eq(timelinePostsTable.id, postId));
+  });
+}
+
 router.get("/timeline/posts", async (req, res) => {
   const walletAddress = requireAuth(req, res);
   if (!walletAddress) return;
@@ -217,6 +298,69 @@ router.post("/timeline/posts", async (req, res) => {
     res.status(201).json(CreateTimelinePostResponse.parse(post));
   } catch {
     res.status(500).json({ error: "Unable to publish this post." });
+  }
+});
+
+router.patch("/timeline/posts/:postId", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const params = UpdateTimelinePostParams.safeParse(req.params);
+  const body = UpdateTimelinePostBody.safeParse(req.body);
+  if (!params.success || !body.success || !body.data.body.trim()) {
+    invalidBody(res, "A valid post and non-empty body are required.");
+    return;
+  }
+  try {
+    const existing = await db
+      .select()
+      .from(timelinePostsTable)
+      .where(eq(timelinePostsTable.id, params.data.postId))
+      .limit(1);
+    if (!existing[0]) {
+      res.status(404).json({ error: "Post not found." });
+      return;
+    }
+    if (existing[0].authorAddress !== walletAddress) {
+      res.status(403).json({ error: "You can only edit your own posts." });
+      return;
+    }
+    const updated = await db
+      .update(timelinePostsTable)
+      .set({ body: body.data.body.trim() })
+      .where(eq(timelinePostsTable.id, params.data.postId))
+      .returning();
+    res.json(UpdateTimelinePostResponse.parse((await serializePosts(updated, walletAddress))[0]));
+  } catch {
+    res.status(500).json({ error: "Unable to update this post." });
+  }
+});
+
+router.delete("/timeline/posts/:postId", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const params = DeleteTimelinePostParams.safeParse(req.params);
+  if (!params.success) {
+    invalidBody(res, "A valid post ID is required.");
+    return;
+  }
+  try {
+    const existing = await db
+      .select({ authorAddress: timelinePostsTable.authorAddress })
+      .from(timelinePostsTable)
+      .where(eq(timelinePostsTable.id, params.data.postId))
+      .limit(1);
+    if (!existing[0]) {
+      res.status(404).json({ error: "Post not found." });
+      return;
+    }
+    if (existing[0].authorAddress !== walletAddress) {
+      res.status(403).json({ error: "You can only remove your own posts." });
+      return;
+    }
+    await removeTimelinePost(params.data.postId);
+    res.status(204).end();
+  } catch {
+    res.status(500).json({ error: "Unable to remove this post." });
   }
 });
 
@@ -358,6 +502,136 @@ router.post("/timeline/reports", async (req, res) => {
   }
 });
 
+router.get("/timeline/moderation/access", (req, res) => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  res.json(GetTimelineModerationAccessResponse.parse({
+    isModerator: configuredModeratorWallets().has(walletAddress),
+  }));
+});
+
+router.get("/timeline/moderation/reports", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress || !requireModerator(walletAddress, res)) return;
+  try {
+    const reports = await db
+      .select()
+      .from(timelineContentReportsTable)
+      .orderBy(desc(timelineContentReportsTable.createdAt))
+      .limit(1000);
+    const grouped = new Map<string, {
+      subjectType: "post" | "comment";
+      subjectId: string;
+      reports: typeof reports;
+    }>();
+    for (const report of reports) {
+      if (report.subjectType !== "post" && report.subjectType !== "comment") continue;
+      const key = `${report.subjectType}:${report.subjectId}`;
+      const group = grouped.get(key) ?? {
+        subjectType: report.subjectType,
+        subjectId: report.subjectId,
+        reports: [],
+      };
+      group.reports.push(report);
+      grouped.set(key, group);
+    }
+    const postIds = [...grouped.values()]
+      .filter((group) => group.subjectType === "post")
+      .map((group) => group.subjectId);
+    const commentIds = [...grouped.values()]
+      .filter((group) => group.subjectType === "comment")
+      .map((group) => group.subjectId);
+    const [posts, comments] = await Promise.all([
+      postIds.length > 0
+        ? db.select().from(timelinePostsTable).where(inArray(timelinePostsTable.id, postIds))
+        : Promise.resolve([]),
+      commentIds.length > 0
+        ? db.select().from(timelinePostCommentsTable).where(inArray(timelinePostCommentsTable.id, commentIds))
+        : Promise.resolve([]),
+    ]);
+    const contentById = new Map<string, { body: string; authorAddress: string }>();
+    for (const post of posts) contentById.set(`post:${post.id}`, post);
+    for (const comment of comments) contentById.set(`comment:${comment.id}`, comment);
+    const items = [...grouped.values()].flatMap((group) => {
+      const content = contentById.get(`${group.subjectType}:${group.subjectId}`);
+      if (!content) return [];
+      return [{
+        ...group,
+        ...content,
+        reports: group.reports.map((report) => ({
+          walletAddress: report.walletAddress,
+          category: report.category,
+          details: report.details,
+          createdAt: report.createdAt,
+        })),
+      }];
+    });
+    res.json(ListTimelineModerationReportsResponse.parse({ items }));
+  } catch {
+    res.status(500).json({ error: "Unable to load community reports." });
+  }
+});
+
+router.post("/timeline/moderation/reports/:subjectType/:subjectId", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress || !requireModerator(walletAddress, res)) return;
+  const params = ResolveTimelineModerationReportParams.safeParse(req.params);
+  const body = ResolveTimelineModerationReportBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    invalidBody(res, "Choose a valid report subject and moderation action.");
+    return;
+  }
+  const { subjectType, subjectId } = params.data;
+  try {
+    const openReports = await db
+      .select({ subjectId: timelineContentReportsTable.subjectId })
+      .from(timelineContentReportsTable)
+      .where(and(
+        eq(timelineContentReportsTable.subjectType, subjectType),
+        eq(timelineContentReportsTable.subjectId, subjectId),
+      ))
+      .limit(1);
+    if (!openReports[0]) {
+      res.status(404).json({ error: "No open reports were found for this item." });
+      return;
+    }
+    if (body.data.action === "dismiss") {
+      await db
+        .delete(timelineContentReportsTable)
+        .where(and(
+          eq(timelineContentReportsTable.subjectType, subjectType),
+          eq(timelineContentReportsTable.subjectId, subjectId),
+        ));
+    } else if (subjectType === "post") {
+      if (!(await postExists(subjectId))) {
+        res.status(404).json({ error: "Reported content was not found." });
+        return;
+      }
+      await removeTimelinePost(subjectId);
+    } else {
+      const comment = await db
+        .select({ id: timelinePostCommentsTable.id })
+        .from(timelinePostCommentsTable)
+        .where(eq(timelinePostCommentsTable.id, subjectId))
+        .limit(1);
+      if (!comment[0]) {
+        res.status(404).json({ error: "Reported content was not found." });
+        return;
+      }
+      await removeTimelineComment(subjectId);
+    }
+    req.log.info({ subjectType, subjectId, action: body.data.action }, "Timeline report resolved");
+    res.json(ResolveTimelineModerationReportResponse.parse({
+      subjectType,
+      subjectId,
+      action: body.data.action,
+      resolved: true,
+    }));
+  } catch {
+    res.status(500).json({ error: "Unable to resolve this report." });
+  }
+});
+
 router.post("/timeline/posts/:postId/comments", async (req, res) => {
   const walletAddress = requireAuth(req, res);
   if (!walletAddress) return;
@@ -391,6 +665,78 @@ router.post("/timeline/posts/:postId/comments", async (req, res) => {
     }));
   } catch {
     res.status(500).json({ error: "Unable to publish this comment." });
+  }
+});
+
+router.patch("/timeline/posts/:postId/comments/:commentId", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const params = UpdateTimelineCommentParams.safeParse(req.params);
+  const body = UpdateTimelineCommentBody.safeParse(req.body);
+  if (!params.success || !body.success || !body.data.body.trim()) {
+    invalidBody(res, "A valid comment and non-empty body are required.");
+    return;
+  }
+  try {
+    const existing = await db
+      .select()
+      .from(timelinePostCommentsTable)
+      .where(and(
+        eq(timelinePostCommentsTable.id, params.data.commentId),
+        eq(timelinePostCommentsTable.postId, params.data.postId),
+      ))
+      .limit(1);
+    if (!existing[0]) {
+      res.status(404).json({ error: "Comment not found." });
+      return;
+    }
+    if (existing[0].authorAddress !== walletAddress) {
+      res.status(403).json({ error: "You can only edit your own comments." });
+      return;
+    }
+    const updated = await db
+      .update(timelinePostCommentsTable)
+      .set({ body: body.data.body.trim() })
+      .where(eq(timelinePostCommentsTable.id, params.data.commentId))
+      .returning();
+    res.json(UpdateTimelineCommentResponse.parse({
+      ...updated[0],
+      reportedByMe: false,
+    }));
+  } catch {
+    res.status(500).json({ error: "Unable to update this comment." });
+  }
+});
+
+router.delete("/timeline/posts/:postId/comments/:commentId", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const params = DeleteTimelineCommentParams.safeParse(req.params);
+  if (!params.success) {
+    invalidBody(res, "A valid comment ID is required.");
+    return;
+  }
+  try {
+    const existing = await db
+      .select()
+      .from(timelinePostCommentsTable)
+      .where(and(
+        eq(timelinePostCommentsTable.id, params.data.commentId),
+        eq(timelinePostCommentsTable.postId, params.data.postId),
+      ))
+      .limit(1);
+    if (!existing[0]) {
+      res.status(404).json({ error: "Comment not found." });
+      return;
+    }
+    if (existing[0].authorAddress !== walletAddress) {
+      res.status(403).json({ error: "You can only remove your own comments." });
+      return;
+    }
+    await removeTimelineComment(params.data.commentId);
+    res.status(204).end();
+  } catch {
+    res.status(500).json({ error: "Unable to remove this comment." });
   }
 });
 
