@@ -8,6 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "test:auth": "pnpm run build && node --test test/auth-regression.test.mjs",
+    "test:hermit-tick": "node --experimental-strip-types --test test/hermit-tick.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

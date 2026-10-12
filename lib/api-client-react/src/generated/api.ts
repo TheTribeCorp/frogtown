@@ -34,6 +34,7 @@ import type {
   ErrorResponse,
   GamificationLeaderboard,
   GamificationSummary,
+  GetWalletHermitTickParams,
   Group,
   GroupInput,
   HealthStatus,
@@ -62,6 +63,7 @@ import type {
   TimelinePostsPage,
   TimelineReportInput,
   TimelineReportResult,
+  WalletHermitTick,
   WalletKey,
   WalletKeyInput,
   WalletSession,
@@ -360,6 +362,122 @@ export function useGetWalletSession<TData = Awaited<ReturnType<typeof getWalletS
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetWalletSessionQueryOptions(sessionId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetWalletHermitTickUrl = (walletAddress: string,
+    params?: GetWalletHermitTickParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/wallets/${walletAddress}/hermit-tick?${stringifiedParams}` : `/api/wallets/${walletAddress}/hermit-tick`
+}
+
+/**
+ * @summary Check a wallet's $HERMIT holder tick on XRPL
+ */
+export const getWalletHermitTick = async (walletAddress: string,
+    params?: GetWalletHermitTickParams, options?: Parameters<typeof customFetch>[1]): Promise<WalletHermitTick> => {
+
+  return customFetch<WalletHermitTick>(getGetWalletHermitTickUrl(walletAddress,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWalletHermitTickQueryKey = (walletAddress: string,
+    params?: GetWalletHermitTickParams,) => {
+    return [
+    `/api/wallets/${walletAddress}/hermit-tick`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetWalletHermitTickQueryOptions = <TData = Awaited<ReturnType<typeof getWalletHermitTick>>, TError = ErrorType<ErrorResponse>>(walletAddress: string,
+    params?: GetWalletHermitTickParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitTick>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWalletHermitTickQueryKey(walletAddress,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWalletHermitTick>>> = ({ signal }) => getWalletHermitTick(walletAddress,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: walletAddress !== null && walletAddress !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitTick>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetWalletHermitTickQueryResult = NonNullable<Awaited<ReturnType<typeof getWalletHermitTick>>>
+export type GetWalletHermitTickQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetWalletHermitTick<TData = Awaited<ReturnType<typeof getWalletHermitTick>>, TError = ErrorType<ErrorResponse>>(
+ walletAddress: string,
+    params: undefined |  GetWalletHermitTickParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitTick>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWalletHermitTick>>,
+          TError,
+          Awaited<ReturnType<typeof getWalletHermitTick>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWalletHermitTick<TData = Awaited<ReturnType<typeof getWalletHermitTick>>, TError = ErrorType<ErrorResponse>>(
+ walletAddress: string,
+    params?: GetWalletHermitTickParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitTick>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWalletHermitTick>>,
+          TError,
+          Awaited<ReturnType<typeof getWalletHermitTick>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWalletHermitTick<TData = Awaited<ReturnType<typeof getWalletHermitTick>>, TError = ErrorType<ErrorResponse>>(
+ walletAddress: string,
+    params?: GetWalletHermitTickParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitTick>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Check a wallet's $HERMIT holder tick on XRPL
+ */
+
+export function useGetWalletHermitTick<TData = Awaited<ReturnType<typeof getWalletHermitTick>>, TError = ErrorType<ErrorResponse>>(
+ walletAddress: string,
+    params?: GetWalletHermitTickParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitTick>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetWalletHermitTickQueryOptions(walletAddress,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

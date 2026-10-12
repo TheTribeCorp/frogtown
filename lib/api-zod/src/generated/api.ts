@@ -44,6 +44,29 @@ export const GetWalletSessionResponse = zod.object({
 
 
 /**
+ * @summary Check a wallet's $HERMIT holder tick on XRPL
+ */
+export const getWalletHermitTickPathWalletAddressRegExp = new RegExp('^r[1-9A-HJ-NP-Za-km-z]{24,34}$');
+
+
+export const GetWalletHermitTickParams = zod.object({
+  "walletAddress": zod.coerce.string().regex(getWalletHermitTickPathWalletAddressRegExp)
+})
+
+export const getWalletHermitTickQueryRefreshDefault = false;
+
+export const GetWalletHermitTickQueryParams = zod.object({
+  "refresh": zod.coerce.boolean().default(getWalletHermitTickQueryRefreshDefault).describe('Skip the short public lookup cache for a fresh sign-in check.')
+})
+
+export const GetWalletHermitTickResponse = zod.object({
+  "tick": zod.union([zod.literal('green'),zod.literal('gold'),zod.literal(null)]).nullable(),
+  "checkStatus": zod.enum(['checked', 'unavailable']),
+  "checkedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Return the wallet bound to the current browser session
  */
 export const GetCurrentWalletResponse = zod.object({

@@ -3,3 +3,4 @@
 - [Frogtown privacy and read state](swamp-timeline-privacy-and-read-state.md) — $HERMIT branding, public timeline, and per-wallet E2EE chat receipts stay distinct.
 - [Frogtown API origin policy](frogtown-api-origin-policy.md) — browser API calls are same-origin; any future external client needs an explicit origin allowlist.
 - [Frogtown moderation authorization](frogtown-moderation-authorization.md) — wallet access is open, so moderation privileges must be operator-configured and server-checked.
+- [XRPL $HERMIT holder checks](frogtown-xrpl-holder-checks.md) — query `account_lines` from the issuer with the wallet as `peer`; Clio can return empty holder-side pages.

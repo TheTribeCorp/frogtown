@@ -72,6 +72,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /wallets/{walletAddress}/hermit-tick:
+    get:
+      operationId: getWalletHermitTick
+      tags: [wallet]
+      summary: Check a wallet's $HERMIT holder tick on XRPL
+      parameters:
+        - in: path
+          name: walletAddress
+          required: true
+          schema:
+            type: string
+            pattern: "^r[1-9A-HJ-NP-Za-km-z]{24,34}$"
+        - in: query
+          name: refresh
+          required: false
+          description: Skip the short public lookup cache for a fresh sign-in check.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Current $HERMIT tick status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletHermitTick"
+        "400":
+          description: Invalid XRPL wallet address or query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /wallet/me:
     get:
       operationId: getCurrentWallet
@@ -936,6 +968,19 @@ components:
         network:
           type: string
       required: [sessionId, status, walletAddress, network]
+    WalletHermitTick:
+      type: object
+      properties:
+        tick:
+          type: ["string", "null"]
+          enum: [green, gold, null]
+        checkStatus:
+          type: string
+          enum: [checked, unavailable]
+        checkedAt:
+          type: string
+          format: date-time
+      required: [tick, checkStatus, checkedAt]
     CurrentWallet:
       type: object
       properties:

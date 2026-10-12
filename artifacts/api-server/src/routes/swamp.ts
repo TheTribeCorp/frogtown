@@ -5,6 +5,9 @@ import {
   CreateDirectConversationBody,
   CreateGroupBody,
   GetConversationEncryptionKeysParams,
+  GetWalletHermitTickParams,
+  GetWalletHermitTickQueryParams,
+  GetWalletHermitTickResponse,
   GetWalletEncryptionKeyParams,
   GetWalletSessionParams,
   JoinGroupBody,
@@ -22,6 +25,7 @@ import {
 import { db } from "@workspace/db";
 import { publishMessageCreated, publishMessageRead, subscribeToWalletMessages } from "../lib/message-events";
 import { recordDailyQuestActionInTransaction } from "../lib/gamification";
+import { getWalletHermitTick } from "../lib/hermit-tick";
 import {
   conversationMembersTable,
   conversationsTable,
@@ -262,6 +266,36 @@ router.get("/wallet/sessions/:sessionId", async (req, res) => {
   } catch {
     res.status(400).json({ error: "Invalid wallet session." });
   }
+});
+
+router.get("/wallets/:walletAddress/hermit-tick", async (req, res): Promise<void> => {
+  const parsedParams = GetWalletHermitTickParams.safeParse(req.params);
+  if (!parsedParams.success) {
+    res.status(400).json({ error: "Enter a valid XRPL wallet address." });
+    return;
+  }
+
+  const rawRefresh = req.query.refresh;
+  if (rawRefresh !== undefined && rawRefresh !== "true" && rawRefresh !== "false") {
+    res.status(400).json({ error: "The refresh query must be true or false." });
+    return;
+  }
+  const parsedQuery = GetWalletHermitTickQueryParams.safeParse({
+    refresh: rawRefresh === "true",
+  });
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: "Invalid tick-check query." });
+    return;
+  }
+
+  const check = await getWalletHermitTick(
+    parsedParams.data.walletAddress,
+    parsedQuery.data.refresh,
+  );
+  if (check.checkStatus === "unavailable") {
+    req.log.warn("XRPL $HERMIT holder check is temporarily unavailable.");
+  }
+  res.json(GetWalletHermitTickResponse.parse(check));
 });
 
 router.get("/wallet/me", (req, res) => {

@@ -20,6 +20,7 @@ import {
 } from '@workspace/api-client-react';
 import { TimelineModerationPanel } from '@/components/timeline-moderation';
 import { TimelineOwnerActions } from '@/components/timeline-owner-actions';
+import { HermitTick } from '@/components/hermit-tick';
 
 const POST_LIMIT = 5000;
 const COMMENT_LIMIT = 2000;
@@ -217,7 +218,7 @@ function TimelinePostCard({
           <AvatarMark address={post.authorAddress} mine={post.authorAddress === walletAddress} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="mono text-xs font-medium text-[hsl(var(--foreground))]" data-testid={`text-post-author-${post.id}`}>{shortAddress(post.authorAddress)}</span>
+              <span className="inline-flex items-center gap-1.5"><span className="mono text-xs font-medium text-[hsl(var(--foreground))]" data-testid={`text-post-author-${post.id}`}>{shortAddress(post.authorAddress)}</span><HermitTick walletAddress={post.authorAddress} className="size-4" /></span>
               {post.authorAddress === walletAddress && <span className="rounded-full bg-[hsl(var(--secondary)/.24)] px-2 py-0.5 text-[9px] font-medium uppercase tracking-[.12em]">you</span>}
               <span aria-hidden="true" className="text-[hsl(var(--muted-foreground)/.55)]">·</span>
               <time className="mono text-[10px] text-[hsl(var(--muted-foreground))]" dateTime={post.createdAt} data-testid={`time-post-created-${post.id}`}>{timeLabel(post.createdAt)}</time>
@@ -307,7 +308,7 @@ function TimelinePostCard({
                   <AvatarMark address={comment.authorAddress} mine={comment.authorAddress === walletAddress} />
                   <div className="min-w-0 flex-1 rounded-xl border border-[hsl(var(--border)/.8)] bg-[hsl(var(--card)/.75)] px-3.5 py-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="mono text-[10px] font-medium" data-testid={`text-comment-author-${comment.id}`}>{shortAddress(comment.authorAddress)}</span>
+                      <span className="inline-flex items-center gap-1.5"><span className="mono text-[10px] font-medium" data-testid={`text-comment-author-${comment.id}`}>{shortAddress(comment.authorAddress)}</span><HermitTick walletAddress={comment.authorAddress} className="size-3.5" /></span>
                       <time className="mono text-[9px] text-[hsl(var(--muted-foreground))]" dateTime={comment.createdAt} data-testid={`time-comment-created-${comment.id}`}>{timeLabel(comment.createdAt)}</time>
                     </div>
                     <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-[hsl(var(--foreground)/.85)]" data-testid={`text-comment-body-${comment.id}`}>{comment.body}</p>

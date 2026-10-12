@@ -96,6 +96,35 @@ button { cursor: pointer; }
   background-image: linear-gradient(hsl(var(--primary) / .12) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary) / .12) 1px, transparent 1px);
   background-size: 26px 26px;
 }
+.chat-wallpaper {
+  background-color: #1b4934;
+  background-image:
+    radial-gradient(ellipse at 50% 50%, rgba(180, 219, 164, .08), transparent 65%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='216' height='184' viewBox='0 0 216 184' fill='none'%3E%3Cg stroke='%23b5d9b2' stroke-width='1.35' stroke-linecap='round' stroke-linejoin='round' opacity='.19'%3E%3Cpath d='M40 48c-5-10-19-8-20 4-1 8 7 12 15 9 7 13 22 19 37 16 15-3 25-15 23-28-1-10-9-16-19-16-5-10-19-8-20 4'/%3E%3Cpath d='M37 43v-5m18 1v-5m-18 18 5 1m20-5-5 2m-6 12c4 3 8 3 12 0'/%3E%3Cpath d='M151 129c-4-9-16-8-18 3-1 7 6 11 13 8 7 11 19 16 32 13 13-3 21-13 19-24-1-9-8-14-17-14-4-9-16-8-18 3'/%3E%3Cpath d='M148 124v-4m16 0v-4m-16 16 4 1m17-4-4 2m-5 9c3 2 7 2 10 0'/%3E%3Cpath d='M156 33c8 4 13 10 15 18m-17 8c-7 3-12 8-15 15M49 131c-7 4-11 10-13 17m27-17c7 3 12 8 15 15'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: auto, 216px 184px;
+}
+.chat-wallpaper [data-testid^="message-"].justify-end > div > div:first-child {
+  background: #e5f0dc;
+  border: 1px solid rgba(196, 218, 177, .9);
+  color: #173c2b;
+}
+.chat-wallpaper [data-testid^="message-"] > div > div:last-child {
+  color: rgba(244, 249, 238, .82);
+}
+.chat-wallpaper [data-testid^="message-"] > div > div:last-child [data-testid^="message-delivery-status"] svg {
+  color: #b6e5bc;
+}
+.hermit-tick {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.hermit-tick svg { width: 78%; height: 78%; fill: none; stroke: currentColor; stroke-width: 2.35; stroke-linecap: round; stroke-linejoin: round; }
+.hermit-tick-green { color: #367d49; background: #e5f1df; border: 1px solid #77a982; }
+.hermit-tick-gold { color: #956b1c; background: #f6edcf; border: 1px solid #c9a64b; }
 @keyframes appear { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulse-dot { 0%, 100% { opacity: .45; transform: scale(.9); } 50% { opacity: 1; transform: scale(1); } }
 

@@ -37,6 +37,32 @@ export interface WalletSessionStatus {
   network: string;
 }
 
+/**
+ * @nullable
+ */
+export type WalletHermitTickTick = typeof WalletHermitTickTick[keyof typeof WalletHermitTickTick] | null;
+
+
+export const WalletHermitTickTick = {
+  green: 'green',
+  gold: 'gold',
+} as const;
+
+export type WalletHermitTickCheckStatus = typeof WalletHermitTickCheckStatus[keyof typeof WalletHermitTickCheckStatus];
+
+
+export const WalletHermitTickCheckStatus = {
+  checked: 'checked',
+  unavailable: 'unavailable',
+} as const;
+
+export interface WalletHermitTick {
+  /** @nullable */
+  tick: WalletHermitTickTick;
+  checkStatus: WalletHermitTickCheckStatus;
+  checkedAt: string;
+}
+
 export interface CurrentWallet {
   walletAddress: string;
   network: string;
@@ -419,6 +445,13 @@ export interface CoinFlipResult {
 }
 
 export type WalletAddressParameter = string;
+
+export type GetWalletHermitTickParams = {
+/**
+ * Skip the short public lookup cache for a fresh sign-in check.
+ */
+refresh?: boolean;
+};
 
 export type ListConversationsParams = {
 /**
