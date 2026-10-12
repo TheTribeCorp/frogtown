@@ -448,7 +448,7 @@ export type WalletAddressParameter = string;
 
 export type GetWalletHermitTickParams = {
 /**
- * Skip the short public lookup cache for a fresh sign-in check.
+ * Skip the short public lookup cache; true is restricted to the authenticated wallet.
  */
 refresh?: boolean;
 };

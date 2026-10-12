@@ -287,6 +287,11 @@ router.get("/wallets/:walletAddress/hermit-tick", async (req, res): Promise<void
     res.status(400).json({ error: "Invalid tick-check query." });
     return;
   }
+  if (parsedQuery.data.refresh) {
+    const sessionWallet = requireAuth(req, res);
+    if (!sessionWallet) return;
+    if (!requireMatchingWallet(sessionWallet, parsedParams.data.walletAddress, res)) return;
+  }
 
   const check = await getWalletHermitTick(
     parsedParams.data.walletAddress,

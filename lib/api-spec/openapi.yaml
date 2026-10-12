@@ -87,7 +87,7 @@ paths:
         - in: query
           name: refresh
           required: false
-          description: Skip the short public lookup cache for a fresh sign-in check.
+          description: Skip the short public lookup cache; true is restricted to the authenticated wallet.
           schema:
             type: boolean
             default: false
@@ -100,6 +100,18 @@ paths:
                 $ref: "#/components/schemas/WalletHermitTick"
         "400":
           description: Invalid XRPL wallet address or query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: A fresh check requires a signed-in wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: A signed-in wallet can only force-check itself
           content:
             application/json:
               schema:

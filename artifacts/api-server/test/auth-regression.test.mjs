@@ -158,6 +158,7 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/events", "GET"],
     ["/api/wallet/keys/" + walletA, "GET"],
     ["/api/wallet/keys", "PUT", { publicKey: "not-a-key" }],
+    ["/api/wallets/" + walletA + "/hermit-tick?refresh=true", "GET"],
     ["/api/groups?walletAddress=" + walletA, "GET"],
     ["/api/groups", "POST", { name: "test", description: "", creatorAddress: walletA }],
     ["/api/groups/group-test/join", "POST", { walletAddress: walletA }],
@@ -194,6 +195,7 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/groups?walletAddress=" + walletB, "GET"],
     ["/api/groups", "POST", { name: "test", description: "", creatorAddress: walletB }],
     ["/api/groups/group-test/join", "POST", { walletAddress: walletB }],
+    ["/api/wallets/" + walletB + "/hermit-tick?refresh=true", "GET"],
   ];
 
   for (const [pathname, method, body] of authenticatedMismatches) {

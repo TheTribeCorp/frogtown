@@ -56,7 +56,7 @@ export const GetWalletHermitTickParams = zod.object({
 export const getWalletHermitTickQueryRefreshDefault = false;
 
 export const GetWalletHermitTickQueryParams = zod.object({
-  "refresh": zod.coerce.boolean().default(getWalletHermitTickQueryRefreshDefault).describe('Skip the short public lookup cache for a fresh sign-in check.')
+  "refresh": zod.coerce.boolean().default(getWalletHermitTickQueryRefreshDefault).describe('Skip the short public lookup cache; true is restricted to the authenticated wallet.')
 })
 
 export const GetWalletHermitTickResponse = zod.object({

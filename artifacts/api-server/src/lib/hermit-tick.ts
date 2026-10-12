@@ -11,6 +11,12 @@ const HERMIT_CURRENCY = "4845524D49540000000000000000000000000000";
 const XRPL_MAINNET_RPC = "https://s1.ripple.com:51234/";
 const LOOKUP_CACHE_TTL_MS = 30_000;
 const MAX_CACHED_WALLETS = 2_000;
+const MAX_ACTIVE_LOOKUPS = 8;
+const MAX_ACTIVE_PUBLIC_LOOKUPS = 6;
+const MAX_ACTIVE_REFRESH_LOOKUPS = 2;
+const MAX_QUEUED_PUBLIC_LOOKUPS = 64;
+const MAX_QUEUED_REFRESH_LOOKUPS = 24;
+const MAX_QUEUE_WAIT_MS = 3_000;
 
 type XrplLine = {
   account?: unknown;
@@ -26,7 +32,115 @@ type XrplAccountLinesResponse = {
 };
 
 const cachedChecks = new Map<string, { value: HermitTickCheck; expiresAt: number }>();
-const pendingChecks = new Map<string, Promise<HermitTickCheck>>();
+const pendingPublicChecks = new Map<string, Promise<HermitTickCheck>>();
+const pendingRefreshChecks = new Map<string, Promise<HermitTickCheck>>();
+
+type LookupPriority = "public" | "refresh";
+type LookupWaiter = {
+  priority: LookupPriority;
+  resolve: (release: () => void) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
+
+const publicLookupQueue: LookupWaiter[] = [];
+const refreshLookupQueue: LookupWaiter[] = [];
+let activeLookups = 0;
+let activePublicLookups = 0;
+let activeRefreshLookups = 0;
+
+function hasLookupCapacity(priority: LookupPriority) {
+  return activeLookups < MAX_ACTIVE_LOOKUPS
+    && (priority === "refresh"
+      ? activeRefreshLookups < MAX_ACTIVE_REFRESH_LOOKUPS
+      : activePublicLookups < MAX_ACTIVE_PUBLIC_LOOKUPS);
+}
+
+function reserveLookupSlot(priority: LookupPriority) {
+  activeLookups += 1;
+  if (priority === "refresh") activeRefreshLookups += 1;
+  else activePublicLookups += 1;
+}
+
+function releaseLookupSlot(priority: LookupPriority) {
+  activeLookups -= 1;
+  if (priority === "refresh") activeRefreshLookups -= 1;
+  else activePublicLookups -= 1;
+  drainLookupQueues();
+}
+
+function createSlotRelease(priority: LookupPriority) {
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    releaseLookupSlot(priority);
+  };
+}
+
+function startQueuedLookup(waiter: LookupWaiter) {
+  clearTimeout(waiter.timer);
+  reserveLookupSlot(waiter.priority);
+  waiter.resolve(createSlotRelease(waiter.priority));
+}
+
+function drainLookupQueues() {
+  while (true) {
+    const refreshWaiter = refreshLookupQueue[0];
+    if (refreshWaiter && hasLookupCapacity("refresh")) {
+      refreshLookupQueue.shift();
+      startQueuedLookup(refreshWaiter);
+      continue;
+    }
+
+    const publicWaiter = publicLookupQueue[0];
+    if (publicWaiter && hasLookupCapacity("public")) {
+      publicLookupQueue.shift();
+      startQueuedLookup(publicWaiter);
+      continue;
+    }
+    return;
+  }
+}
+
+function acquireLookupSlot(priority: LookupPriority): Promise<() => void> {
+  if (hasLookupCapacity(priority)) {
+    reserveLookupSlot(priority);
+    return Promise.resolve(createSlotRelease(priority));
+  }
+
+  const queue = priority === "refresh" ? refreshLookupQueue : publicLookupQueue;
+  const queueLimit = priority === "refresh"
+    ? MAX_QUEUED_REFRESH_LOOKUPS
+    : MAX_QUEUED_PUBLIC_LOOKUPS;
+  if (queue.length >= queueLimit) {
+    return Promise.reject(new Error("XRPL lookup queue is full."));
+  }
+
+  return new Promise((resolve, reject) => {
+    let waiter: LookupWaiter;
+    const timer = setTimeout(() => {
+      const index = queue.indexOf(waiter);
+      if (index === -1) return;
+      queue.splice(index, 1);
+      reject(new Error("XRPL lookup queue wait timed out."));
+    }, MAX_QUEUE_WAIT_MS);
+    waiter = { priority, resolve, reject, timer };
+    queue.push(waiter);
+  });
+}
+
+async function withLookupSlot<T>(
+  priority: LookupPriority,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const release = await acquireLookupSlot(priority);
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
 
 export function tickForHermitBalance(balance: string): HermitTick {
   const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(balance);
@@ -115,16 +229,30 @@ export async function getWalletHermitTick(
   walletAddress: string,
   forceRefresh = false,
 ): Promise<HermitTickCheck> {
-  if (!forceRefresh) {
-    const cached = cachedChecks.get(walletAddress);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
-    if (cached) cachedChecks.delete(walletAddress);
-
-    const pending = pendingChecks.get(walletAddress);
-    if (pending) return pending;
+  if (forceRefresh) {
+    const pendingRefresh = pendingRefreshChecks.get(walletAddress);
+    if (pendingRefresh) return pendingRefresh;
+    return startWalletCheck(walletAddress, "refresh");
   }
 
-  const check = requestHermitTick(walletAddress)
+  const cached = cachedChecks.get(walletAddress);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  if (cached) cachedChecks.delete(walletAddress);
+
+  const pendingRefresh = pendingRefreshChecks.get(walletAddress);
+  if (pendingRefresh) return pendingRefresh;
+  const pendingPublic = pendingPublicChecks.get(walletAddress);
+  if (pendingPublic) return pendingPublic;
+  return startWalletCheck(walletAddress, "public");
+}
+
+function startWalletCheck(
+  walletAddress: string,
+  priority: LookupPriority,
+): Promise<HermitTickCheck> {
+  const registry = priority === "refresh" ? pendingRefreshChecks : pendingPublicChecks;
+  let check: Promise<HermitTickCheck>;
+  check = withLookupSlot(priority, () => requestHermitTick(walletAddress))
     .then((value) => {
       rememberCheck(walletAddress, value);
       return value;
@@ -135,9 +263,8 @@ export async function getWalletHermitTick(
       checkedAt: new Date(),
     }))
     .finally(() => {
-      if (pendingChecks.get(walletAddress) === check) pendingChecks.delete(walletAddress);
+      if (registry.get(walletAddress) === check) registry.delete(walletAddress);
     });
-
-  if (!forceRefresh) pendingChecks.set(walletAddress, check);
+  registry.set(walletAddress, check);
   return check;
 }
