@@ -309,18 +309,31 @@ export const JoinGroupResponse = zod.object({
 
 
 /**
- * @summary List recent public timeline posts for signed-in members
+ * @summary List a cursor-paginated page of public timeline posts
  */
-export const ListTimelinePostsResponseItem = zod.object({
+export const listTimelinePostsQueryLimitDefault = 30;
+export const listTimelinePostsQueryLimitMax = 50;
+
+
+
+export const ListTimelinePostsQueryParams = zod.object({
+  "cursor": zod.coerce.string().optional(),
+  "limit": zod.coerce.number().int().min(1).max(listTimelinePostsQueryLimitMax).default(listTimelinePostsQueryLimitDefault)
+})
+
+export const ListTimelinePostsResponse = zod.object({
+  "items": zod.array(zod.object({
   "id": zod.string(),
   "authorAddress": zod.string(),
   "body": zod.string(),
   "createdAt": zod.coerce.date(),
   "likeCount": zod.number().int(),
   "commentCount": zod.number().int(),
-  "likedByMe": zod.boolean()
+  "likedByMe": zod.boolean(),
+  "reportedByMe": zod.boolean()
+})),
+  "nextCursor": zod.string().nullable()
 })
-export const ListTimelinePostsResponse = zod.array(ListTimelinePostsResponseItem)
 
 
 /**
@@ -341,7 +354,31 @@ export const CreateTimelinePostResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "likeCount": zod.number().int(),
   "commentCount": zod.number().int(),
-  "likedByMe": zod.boolean()
+  "likedByMe": zod.boolean(),
+  "reportedByMe": zod.boolean()
+})
+
+
+/**
+ * @summary Report a public post or comment as the authenticated wallet
+ */
+export const reportTimelineContentBodySubjectIdMax = 120;
+
+export const reportTimelineContentBodyDetailsMax = 1000;
+
+
+
+export const ReportTimelineContentBody = zod.object({
+  "subjectType": zod.enum(['post', 'comment']),
+  "subjectId": zod.string().min(1).max(reportTimelineContentBodySubjectIdMax),
+  "category": zod.enum(['spam', 'harassment', 'hate', 'violence', 'misinformation', 'other']),
+  "details": zod.string().max(reportTimelineContentBodyDetailsMax).optional()
+})
+
+export const ReportTimelineContentResponse = zod.object({
+  "subjectType": zod.enum(['post', 'comment']),
+  "subjectId": zod.string(),
+  "reported": zod.boolean()
 })
 
 
@@ -374,20 +411,33 @@ export const UnlikeTimelinePostResponse = zod.object({
 
 
 /**
- * @summary List comments on a timeline post
+ * @summary List a cursor-paginated page of comments on a timeline post
  */
 export const ListTimelineCommentsParams = zod.object({
   "postId": zod.coerce.string()
 })
 
-export const ListTimelineCommentsResponseItem = zod.object({
+export const listTimelineCommentsQueryLimitDefault = 20;
+export const listTimelineCommentsQueryLimitMax = 50;
+
+
+
+export const ListTimelineCommentsQueryParams = zod.object({
+  "cursor": zod.coerce.string().optional(),
+  "limit": zod.coerce.number().int().min(1).max(listTimelineCommentsQueryLimitMax).default(listTimelineCommentsQueryLimitDefault)
+})
+
+export const ListTimelineCommentsResponse = zod.object({
+  "items": zod.array(zod.object({
   "id": zod.string(),
   "postId": zod.string(),
   "authorAddress": zod.string(),
   "body": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "reportedByMe": zod.boolean()
+})),
+  "nextCursor": zod.string().nullable()
 })
-export const ListTimelineCommentsResponse = zod.array(ListTimelineCommentsResponseItem)
 
 
 /**
@@ -410,7 +460,8 @@ export const CreateTimelineCommentResponse = zod.object({
   "postId": zod.string(),
   "authorAddress": zod.string(),
   "body": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "reportedByMe": zod.boolean()
 })
 
 

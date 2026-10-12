@@ -12,4 +12,5 @@ export interface TimelineComment {
   authorAddress: string;
   body: string;
   createdAt: Date;
+  reportedByMe: boolean;
 }

@@ -14,4 +14,5 @@ export interface TimelinePost {
   likeCount: number;
   commentCount: number;
   likedByMe: boolean;
+  reportedByMe: boolean;
 }

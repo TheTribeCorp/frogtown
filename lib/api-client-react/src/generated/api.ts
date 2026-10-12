@@ -32,15 +32,21 @@ import type {
   ListConversationMessagesParams,
   ListConversationsParams,
   ListGroupsParams,
+  ListTimelineCommentsParams,
+  ListTimelinePostsParams,
   Message,
   MessageInput,
   ReadReceipt,
   ReadReceiptInput,
   TimelineComment,
   TimelineCommentInput,
+  TimelineCommentsPage,
   TimelinePost,
   TimelinePostInput,
   TimelinePostReaction,
+  TimelinePostsPage,
+  TimelineReportInput,
+  TimelineReportResult,
   WalletKey,
   WalletKeyInput,
   WalletSession,
@@ -1396,20 +1402,27 @@ export const useJoinGroup = <TError = ErrorType<unknown>,
       return useMutation(getJoinGroupMutationOptions(options));
     }
 
-export const getListTimelinePostsUrl = () => {
+export const getListTimelinePostsUrl = (params?: ListTimelinePostsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/timeline/posts`
+  return stringifiedParams.length > 0 ? `/api/timeline/posts?${stringifiedParams}` : `/api/timeline/posts`
 }
 
 /**
- * @summary List recent public timeline posts for signed-in members
+ * @summary List a cursor-paginated page of public timeline posts
  */
-export const listTimelinePosts = async ( options?: Parameters<typeof customFetch>[1]): Promise<TimelinePost[]> => {
+export const listTimelinePosts = async (params?: ListTimelinePostsParams, options?: Parameters<typeof customFetch>[1]): Promise<TimelinePostsPage> => {
 
-  return customFetch<TimelinePost[]>(getListTimelinePostsUrl(),
+  return customFetch<TimelinePostsPage>(getListTimelinePostsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -1422,23 +1435,23 @@ export const listTimelinePosts = async ( options?: Parameters<typeof customFetch
 
 
 
-export const getListTimelinePostsQueryKey = () => {
+export const getListTimelinePostsQueryKey = (params?: ListTimelinePostsParams,) => {
     return [
-    `/api/timeline/posts`
+    `/api/timeline/posts`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListTimelinePostsQueryOptions = <TData = Awaited<ReturnType<typeof listTimelinePosts>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelinePosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListTimelinePostsQueryOptions = <TData = Awaited<ReturnType<typeof listTimelinePosts>>, TError = ErrorType<ErrorResponse>>(params?: ListTimelinePostsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelinePosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListTimelinePostsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListTimelinePostsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTimelinePosts>>> = ({ signal }) => listTimelinePosts({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTimelinePosts>>> = ({ signal }) => listTimelinePosts(params, { signal, ...requestOptions });
 
 
 
@@ -1452,15 +1465,15 @@ export type ListTimelinePostsQueryError = ErrorType<ErrorResponse>
 
 
 /**
- * @summary List recent public timeline posts for signed-in members
+ * @summary List a cursor-paginated page of public timeline posts
  */
 
 export function useListTimelinePosts<TData = Awaited<ReturnType<typeof listTimelinePosts>>, TError = ErrorType<ErrorResponse>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelinePosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListTimelinePostsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelinePosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListTimelinePostsQueryOptions(options)
+  const queryOptions = getListTimelinePostsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -1559,6 +1572,94 @@ export const useCreateTimelinePost = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getCreateTimelinePostMutationOptions(options));
+    }
+
+export const getReportTimelineContentUrl = () => {
+
+
+
+
+  return `/api/timeline/reports`
+}
+
+/**
+ * @summary Report a public post or comment as the authenticated wallet
+ */
+export const reportTimelineContent = async (timelineReportInput: TimelineReportInput, options?: Parameters<typeof customFetch>[1]): Promise<TimelineReportResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TimelineReportResult>(getReportTimelineContentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(timelineReportInput)
+  }
+);}
+
+
+
+
+
+export const getReportTimelineContentMutationKey = () => ['reportTimelineContent'] as const;
+
+export const getReportTimelineContentMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportTimelineContent>>, TError,ReportTimelineContentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reportTimelineContent>>, TError,ReportTimelineContentMutationVariables, TContext> => {
+
+const mutationKey = getReportTimelineContentMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reportTimelineContent>>, ReportTimelineContentMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  reportTimelineContent(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReportTimelineContentMutationResult = NonNullable<Awaited<ReturnType<typeof reportTimelineContent>>>
+    export type ReportTimelineContentMutationBody = BodyType<TimelineReportInput>
+    export type ReportTimelineContentMutationError = ErrorType<ErrorResponse>
+    export type ReportTimelineContentMutationVariables = {data: BodyType<TimelineReportInput>}
+
+    /**
+ * @summary Report a public post or comment as the authenticated wallet
+ */
+export const useReportTimelineContent = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportTimelineContent>>, TError,ReportTimelineContentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reportTimelineContent>>,
+        TError,
+        ReportTimelineContentMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReportTimelineContentMutationOptions(options));
     }
 
 export const getLikeTimelinePostUrl = (postId: string,) => {
@@ -1709,20 +1810,29 @@ export const useUnlikeTimelinePost = <TError = ErrorType<ErrorResponse>,
       return useMutation(getUnlikeTimelinePostMutationOptions(options));
     }
 
-export const getListTimelineCommentsUrl = (postId: string,) => {
+export const getListTimelineCommentsUrl = (postId: string,
+    params?: ListTimelineCommentsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/timeline/posts/${postId}/comments`
+  return stringifiedParams.length > 0 ? `/api/timeline/posts/${postId}/comments?${stringifiedParams}` : `/api/timeline/posts/${postId}/comments`
 }
 
 /**
- * @summary List comments on a timeline post
+ * @summary List a cursor-paginated page of comments on a timeline post
  */
-export const listTimelineComments = async (postId: string, options?: Parameters<typeof customFetch>[1]): Promise<TimelineComment[]> => {
+export const listTimelineComments = async (postId: string,
+    params?: ListTimelineCommentsParams, options?: Parameters<typeof customFetch>[1]): Promise<TimelineCommentsPage> => {
 
-  return customFetch<TimelineComment[]>(getListTimelineCommentsUrl(postId),
+  return customFetch<TimelineCommentsPage>(getListTimelineCommentsUrl(postId,params),
   {
     ...options,
     method: 'GET'
@@ -1735,23 +1845,25 @@ export const listTimelineComments = async (postId: string, options?: Parameters<
 
 
 
-export const getListTimelineCommentsQueryKey = (postId: string,) => {
+export const getListTimelineCommentsQueryKey = (postId: string,
+    params?: ListTimelineCommentsParams,) => {
     return [
-    `/api/timeline/posts/${postId}/comments`
+    `/api/timeline/posts/${postId}/comments`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListTimelineCommentsQueryOptions = <TData = Awaited<ReturnType<typeof listTimelineComments>>, TError = ErrorType<ErrorResponse>>(postId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelineComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListTimelineCommentsQueryOptions = <TData = Awaited<ReturnType<typeof listTimelineComments>>, TError = ErrorType<ErrorResponse>>(postId: string,
+    params?: ListTimelineCommentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelineComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListTimelineCommentsQueryKey(postId);
+  const queryKey =  queryOptions?.queryKey ?? getListTimelineCommentsQueryKey(postId,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTimelineComments>>> = ({ signal }) => listTimelineComments(postId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTimelineComments>>> = ({ signal }) => listTimelineComments(postId,params, { signal, ...requestOptions });
 
 
 
@@ -1765,15 +1877,16 @@ export type ListTimelineCommentsQueryError = ErrorType<ErrorResponse>
 
 
 /**
- * @summary List comments on a timeline post
+ * @summary List a cursor-paginated page of comments on a timeline post
  */
 
 export function useListTimelineComments<TData = Awaited<ReturnType<typeof listTimelineComments>>, TError = ErrorType<ErrorResponse>>(
- postId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelineComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ postId: string,
+    params?: ListTimelineCommentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelineComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListTimelineCommentsQueryOptions(postId,options)
+  const queryOptions = getListTimelineCommentsQueryOptions(postId,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

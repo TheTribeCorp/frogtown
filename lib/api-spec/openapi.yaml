@@ -336,16 +336,28 @@ paths:
     get:
       operationId: listTimelinePosts
       tags: [timeline]
-      summary: List recent public timeline posts for signed-in members
+      summary: List a cursor-paginated page of public timeline posts
+      parameters:
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 30
       responses:
         "200":
-          description: Recent timeline posts
+          description: A page of recent timeline posts
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/TimelinePost"
+                $ref: "#/components/schemas/TimelinePostsPage"
         "401":
           description: Wallet session missing or expired
           content:
@@ -371,6 +383,42 @@ paths:
                 $ref: "#/components/schemas/TimelinePost"
         "401":
           description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /timeline/reports:
+    post:
+      operationId: reportTimelineContent
+      tags: [timeline]
+      summary: Report a public post or comment as the authenticated wallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimelineReportInput"
+      responses:
+        "201":
+          description: Report recorded or already recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineReportResult"
+        "400":
+          description: Invalid report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Reported post or comment not found
           content:
             application/json:
               schema:
@@ -430,18 +478,29 @@ paths:
     get:
       operationId: listTimelineComments
       tags: [timeline]
-      summary: List comments on a timeline post
+      summary: List a cursor-paginated page of comments on a timeline post
       parameters:
         - $ref: "#/components/parameters/PostId"
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
       responses:
         "200":
-          description: Comments for the post
+          description: A page of recent comments
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/TimelineComment"
+                $ref: "#/components/schemas/TimelineCommentsPage"
         "401":
           description: Wallet session missing or expired
           content:
@@ -723,7 +782,19 @@ components:
           type: integer
         likedByMe:
           type: boolean
-      required: [id, authorAddress, body, createdAt, likeCount, commentCount, likedByMe]
+        reportedByMe:
+          type: boolean
+      required: [id, authorAddress, body, createdAt, likeCount, commentCount, likedByMe, reportedByMe]
+    TimelinePostsPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelinePost"
+        nextCursor:
+          type: ["string", "null"]
+      required: [items, nextCursor]
     TimelinePostInput:
       type: object
       properties:
@@ -756,7 +827,19 @@ components:
         createdAt:
           type: string
           format: date-time
-      required: [id, postId, authorAddress, body, createdAt]
+        reportedByMe:
+          type: boolean
+      required: [id, postId, authorAddress, body, createdAt, reportedByMe]
+    TimelineCommentsPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineComment"
+        nextCursor:
+          type: ["string", "null"]
+      required: [items, nextCursor]
     TimelineCommentInput:
       type: object
       properties:
@@ -765,4 +848,32 @@ components:
           minLength: 1
           maxLength: 2000
       required: [body]
+    TimelineReportInput:
+      type: object
+      properties:
+        subjectType:
+          type: string
+          enum: [post, comment]
+        subjectId:
+          type: string
+          minLength: 1
+          maxLength: 120
+        category:
+          type: string
+          enum: [spam, harassment, hate, violence, misinformation, other]
+        details:
+          type: string
+          maxLength: 1000
+      required: [subjectType, subjectId, category]
+    TimelineReportResult:
+      type: object
+      properties:
+        subjectType:
+          type: string
+          enum: [post, comment]
+        subjectId:
+          type: string
+        reported:
+          type: boolean
+      required: [subjectType, subjectId, reported]
 

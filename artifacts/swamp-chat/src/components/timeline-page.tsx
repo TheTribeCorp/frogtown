@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Heart, MessageCircle, Send, RefreshCw, Waves, Radio, ChevronDown } from 'lucide-react';
+import { Flag, Heart, MessageCircle, Send, RefreshCw, Waves, Radio, ChevronDown } from 'lucide-react';
 import {
   getListTimelineCommentsQueryKey,
   getListTimelinePostsQueryKey,
@@ -9,6 +9,7 @@ import {
   useLikeTimelinePost,
   useListTimelineComments,
   useListTimelinePosts,
+  useReportTimelineContent,
   useUnlikeTimelinePost,
   type TimelineComment,
   type TimelinePost,
@@ -45,17 +46,122 @@ function AvatarMark({ address, mine = false }: { address: string; mine?: boolean
   );
 }
 
-function TimelinePostCard({ post, walletAddress }: { post: TimelinePost; walletAddress: string }) {
+type ReportSubjectType = 'post' | 'comment';
+type ReportCategory = 'spam' | 'harassment' | 'hate' | 'violence' | 'misinformation' | 'other';
+
+function ReportControl({
+  subjectType,
+  subjectId,
+  reportedByMe,
+  onReported,
+}: {
+  subjectType: ReportSubjectType;
+  subjectId: string;
+  reportedByMe: boolean;
+  onReported: () => void;
+}) {
+  const reportMutation = useReportTimelineContent();
+  const [open, setOpen] = useState(false);
+  const [category, setCategory] = useState<ReportCategory>('spam');
+  const [details, setDetails] = useState('');
+  const [error, setError] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError('');
+    reportMutation.mutate({
+      data: { subjectType, subjectId, category, details: details.trim() || undefined },
+    }, {
+      onSuccess: () => {
+        setSubmitted(true);
+        setOpen(false);
+        onReported();
+      },
+      onError: (cause) => setError(cause instanceof Error ? cause.message : 'Report could not be sent. Try again.'),
+    });
+  };
+
+  if (reportedByMe || submitted) {
+    return <span className="inline-flex items-center gap-1.5 px-2 text-[10px] text-[hsl(var(--muted-foreground))]" aria-label="Already reported"><Flag className="size-3" /> Reported</span>;
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((value) => !value); setError(''); }}
+        aria-expanded={open}
+        className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-[10px] text-[hsl(var(--muted-foreground))] transition hover:bg-[hsl(var(--destructive)/.08)] hover:text-[hsl(var(--destructive))]"
+        data-testid={`button-report-${subjectType}-${subjectId}`}
+      >
+        <Flag className="size-3.5" /> Report
+      </button>
+      {open && (
+        <form onSubmit={submit} className="mt-2 w-[min(18rem,calc(100vw-3rem))] rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 shadow-xl" data-testid={`form-report-${subjectType}-${subjectId}`}>
+          <label className="block text-[10px] font-medium" htmlFor={`report-category-${subjectId}`}>Why are you reporting this?</label>
+          <select
+            id={`report-category-${subjectId}`}
+            value={category}
+            onChange={(event) => setCategory(event.target.value as ReportCategory)}
+            className="mt-2 w-full rounded-lg border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-2.5 py-2 text-xs"
+          >
+            <option value="spam">Spam or scams</option>
+            <option value="harassment">Harassment</option>
+            <option value="hate">Hateful content</option>
+            <option value="violence">Violence or threats</option>
+            <option value="misinformation">Misleading content</option>
+            <option value="other">Other</option>
+          </select>
+          <label className="sr-only" htmlFor={`report-details-${subjectId}`}>Optional report details</label>
+          <textarea
+            id={`report-details-${subjectId}`}
+            value={details}
+            maxLength={1000}
+            onChange={(event) => setDetails(event.target.value)}
+            placeholder="Optional context"
+            rows={2}
+            className="mt-2 w-full resize-y rounded-lg border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-2.5 py-2 text-xs"
+          />
+          {error && <p role="alert" className="mt-2 text-[10px] text-[hsl(var(--destructive))]">{error}</p>}
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" onClick={() => setOpen(false)} className="rounded-md px-2.5 py-1.5 text-[10px] hover:bg-[hsl(var(--muted))]">Cancel</button>
+            <button type="submit" disabled={reportMutation.isPending} className="rounded-md bg-[hsl(var(--destructive))] px-2.5 py-1.5 text-[10px] font-medium text-white disabled:opacity-50">
+              {reportMutation.isPending ? 'Sending…' : 'Send report'}
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function TimelinePostCard({
+  post,
+  walletAddress,
+  onPostUpdate,
+}: {
+  post: TimelinePost;
+  walletAddress: string;
+  onPostUpdate: (postId: string, update: Partial<TimelinePost>) => void;
+}) {
   const client = useQueryClient();
   const [commentOpen, setCommentOpen] = useState(false);
   const [commentBody, setCommentBody] = useState('');
   const [commentError, setCommentError] = useState('');
-  const commentsQuery = useListTimelineComments(post.id, {
+  const [commentCursor, setCommentCursor] = useState<string | undefined>();
+  const [olderCommentPages, setOlderCommentPages] = useState<TimelineComment[][]>([]);
+  const commentParams = { cursor: commentCursor, limit: 20 };
+  const commentsQuery = useListTimelineComments(post.id, commentParams, {
     query: {
       enabled: commentOpen,
-      queryKey: getListTimelineCommentsQueryKey(post.id),
+      queryKey: getListTimelineCommentsQueryKey(post.id, commentParams),
     },
   });
+  const comments = [
+    ...(commentsQuery.data?.items ?? []).slice().reverse(),
+    ...olderCommentPages.slice().reverse().flatMap((page) => page.slice().reverse()),
+  ];
   const createComment = useCreateTimelineComment();
   const likePost = useLikeTimelinePost();
   const unlikePost = useUnlikeTimelinePost();
@@ -64,7 +170,8 @@ function TimelinePostCard({ post, walletAddress }: { post: TimelinePost; walletA
   const toggleLike = () => {
     const mutation = post.likedByMe ? unlikePost : likePost;
     mutation.mutate({ postId: post.id }, {
-      onSuccess: () => {
+      onSuccess: (reaction) => {
+        onPostUpdate(post.id, { likeCount: reaction.likeCount, likedByMe: reaction.likedByMe });
         void client.invalidateQueries({ queryKey: getListTimelinePostsQueryKey() });
       },
     });
@@ -81,6 +188,9 @@ function TimelinePostCard({ post, walletAddress }: { post: TimelinePost; walletA
     createComment.mutate({ postId: post.id, data: { body } }, {
       onSuccess: () => {
         setCommentBody('');
+        setCommentCursor(undefined);
+        setOlderCommentPages([]);
+        onPostUpdate(post.id, { commentCount: post.commentCount + 1 });
         void client.invalidateQueries({ queryKey: getListTimelineCommentsQueryKey(post.id) });
         void client.invalidateQueries({ queryKey: getListTimelinePostsQueryKey() });
       },
@@ -128,6 +238,15 @@ function TimelinePostCard({ post, walletAddress }: { post: TimelinePost; walletA
             <span data-testid={`text-comment-count-${post.id}`}>{post.commentCount}</span>
             <span>{commentOpen ? 'Hide replies' : 'Comments'}</span>
           </button>
+          <ReportControl
+            subjectType="post"
+            subjectId={post.id}
+            reportedByMe={post.reportedByMe}
+            onReported={() => {
+              onPostUpdate(post.id, { reportedByMe: true });
+              void client.invalidateQueries({ queryKey: getListTimelinePostsQueryKey() });
+            }}
+          />
           <span className="mono ml-auto hidden text-[9px] uppercase tracking-[.14em] text-[hsl(var(--muted-foreground)/.6)] sm:block">public signal</span>
         </div>
       </div>
@@ -144,9 +263,25 @@ function TimelinePostCard({ post, walletAddress }: { post: TimelinePost; walletA
             </div>
           ) : (
             <div className="space-y-4" data-testid={`list-comments-${post.id}`}>
-              {(commentsQuery.data ?? []).length === 0 ? (
+              {commentsQuery.data?.nextCursor && (
+                <button
+                  type="button"
+                  disabled={commentsQuery.isFetching}
+                  onClick={() => {
+                    const page = commentsQuery.data;
+                    if (!page?.nextCursor) return;
+                    setOlderCommentPages((current) => [...current, page.items]);
+                    setCommentCursor(page.nextCursor);
+                  }}
+                  className="w-full rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-[10px] font-medium text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.06)] disabled:opacity-50"
+                  data-testid={`button-load-older-replies-${post.id}`}
+                >
+                  {commentsQuery.isFetching ? 'Loading replies…' : 'Load older replies'}
+                </button>
+              )}
+              {comments.length === 0 ? (
                 <p className="py-1 text-xs text-[hsl(var(--muted-foreground))]" data-testid={`empty-comments-${post.id}`}>No replies yet. Start the conversation.</p>
-              ) : (commentsQuery.data as TimelineComment[]).map((comment) => (
+              ) : comments.map((comment) => (
                 <div className="flex gap-3" key={comment.id} data-testid={`item-comment-${comment.id}`}>
                   <AvatarMark address={comment.authorAddress} mine={comment.authorAddress === walletAddress} />
                   <div className="min-w-0 flex-1 rounded-xl border border-[hsl(var(--border)/.8)] bg-[hsl(var(--card)/.75)] px-3.5 py-3">
@@ -155,6 +290,16 @@ function TimelinePostCard({ post, walletAddress }: { post: TimelinePost; walletA
                       <time className="mono text-[9px] text-[hsl(var(--muted-foreground))]" dateTime={comment.createdAt} data-testid={`time-comment-created-${comment.id}`}>{timeLabel(comment.createdAt)}</time>
                     </div>
                     <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-[hsl(var(--foreground)/.85)]" data-testid={`text-comment-body-${comment.id}`}>{comment.body}</p>
+                    <div className="mt-2 flex justify-end">
+                      <ReportControl
+                        subjectType="comment"
+                        subjectId={comment.id}
+                        reportedByMe={comment.reportedByMe}
+                        onReported={() => {
+                          void client.invalidateQueries({ queryKey: getListTimelineCommentsQueryKey(post.id) });
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -191,16 +336,46 @@ function TimelinePostCard({ post, walletAddress }: { post: TimelinePost; walletA
 
 export function TimelinePage({ walletAddress }: { walletAddress: string }) {
   const client = useQueryClient();
-  const postsQuery = useListTimelinePosts({
+  const [postCursor, setPostCursor] = useState<string | undefined>();
+  const [postPages, setPostPages] = useState<Array<{ cursor?: string; items: TimelinePost[] }>>([]);
+  const postParams = { cursor: postCursor, limit: 30 };
+  const postsQuery = useListTimelinePosts(postParams, {
     query: {
-      queryKey: getListTimelinePostsQueryKey(),
+      queryKey: getListTimelinePostsQueryKey(postParams),
       refetchInterval: 30000,
     },
   });
+  useEffect(() => {
+    const page = postsQuery.data;
+    if (!page) return;
+    setPostPages((current) => {
+      const index = current.findIndex((item) => item.cursor === postCursor);
+      if (index < 0) return [...current, { cursor: postCursor, items: page.items }];
+      const next = [...current];
+      next[index] = { cursor: postCursor, items: page.items };
+      return next;
+    });
+  }, [postsQuery.data, postCursor]);
   const createPost = useCreateTimelinePost();
   const [body, setBody] = useState('');
   const [composerError, setComposerError] = useState('');
-  const posts = postsQuery.data ?? [];
+  const posts = postPages.length
+    ? postPages.flatMap((page) => page.items)
+    : postsQuery.data?.items ?? [];
+
+  const updatePost = (postId: string, update: Partial<TimelinePost>) => {
+    setPostPages((current) => {
+      const pages = current.length
+        ? current
+        : postsQuery.data
+          ? [{ cursor: postCursor, items: postsQuery.data.items }]
+          : [];
+      return pages.map((page) => ({
+        ...page,
+        items: page.items.map((post) => post.id === postId ? { ...post, ...update } : post),
+      }));
+    });
+  };
 
   const submitPost = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -213,6 +388,8 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
     createPost.mutate({ data: { body: text } }, {
       onSuccess: () => {
         setBody('');
+        setPostCursor(undefined);
+        setPostPages([]);
         void client.invalidateQueries({ queryKey: getListTimelinePostsQueryKey() });
       },
       onError: (error) => setComposerError(error instanceof Error ? error.message : 'Your post could not be published. Try again.'),
@@ -263,16 +440,16 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
 
           <div className="mb-3 flex items-center justify-between px-1">
             <h2 className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]" data-testid="text-feed-heading">Fresh from the marsh</h2>
-            <button type="button" onClick={() => void postsQuery.refetch()} disabled={postsQuery.isFetching} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] text-[hsl(var(--muted-foreground))] transition hover:bg-[hsl(var(--card))] hover:text-[hsl(var(--foreground))] disabled:opacity-55" aria-label="Refresh timeline" data-testid="button-refresh-timeline">
+            <button type="button" onClick={() => { setPostCursor(undefined); setPostPages([]); void client.invalidateQueries({ queryKey: getListTimelinePostsQueryKey() }); }} disabled={postsQuery.isFetching} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] text-[hsl(var(--muted-foreground))] transition hover:bg-[hsl(var(--card))] hover:text-[hsl(var(--foreground))] disabled:opacity-55" aria-label="Refresh timeline" data-testid="button-refresh-timeline">
               <RefreshCw className={`size-3 ${postsQuery.isFetching ? 'animate-spin' : ''}`} /> Refresh
             </button>
           </div>
 
-          {postsQuery.isLoading ? (
+          {postsQuery.isLoading && postPages.length === 0 ? (
             <div className="space-y-3" aria-label="Loading timeline" data-testid="loading-timeline">
               {[0, 1, 2].map((item) => <div key={item} className="animate-pulse rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.7)] p-5" data-testid={`skeleton-post-${item}`}><div className="flex gap-3"><div className="size-10 rounded-xl bg-[hsl(var(--muted))]" /><div className="flex-1 pt-1"><div className="h-3 w-1/3 rounded bg-[hsl(var(--muted))]" /><div className="mt-5 h-3 w-full rounded bg-[hsl(var(--muted))]" /><div className="mt-2 h-3 w-4/5 rounded bg-[hsl(var(--muted))]" /></div></div></div>)}
             </div>
-          ) : postsQuery.isError ? (
+          ) : postsQuery.isError && postPages.length === 0 ? (
             <section className="rounded-[1.25rem] border border-[hsl(var(--destructive)/.22)] bg-[hsl(var(--card)/.82)] p-6 text-center" role="alert" data-testid="error-timeline">
               <div className="mx-auto flex size-11 items-center justify-center rounded-xl bg-[hsl(var(--destructive)/.08)] text-[hsl(var(--destructive))]"><Radio className="size-5" /></div>
               <h3 className="mt-4 text-base font-semibold tracking-tight">The current went quiet.</h3>
@@ -290,7 +467,18 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
             </section>
           ) : (
             <div className="space-y-3.5" data-testid="list-timeline-posts">
-              {posts.map((post) => <TimelinePostCard key={post.id} post={post} walletAddress={walletAddress} />)}
+              {posts.map((post) => <TimelinePostCard key={post.id} post={post} walletAddress={walletAddress} onPostUpdate={updatePost} />)}
+              {postsQuery.data?.nextCursor && (
+                <button
+                  type="button"
+                  disabled={postsQuery.isFetching}
+                  onClick={() => setPostCursor(postsQuery.data?.nextCursor ?? undefined)}
+                  className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] px-4 py-3 text-xs font-medium text-[hsl(var(--primary))] transition hover:bg-[hsl(var(--primary)/.06)] disabled:opacity-50"
+                  data-testid="button-load-older-posts"
+                >
+                  {postsQuery.isFetching ? 'Loading posts…' : 'Load older posts'}
+                </button>
+              )}
             </div>
           )}
         </main>

@@ -92,6 +92,7 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/conversations/wallet-test/read", "POST", { messageId: "message-test" }],
     ["/api/conversations/wallet-test/messages", "POST", { senderAddress: walletA, messageId: "11111111-1111-4111-8111-111111111111", body: "e2ee:v1:test" }],
     ["/api/conversations/wallet-test/keys", "GET"],
+    ["/api/events", "GET"],
     ["/api/wallet/keys/" + walletA, "GET"],
     ["/api/wallet/keys", "PUT", { publicKey: "not-a-key" }],
     ["/api/groups?walletAddress=" + walletA, "GET"],
@@ -103,6 +104,7 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/timeline/posts/post-test/likes", "DELETE"],
     ["/api/timeline/posts/post-test/comments", "GET"],
     ["/api/timeline/posts/post-test/comments", "POST", { body: "comment" }],
+    ["/api/timeline/reports", "POST", { subjectType: "post", subjectId: "post-test", category: "spam" }],
   ];
 
   for (const [pathname, method, body] of unauthenticated) {
@@ -124,4 +126,47 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     const response = await request(pathname, { method, cookie: validCookie, body });
     assert.equal(response.status, 403, `${method} ${pathname} should reject a wallet different from the session`);
   }
+});
+
+test("authenticated non-members cannot fetch, decrypt, send, or mark another conversation read", async () => {
+  const cookie = sessionCookie(walletA);
+  const conversationId = "non-member-authorization-check";
+  const requests = [
+    ["/api/conversations/" + conversationId + "/messages?walletAddress=" + walletA, "GET"],
+    ["/api/conversations/" + conversationId + "/keys", "GET"],
+    ["/api/conversations/" + conversationId + "/read", "POST", { messageId: "33333333-3333-4333-8333-333333333333" }],
+    ["/api/conversations/" + conversationId + "/messages", "POST", {
+      senderAddress: walletA,
+      messageId: "44444444-4444-4444-8444-444444444444",
+      body: "e2ee:v1:recipient-encrypted-payload",
+    }],
+  ];
+
+  for (const [pathname, method, body] of requests) {
+    const response = await request(pathname, { method, cookie, body });
+    assert.equal(response.status, 403, `${method} ${pathname} should require conversation membership`);
+  }
+});
+
+test("timeline paging rejects invalid cursors and reports require an existing subject", async () => {
+  const cookie = sessionCookie(walletA);
+  const invalidLimit = await request("/api/timeline/posts?limit=51", { cookie });
+  assert.equal(invalidLimit.status, 400);
+
+  const invalidCursor = await request("/api/timeline/posts?cursor=not-a-valid-cursor", { cookie });
+  assert.equal(invalidCursor.status, 400);
+
+  const invalidReport = await request("/api/timeline/reports", {
+    method: "POST",
+    cookie,
+    body: { subjectType: "post", subjectId: "missing-post", category: "not-a-category" },
+  });
+  assert.equal(invalidReport.status, 400);
+
+  const missingSubject = await request("/api/timeline/reports", {
+    method: "POST",
+    cookie,
+    body: { subjectType: "post", subjectId: "missing-post", category: "spam" },
+  });
+  assert.equal(missingSubject.status, 404);
 });

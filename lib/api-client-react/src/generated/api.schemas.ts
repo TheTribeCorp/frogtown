@@ -146,6 +146,13 @@ export interface TimelinePost {
   likeCount: number;
   commentCount: number;
   likedByMe: boolean;
+  reportedByMe: boolean;
+}
+
+export interface TimelinePostsPage {
+  items: TimelinePost[];
+  /** @nullable */
+  nextCursor: string | null;
 }
 
 export interface TimelinePostInput {
@@ -168,6 +175,13 @@ export interface TimelineComment {
   authorAddress: string;
   body: string;
   createdAt: string;
+  reportedByMe: boolean;
+}
+
+export interface TimelineCommentsPage {
+  items: TimelineComment[];
+  /** @nullable */
+  nextCursor: string | null;
 }
 
 export interface TimelineCommentInput {
@@ -176,6 +190,52 @@ export interface TimelineCommentInput {
      * @maxLength 2000
      */
   body: string;
+}
+
+export type TimelineReportInputSubjectType = typeof TimelineReportInputSubjectType[keyof typeof TimelineReportInputSubjectType];
+
+
+export const TimelineReportInputSubjectType = {
+  post: 'post',
+  comment: 'comment',
+} as const;
+
+export type TimelineReportInputCategory = typeof TimelineReportInputCategory[keyof typeof TimelineReportInputCategory];
+
+
+export const TimelineReportInputCategory = {
+  spam: 'spam',
+  harassment: 'harassment',
+  hate: 'hate',
+  violence: 'violence',
+  misinformation: 'misinformation',
+  other: 'other',
+} as const;
+
+export interface TimelineReportInput {
+  subjectType: TimelineReportInputSubjectType;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  subjectId: string;
+  category: TimelineReportInputCategory;
+  /** @maxLength 1000 */
+  details?: string;
+}
+
+export type TimelineReportResultSubjectType = typeof TimelineReportResultSubjectType[keyof typeof TimelineReportResultSubjectType];
+
+
+export const TimelineReportResultSubjectType = {
+  post: 'post',
+  comment: 'comment',
+} as const;
+
+export interface TimelineReportResult {
+  subjectType: TimelineReportResultSubjectType;
+  subjectId: string;
+  reported: boolean;
 }
 
 export type WalletAddressParameter = string;
@@ -199,5 +259,23 @@ export type ListGroupsParams = {
  * @minLength 25
  */
 walletAddress: WalletAddressParameter;
+};
+
+export type ListTimelinePostsParams = {
+cursor?: string;
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
+};
+
+export type ListTimelineCommentsParams = {
+cursor?: string;
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
 };
 

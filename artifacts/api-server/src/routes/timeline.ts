@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { Router, type IRouter, type Request, type Response } from "express";
 import {
   CreateTimelineCommentBody,
@@ -10,13 +10,18 @@ import {
   LikeTimelinePostParams,
   LikeTimelinePostResponse,
   ListTimelineCommentsParams,
+  ListTimelineCommentsQueryParams,
   ListTimelineCommentsResponse,
+  ListTimelinePostsQueryParams,
   ListTimelinePostsResponse,
+  ReportTimelineContentBody,
+  ReportTimelineContentResponse,
   UnlikeTimelinePostParams,
   UnlikeTimelinePostResponse,
 } from "@workspace/api-zod";
 import {
   db,
+  timelineContentReportsTable,
   timelinePostCommentsTable,
   timelinePostLikesTable,
   timelinePostsTable,
@@ -24,6 +29,35 @@ import {
 import { requireAuth } from "./swamp";
 
 const router: IRouter = Router();
+const DEFAULT_POST_PAGE_SIZE = 30;
+const DEFAULT_COMMENT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 50;
+
+type TimelineCursor = { createdAt: Date; id: string };
+
+function encodeCursor(value: TimelineCursor) {
+  return Buffer.from(JSON.stringify({
+    createdAt: value.createdAt.toISOString(),
+    id: value.id,
+  })).toString("base64url");
+}
+
+function decodeCursor(value: string | undefined): { cursor: TimelineCursor | null; valid: boolean } {
+  if (!value) return { cursor: null, valid: true };
+  try {
+    const decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
+      createdAt?: unknown;
+      id?: unknown;
+    };
+    if (typeof decoded.createdAt !== "string" || typeof decoded.id !== "string" || !decoded.id
+      || decoded.id.length > 120) return { cursor: null, valid: false };
+    const createdAt = new Date(decoded.createdAt);
+    if (Number.isNaN(createdAt.getTime())) return { cursor: null, valid: false };
+    return { cursor: { createdAt, id: decoded.id }, valid: true };
+  } catch {
+    return { cursor: null, valid: false };
+  }
+}
 
 async function postExists(postId: string) {
   const rows = await db
@@ -37,7 +71,7 @@ async function postExists(postId: string) {
 async function serializePosts(rows: (typeof timelinePostsTable.$inferSelect)[], walletAddress: string) {
   if (rows.length === 0) return [];
   const postIds = rows.map((row) => row.id);
-  const [likeCounts, commentCounts, ownLikes] = await Promise.all([
+  const [likeCounts, commentCounts, ownLikes, ownReports] = await Promise.all([
     db
       .select({ postId: timelinePostLikesTable.postId, value: sql<number>`count(*)::int` })
       .from(timelinePostLikesTable)
@@ -55,15 +89,45 @@ async function serializePosts(rows: (typeof timelinePostsTable.$inferSelect)[], 
         inArray(timelinePostLikesTable.postId, postIds),
         eq(timelinePostLikesTable.walletAddress, walletAddress),
       )),
+    db
+      .select({ subjectId: timelineContentReportsTable.subjectId })
+      .from(timelineContentReportsTable)
+      .where(and(
+        eq(timelineContentReportsTable.subjectType, "post"),
+        inArray(timelineContentReportsTable.subjectId, postIds),
+        eq(timelineContentReportsTable.walletAddress, walletAddress),
+      )),
   ]);
   const likesByPost = new Map(likeCounts.map((row) => [row.postId, row.value]));
   const commentsByPost = new Map(commentCounts.map((row) => [row.postId, row.value]));
   const likedPostIds = new Set(ownLikes.map((row) => row.postId));
+  const reportedPostIds = new Set(ownReports.map((row) => row.subjectId));
   return rows.map((row) => ({
     ...row,
     likeCount: likesByPost.get(row.id) ?? 0,
     commentCount: commentsByPost.get(row.id) ?? 0,
     likedByMe: likedPostIds.has(row.id),
+    reportedByMe: reportedPostIds.has(row.id),
+  }));
+}
+
+async function serializeComments(
+  rows: (typeof timelinePostCommentsTable.$inferSelect)[],
+  walletAddress: string,
+) {
+  if (rows.length === 0) return [];
+  const ownReports = await db
+    .select({ subjectId: timelineContentReportsTable.subjectId })
+    .from(timelineContentReportsTable)
+    .where(and(
+      eq(timelineContentReportsTable.subjectType, "comment"),
+      inArray(timelineContentReportsTable.subjectId, rows.map((row) => row.id)),
+      eq(timelineContentReportsTable.walletAddress, walletAddress),
+    ));
+  const reportedCommentIds = new Set(ownReports.map((row) => row.subjectId));
+  return rows.map((row) => ({
+    ...row,
+    reportedByMe: reportedCommentIds.has(row.id),
   }));
 }
 
@@ -96,13 +160,37 @@ function invalidBody(res: Response, message: string) {
 router.get("/timeline/posts", async (req, res) => {
   const walletAddress = requireAuth(req, res);
   if (!walletAddress) return;
+  const query = ListTimelinePostsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    invalidBody(res, "Timeline page size or cursor is invalid.");
+    return;
+  }
+  const { cursor, valid } = decodeCursor(query.data.cursor);
+  if (!valid) {
+    invalidBody(res, "Timeline cursor is invalid.");
+    return;
+  }
   try {
+    const createdAtBucket = sql<Date>`date_trunc('milliseconds', ${timelinePostsTable.createdAt})`;
     const rows = await db
       .select()
       .from(timelinePostsTable)
-      .orderBy(desc(timelinePostsTable.createdAt), desc(timelinePostsTable.id))
-      .limit(50);
-    res.json(ListTimelinePostsResponse.parse(await serializePosts(rows, walletAddress)));
+      .where(cursor
+        ? or(
+          lt(createdAtBucket, cursor.createdAt),
+          and(eq(createdAtBucket, cursor.createdAt), lt(timelinePostsTable.id, cursor.id)),
+        )
+        : undefined)
+      .orderBy(desc(createdAtBucket), desc(timelinePostsTable.id))
+      .limit(Math.min(query.data.limit ?? DEFAULT_POST_PAGE_SIZE, MAX_PAGE_SIZE) + 1);
+    const hasMore = rows.length > Math.min(query.data.limit ?? DEFAULT_POST_PAGE_SIZE, MAX_PAGE_SIZE);
+    const pageRows = rows.slice(0, Math.min(query.data.limit ?? DEFAULT_POST_PAGE_SIZE, MAX_PAGE_SIZE));
+    const items = await serializePosts(pageRows, walletAddress);
+    const last = pageRows[pageRows.length - 1];
+    res.json(ListTimelinePostsResponse.parse({
+      items,
+      nextCursor: hasMore && last ? encodeCursor({ createdAt: last.createdAt, id: last.id }) : null,
+    }));
   } catch {
     res.status(500).json({ error: "Unable to load the timeline." });
   }
@@ -185,19 +273,88 @@ router.get("/timeline/posts/:postId/comments", async (req, res) => {
     invalidBody(res, "A valid post ID is required.");
     return;
   }
+  const query = ListTimelineCommentsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    invalidBody(res, "Reply page size or cursor is invalid.");
+    return;
+  }
+  const { cursor, valid } = decodeCursor(query.data.cursor);
+  if (!valid) {
+    invalidBody(res, "Reply cursor is invalid.");
+    return;
+  }
   try {
     if (!(await postExists(parsed.data.postId))) {
       res.status(404).json({ error: "Post not found." });
       return;
     }
+    const createdAtBucket = sql<Date>`date_trunc('milliseconds', ${timelinePostCommentsTable.createdAt})`;
+    const limit = Math.min(query.data.limit ?? DEFAULT_COMMENT_PAGE_SIZE, MAX_PAGE_SIZE);
     const comments = await db
       .select()
       .from(timelinePostCommentsTable)
-      .where(eq(timelinePostCommentsTable.postId, parsed.data.postId))
-      .orderBy(asc(timelinePostCommentsTable.createdAt), asc(timelinePostCommentsTable.id));
-    res.json(ListTimelineCommentsResponse.parse(comments));
+      .where(and(
+        eq(timelinePostCommentsTable.postId, parsed.data.postId),
+        cursor
+          ? or(
+            lt(createdAtBucket, cursor.createdAt),
+            and(eq(createdAtBucket, cursor.createdAt), lt(timelinePostCommentsTable.id, cursor.id)),
+          )
+          : undefined,
+      ))
+      .orderBy(desc(createdAtBucket), desc(timelinePostCommentsTable.id))
+      .limit(limit + 1);
+    const hasMore = comments.length > limit;
+    const pageRows = comments.slice(0, limit);
+    const items = await serializeComments(pageRows, walletAddress);
+    const last = pageRows[pageRows.length - 1];
+    res.json(ListTimelineCommentsResponse.parse({
+      items,
+      nextCursor: hasMore && last ? encodeCursor({ createdAt: last.createdAt, id: last.id }) : null,
+    }));
   } catch {
     res.status(500).json({ error: "Unable to load comments." });
+  }
+});
+
+router.post("/timeline/reports", async (req, res) => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const parsed = ReportTimelineContentBody.safeParse(req.body);
+  if (!parsed.success) {
+    invalidBody(res, "Select a report reason and a valid post or comment.");
+    return;
+  }
+  const { subjectType, subjectId, category, details } = parsed.data;
+  try {
+    const exists = subjectType === "post"
+      ? await postExists(subjectId)
+      : Boolean((await db
+        .select({ id: timelinePostCommentsTable.id })
+        .from(timelinePostCommentsTable)
+        .where(eq(timelinePostCommentsTable.id, subjectId))
+        .limit(1))[0]);
+    if (!exists) {
+      res.status(404).json({ error: "Reported content was not found." });
+      return;
+    }
+    await db
+      .insert(timelineContentReportsTable)
+      .values({
+        subjectType,
+        subjectId,
+        walletAddress,
+        category,
+        details: details?.trim() || null,
+      })
+      .onConflictDoNothing();
+    res.status(201).json(ReportTimelineContentResponse.parse({
+      subjectType,
+      subjectId,
+      reported: true,
+    }));
+  } catch {
+    res.status(500).json({ error: "Unable to record this report." });
   }
 });
 
@@ -228,7 +385,10 @@ router.post("/timeline/posts/:postId/comments", async (req, res) => {
         body: body.data.body.trim(),
       })
       .returning();
-    res.status(201).json(CreateTimelineCommentResponse.parse(inserted[0]));
+    res.status(201).json(CreateTimelineCommentResponse.parse({
+      ...inserted[0],
+      reportedByMe: false,
+    }));
   } catch {
     res.status(500).json({ error: "Unable to publish this comment." });
   }

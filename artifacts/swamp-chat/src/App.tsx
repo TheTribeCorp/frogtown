@@ -60,6 +60,7 @@ import {
   useSendMessage,
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { EncryptionRecoveryPanel } from '@/components/encryption-recovery';
 import { TimelinePage } from '@/components/timeline-page';
 import {
   conversationSafetyCode,
@@ -261,6 +262,7 @@ function Sidebar({ mobileOpen, onClose, onNewChat }: { mobileOpen: boolean; onCl
       </div>
       <div className="mt-auto space-y-3">
         <Link href="/settings" onClick={onClose} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[hsl(var(--sidebar-foreground)/.62)] transition hover:bg-[hsl(var(--sidebar-foreground)/.06)] hover:text-[hsl(var(--sidebar-foreground))]" data-testid="link-settings"><Settings2 className="size-[17px]" /><span>Settings</span></Link>
+        <Link href="/settings/recovery" onClick={onClose} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[hsl(var(--sidebar-foreground)/.62)] transition hover:bg-[hsl(var(--sidebar-foreground)/.06)] hover:text-[hsl(var(--sidebar-foreground))]" data-testid="link-key-recovery"><KeyRound className="size-[17px]" /><span>Chat recovery</span></Link>
         {walletAddress && <WalletPill address={walletAddress} />}
         <button onClick={disconnect} className="flex w-full items-center gap-2 px-2 text-xs text-[hsl(var(--sidebar-foreground)/.38)] transition hover:text-[hsl(var(--accent))]" data-testid="button-disconnect"><LogOut className="size-3.5" /> Disconnect wallet</button>
       </div>
@@ -320,7 +322,7 @@ function WalletEntry() {
     if (status?.status === 'connected' && status.walletAddress) {
       const requestedPath = window.sessionStorage.getItem('frogtown-signin-return-to');
       window.sessionStorage.removeItem('frogtown-signin-return-to');
-      const destination = requestedPath && ['/', '/groups', '/timeline', '/settings'].includes(requestedPath)
+      const destination = requestedPath && ['/', '/groups', '/timeline', '/settings', '/settings/recovery'].includes(requestedPath)
         ? requestedPath
         : '/';
       setWalletAddress(status.walletAddress);
@@ -711,12 +713,28 @@ function RouterView() {
     }
   }, [location, walletAddress]);
   if (!walletAddress && location !== '/') return <LockedPage title={location === '/groups' ? 'Group discovery' : location === '/timeline' ? 'Community timeline' : 'Settings'} />;
-  return <Switch><Route path="/" component={() => <HomePage />} /><Route path="/groups" component={() => <GroupsPage onOpenGroup={(id) => { window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, id); setLocation('/'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: id })), 0); }} />} /><Route path="/timeline" component={() => <TimelineRoute />} /><Route path="/settings" component={SettingsPage} /><Route component={() => <HomePage />} /></Switch>;
+  return <Switch><Route path="/" component={() => <HomePage />} /><Route path="/groups" component={() => <GroupsPage onOpenGroup={(id) => { window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, id); setLocation('/'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: id })), 0); }} />} /><Route path="/timeline" component={() => <TimelineRoute />} /><Route path="/settings/recovery" component={() => <EncryptionRecoveryRoute />} /><Route path="/settings" component={SettingsPage} /><Route component={() => <HomePage />} /></Switch>;
 }
 
 function TimelineRoute() {
   const { walletAddress } = useWallet();
   return <AppShell title="Timeline" eyebrow="public / community"><TimelinePage walletAddress={walletAddress} /></AppShell>;
+}
+
+function EncryptionRecoveryRoute() {
+  const { walletAddress } = useWallet();
+  return (
+    <AppShell title="Chat recovery" eyebrow="encrypted keys / device transfer">
+      <div className="mx-auto max-w-[900px] space-y-5 p-5 md:p-8 lg:p-10">
+        <div>
+          <p className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">device security</p>
+          <h2 className="mt-3 text-4xl font-semibold tracking-[-.07em]">Keep your key close.</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[hsl(var(--muted-foreground))]">Create an encrypted backup before changing browsers or devices. The recovery passphrase is never sent to Frogtown.</p>
+        </div>
+        <EncryptionRecoveryPanel walletAddress={walletAddress} />
+      </div>
+    </AppShell>
+  );
 }
 
 function KeyBootstrapGate({ children }: { children: ReactNode }) {
@@ -746,7 +764,34 @@ function KeyBootstrapGate({ children }: { children: ReactNode }) {
   }, [walletAddress, attempt]);
 
   if (!walletAddress || status === 'ready') return <>{children}</>;
-  return <div className="swamp-app noise flex min-h-[100dvh] items-center justify-center p-6"><section className="w-full max-w-lg rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.9)] p-7 shadow-xl"><div className="flex size-12 items-center justify-center rounded-2xl bg-[hsl(var(--primary)/.12)] text-[hsl(var(--primary))]"><LockKeyhole className="size-5" /></div><p className="mono mt-6 text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">device encryption setup</p><h1 className="mt-2 text-3xl font-semibold tracking-[-.06em]">{status === 'error' ? 'Encryption needs attention.' : 'Preparing your private key.'}</h1>{status === 'loading' ? <p className="mt-3 flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]"><RefreshCw className="size-4 animate-spin" /> Creating or checking this device’s encryption key…</p> : <p className="mt-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]" data-testid="status-encryption-bootstrap-error">{error}</p>}<p className="mt-4 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Your private key stays in this browser’s local key vault and is never sent to Frogtown. Key backup and transfer to another device are not available yet. Keep this browser’s site data to retain access to encrypted messages.</p>{status === 'error' && <div className="mt-6 flex gap-3"><button onClick={() => setAttempt((value) => value + 1)} className="rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))]" data-testid="button-retry-encryption-setup">Try again</button><button onClick={disconnect} className="rounded-xl border border-[hsl(var(--border))] px-4 py-3 text-sm font-medium hover:bg-[hsl(var(--muted))]" data-testid="button-disconnect-encryption-setup">Disconnect</button></div>}</section></div>;
+  return (
+    <div className="swamp-app noise flex min-h-[100dvh] items-center justify-center p-4">
+      <section className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.95)] p-5 shadow-xl sm:p-7">
+        <div className="flex size-12 items-center justify-center rounded-2xl bg-[hsl(var(--primary)/.12)] text-[hsl(var(--primary))]"><LockKeyhole className="size-5" /></div>
+        <p className="mono mt-6 text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">device encryption setup</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-[-.06em]">{status === 'error' ? 'Encryption needs attention.' : 'Preparing your private key.'}</h1>
+        {status === 'loading'
+          ? <p className="mt-3 flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]"><RefreshCw className="size-4 animate-spin" /> Creating or checking this device’s encryption key…</p>
+          : <p className="mt-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]" data-testid="status-encryption-bootstrap-error">{error}</p>}
+        <p className="mt-4 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Your private key stays in this browser and is never sent to Frogtown. Restore an encrypted backup to access chats on this device. Keep the recovery file and passphrase safe.</p>
+        {status === 'error' && (
+          <>
+            <div className="mt-5 flex gap-3">
+              <button onClick={() => setAttempt((value) => value + 1)} className="rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))]" data-testid="button-retry-encryption-setup">Try again</button>
+              <button onClick={disconnect} className="rounded-xl border border-[hsl(var(--border))] px-4 py-3 text-sm font-medium hover:bg-[hsl(var(--muted))]" data-testid="button-disconnect-encryption-setup">Disconnect</button>
+            </div>
+            <div className="mt-5">
+              <EncryptionRecoveryPanel
+                walletAddress={walletAddress}
+                restoreOnly
+                onRestored={() => { setStatus('loading'); setAttempt((value) => value + 1); }}
+              />
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
 }
 
 function AuthGate() {
