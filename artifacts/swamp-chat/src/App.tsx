@@ -185,9 +185,9 @@ function errorMessage(error: unknown, fallback: string) {
 
 function Notice({ message, tone = 'info', onClose }: { message: string; tone?: 'info' | 'error' | 'success'; onClose: () => void }) {
   const tones = {
-    info: 'border-[hsl(166_48%_39%/.25)] bg-[hsl(166_48%_39%/.1)] text-[hsl(174_29%_18%)]',
-    error: 'border-[hsl(3_66%_51%/.28)] bg-[hsl(3_66%_51%/.1)] text-[hsl(3_50%_29%)]',
-    success: 'border-[hsl(42_74%_45%/.35)] bg-[hsl(42_74%_61%/.22)] text-[hsl(174_29%_18%)]',
+    info: 'border-[hsl(var(--primary)/.25)] bg-[hsl(var(--primary)/.1)] text-[hsl(var(--foreground))]',
+    error: 'border-[hsl(var(--destructive)/.28)] bg-[hsl(var(--destructive)/.1)] text-[hsl(var(--destructive))]',
+    success: 'border-[hsl(var(--primary)/.3)] bg-[hsl(var(--primary)/.12)] text-[hsl(var(--foreground))]',
   };
   return (
     <div className={`fixed bottom-5 right-5 z-50 flex max-w-[min(92vw,380px)] items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg ${tones[tone]}`} data-testid="status-notice">
@@ -201,9 +201,9 @@ function Notice({ message, tone = 'info', onClose }: { message: string; tone?: '
 function FrogtownMark({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`flex items-center gap-2.5 ${compact ? '' : 'select-none'}`}>
-      <div className="relative flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--secondary))] text-[hsl(var(--foreground))] shadow-[3px_3px_0_hsl(var(--accent))]">
+      <div className="relative flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] shadow-[3px_3px_0_hsl(var(--accent))]">
         <span className="mono text-lg font-medium tracking-[-.2em]">≈</span>
-        <span className="absolute -bottom-1 -right-1 size-2 rounded-full bg-[hsl(var(--accent))]" />
+        <span className="absolute -bottom-1 -right-1 size-2 rounded-full bg-[hsl(var(--sidebar-accent))]" />
       </div>
       {!compact && <span className="text-lg font-bold tracking-[-.04em] text-[hsl(var(--sidebar-foreground))]">Frogtown</span>}
     </div>
@@ -213,14 +213,14 @@ function FrogtownMark({ compact = false }: { compact?: boolean }) {
 function WalletPill({ address, onClick }: { address: string; onClick?: () => void }) {
   const body = (
     <>
-      <span className="relative flex size-7 items-center justify-center rounded-lg bg-[hsl(var(--secondary)/.18)] text-[hsl(var(--secondary))]">
-        <span className="size-2 rounded-full bg-[hsl(var(--secondary))] pulse-dot" />
+      <span className="relative flex size-7 items-center justify-center rounded-lg bg-[hsl(var(--sidebar-accent)/.18)] text-[hsl(var(--sidebar-accent))]">
+        <span className="size-2 rounded-full bg-[hsl(var(--sidebar-accent))] pulse-dot" />
       </span>
       <span className="min-w-0 text-left">
         <span className="block text-[9px] uppercase tracking-[.17em] text-[hsl(var(--sidebar-foreground)/.52)]">wallet identity</span>
         <span className="mono block truncate text-xs text-[hsl(var(--sidebar-foreground))]" data-testid="text-sidebar-wallet">{shortAddress(address)}</span>
       </span>
-      <BadgeCheck className="ml-auto size-4 text-[hsl(var(--secondary))]" />
+      <BadgeCheck className="ml-auto size-4 text-[hsl(var(--sidebar-accent))]" />
     </>
   );
   return onClick ? (
@@ -252,10 +252,10 @@ function Sidebar({ mobileOpen, onClose, onNewChat }: { mobileOpen: boolean; onCl
       <div className="mt-8">
         <div className="flex items-center justify-between px-2">
           <p className="text-[10px] font-medium uppercase tracking-[.2em] text-[hsl(var(--sidebar-foreground)/.42)]">your space</p>
-          <button className="rounded-md p-1 text-[hsl(var(--sidebar-foreground)/.42)] hover:bg-[hsl(var(--sidebar-foreground)/.08)] hover:text-[hsl(var(--secondary))]" onClick={onNewChat} aria-label="Start a direct chat" data-testid="button-sidebar-new-chat"><Plus className="size-4" /></button>
+          <button className="rounded-md p-1 text-[hsl(var(--sidebar-foreground)/.42)] hover:bg-[hsl(var(--sidebar-foreground)/.08)] hover:text-[hsl(var(--sidebar-accent))]" onClick={onNewChat} aria-label="Start a direct chat" data-testid="button-sidebar-new-chat"><Plus className="size-4" /></button>
         </div>
         <div className="mt-3 space-y-1">
-          <button onClick={onNewChat} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[hsl(var(--sidebar-foreground)/.62)] transition hover:bg-[hsl(var(--sidebar-foreground)/.08)] hover:text-[hsl(var(--sidebar-foreground))]" data-testid="button-sidebar-start-direct"><AtSign className="size-[17px] text-[hsl(var(--secondary))]" /><span>New direct chat</span><Plus className="ml-auto size-3.5 opacity-45" /></button>
+          <button onClick={onNewChat} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[hsl(var(--sidebar-foreground)/.62)] transition hover:bg-[hsl(var(--sidebar-foreground)/.08)] hover:text-[hsl(var(--sidebar-foreground))]" data-testid="button-sidebar-start-direct"><AtSign className="size-[17px] text-[hsl(var(--sidebar-accent))]" /><span>New direct chat</span><Plus className="ml-auto size-3.5 opacity-45" /></button>
           <Link href="/groups" onClick={onClose} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[hsl(var(--sidebar-foreground)/.62)] transition hover:bg-[hsl(var(--sidebar-foreground)/.08)] hover:text-[hsl(var(--sidebar-foreground))]" data-testid="button-sidebar-find-groups"><Hash className="size-[17px] text-[hsl(var(--accent))]" /><span>Find group rooms</span><ArrowUpRight className="ml-auto size-3.5 opacity-45" /></Link>
         </div>
       </div>
@@ -303,6 +303,7 @@ function AppShell({ children, title, eyebrow, onNewChat }: { children: ReactNode
 
 function WalletEntry() {
   const { setWalletAddress } = useWallet();
+  const [, setLocation] = useLocation();
   const createSession = useCreateWalletSession();
   const [session, setSession] = useState<{ sessionId: string; qrUrl: string; deeplink: string; expiresAt: string } | null>(null);
   const [notice, setNotice] = useState<{ message: string; tone: 'error' | 'info' | 'success' } | null>(null);
@@ -317,7 +318,13 @@ function WalletEntry() {
 
   useEffect(() => {
     if (status?.status === 'connected' && status.walletAddress) {
+      const requestedPath = window.sessionStorage.getItem('frogtown-signin-return-to');
+      window.sessionStorage.removeItem('frogtown-signin-return-to');
+      const destination = requestedPath && ['/', '/groups', '/timeline', '/settings'].includes(requestedPath)
+        ? requestedPath
+        : '/';
       setWalletAddress(status.walletAddress);
+      setLocation(destination);
       setNotice({ message: 'Wallet connected. Welcome to Frogtown.', tone: 'success' });
       setSession(null);
     }
@@ -325,7 +332,7 @@ function WalletEntry() {
       setNotice({ message: 'That Xaman session expired. Start a fresh sign-in.', tone: 'error' });
       setSession(null);
     }
-  }, [setWalletAddress, status?.status, status?.walletAddress]);
+  }, [setLocation, setWalletAddress, status?.status, status?.walletAddress]);
 
   const connect = () => {
     setNotice(null);
@@ -344,12 +351,12 @@ function WalletEntry() {
           <div className="absolute bottom-[-15%] left-[-10%] size-80 rounded-full bg-[hsl(var(--primary)/.16)] blur-3xl" />
           <div className="relative z-10 flex items-center justify-between"><FrogtownMark /><span className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--sidebar-foreground)/.45)]">XRPL / $HERMIT</span></div>
           <div className="relative z-10 my-12 max-w-xl lg:my-0">
-            <p className="mono mb-5 text-xs uppercase tracking-[.24em] text-[hsl(var(--secondary))]">$HERMIT community / XRPL</p>
-            <h1 className="max-w-[680px] text-[clamp(3.4rem,8vw,7.6rem)] font-semibold leading-[.87] tracking-[-.085em]">Frogtown<br /><span className="text-[hsl(var(--secondary))]">brings us closer.</span></h1>
+            <p className="mono mb-5 text-xs uppercase tracking-[.24em] text-[hsl(var(--sidebar-accent))]">$HERMIT community / XRPL</p>
+            <h1 className="max-w-[680px] text-[clamp(3.4rem,8vw,7.6rem)] font-semibold leading-[.87] tracking-[-.085em]">Frogtown<br /><span className="text-[hsl(var(--sidebar-accent))]">brings us closer.</span></h1>
             <p className="mt-8 max-w-md text-base leading-7 text-[hsl(var(--sidebar-foreground)/.62)] md:text-lg">Meet the home for $HERMIT, the chill frog of the XRPL. Connect your Xaman wallet to join encrypted chats, community rooms, and a shared timeline—bringing the people behind the ledger together.</p>
           </div>
           <div className="relative z-10 flex items-end justify-between gap-8">
-            <div><p className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--sidebar-foreground)/.38)]">built for the XRPL community</p><div className="mt-3 flex items-center gap-2 text-sm text-[hsl(var(--sidebar-foreground)/.68)]"><span className="size-2 rounded-full bg-[hsl(var(--secondary))]" /> One ledger. Many voices.</div></div>
+            <div><p className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--sidebar-foreground)/.38)]">built for the XRPL community</p><div className="mt-3 flex items-center gap-2 text-sm text-[hsl(var(--sidebar-foreground)/.68)]"><span className="size-2 rounded-full bg-[hsl(var(--sidebar-accent))]" /> One ledger. Many voices.</div></div>
             <div className="mono hidden text-right text-[10px] leading-5 text-[hsl(var(--sidebar-foreground)/.38)] sm:block">your address<br />is enough.</div>
           </div>
         </section>
@@ -363,12 +370,12 @@ function WalletEntry() {
             {!session ? (
               <div className="appear appear-delay-1 mt-10 rounded-[1.35rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 shadow-[0_18px_60px_hsl(174_25%_13%/.08)]">
                 <div className="flex items-start gap-4"><div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"><WalletCards className="size-5" /></div><div><p className="font-semibold">Connect your XRPL wallet</p><p className="mt-1 text-sm leading-5 text-[hsl(var(--muted-foreground))]">Sign in securely with Xaman and make your address your Frogtown identity.</p></div></div>
-                <button onClick={connect} disabled={createSession.isPending} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-4 py-3.5 text-sm font-medium text-[hsl(var(--card))] transition hover:-translate-y-0.5 hover:bg-[hsl(var(--primary))] disabled:cursor-wait disabled:opacity-60" data-testid="button-connect-wallet">{createSession.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Zap className="size-4 text-[hsl(var(--secondary))]" />}{createSession.isPending ? 'Opening Xaman…' : 'Connect with Xaman'}<ArrowRight className="ml-auto size-4 opacity-60" /></button>
+                <button onClick={connect} disabled={createSession.isPending} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-4 py-3.5 text-sm font-medium text-[hsl(var(--card))] transition hover:-translate-y-0.5 hover:bg-[hsl(var(--primary))] disabled:cursor-wait disabled:opacity-60" data-testid="button-connect-wallet">{createSession.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Zap className="size-4 text-[hsl(var(--sidebar-accent))]" />}{createSession.isPending ? 'Opening Xaman…' : 'Connect with Xaman'}<ArrowRight className="ml-auto size-4 opacity-60" /></button>
                 <div className="mt-5 flex items-center justify-center gap-2 text-[11px] text-[hsl(var(--muted-foreground))]"><LockKeyhole className="size-3" /> Encrypted conversations · XRPL mainnet</div>
               </div>
             ) : (
               <div className="appear mt-10 rounded-[1.35rem] border border-[hsl(var(--primary)/.3)] bg-[hsl(var(--card)/.82)] p-5 shadow-[0_18px_60px_hsl(174_25%_13%/.08)]">
-                <div className="flex items-start gap-4"><div className="relative flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[hsl(var(--secondary))]"><QrCode className="size-6" /><span className="absolute -right-1 -top-1 size-2.5 rounded-full bg-[hsl(var(--primary))] pulse-dot" /></div><div><p className="font-semibold">Waiting for Xaman</p><p className="mt-1 text-sm leading-5 text-[hsl(var(--muted-foreground))]">{statusQuery.isFetching ? 'Listening for your approval…' : 'Scan the code or open the app.'}</p></div></div>
+                <div className="flex items-start gap-4"><div className="relative flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))]"><QrCode className="size-6" /><span className="absolute -right-1 -top-1 size-2.5 rounded-full bg-[hsl(var(--primary))] pulse-dot" /></div><div><p className="font-semibold">Waiting for Xaman</p><p className="mt-1 text-sm leading-5 text-[hsl(var(--muted-foreground))]">{statusQuery.isFetching ? 'Listening for your approval…' : 'Scan the code or open the app.'}</p></div></div>
                 <div className="mt-6 grid gap-4 sm:grid-cols-[140px_1fr]"><div className="flex aspect-square items-center justify-center rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--foreground))] p-3"><img src={session.qrUrl} alt="Xaman wallet connection QR code" className="size-full rounded-md bg-[hsl(var(--card))]" data-testid="img-wallet-qr" /></div><div className="flex flex-col justify-between"><div><p className="mono break-all text-[11px] leading-5 text-[hsl(var(--muted-foreground))]">{session.sessionId}</p><p className="mt-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Your address never leaves the connection you approve.</p></div><a href={session.deeplink} className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-[hsl(var(--border))] px-3 py-2.5 text-xs font-medium transition hover:border-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.07)]" data-testid="link-open-xaman">Open Xaman <ExternalLink className="size-3.5" /></a></div></div>
                 <button className="mt-5 flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" onClick={() => setSession(null)} data-testid="button-cancel-wallet">Cancel and start over <ChevronRight className="size-3.5" /></button>
               </div>
@@ -698,6 +705,11 @@ function HomePage() {
 function RouterView() {
   const { walletAddress } = useWallet();
   const [location, setLocation] = useLocation();
+  useEffect(() => {
+    if (!walletAddress && location !== '/') {
+      window.sessionStorage.setItem('frogtown-signin-return-to', location);
+    }
+  }, [location, walletAddress]);
   if (!walletAddress && location !== '/') return <LockedPage title={location === '/groups' ? 'Group discovery' : location === '/timeline' ? 'Community timeline' : 'Settings'} />;
   return <Switch><Route path="/" component={() => <HomePage />} /><Route path="/groups" component={() => <GroupsPage onOpenGroup={(id) => { window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, id); setLocation('/'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: id })), 0); }} />} /><Route path="/timeline" component={() => <TimelineRoute />} /><Route path="/settings" component={SettingsPage} /><Route component={() => <HomePage />} /></Switch>;
 }

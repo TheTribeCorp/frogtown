@@ -28,25 +28,26 @@
 }
 
 :root {
-  --background: 66 25% 93%;
-  --foreground: 174 25% 13%;
-  --card: 64 33% 97%;
-  --card-foreground: 174 25% 13%;
-  --border: 72 15% 80%;
-  --input: 70 19% 84%;
-  --ring: 166 48% 47%;
-  --primary: 166 48% 39%;
-  --primary-foreground: 65 38% 97%;
-  --secondary: 42 74% 61%;
-  --secondary-foreground: 174 25% 13%;
-  --muted: 70 18% 88%;
-  --muted-foreground: 166 12% 39%;
-  --accent: 16 77% 62%;
-  --accent-foreground: 64 33% 97%;
-  --destructive: 3 66% 51%;
-  --destructive-foreground: 64 33% 97%;
-  --sidebar: 174 29% 12%;
-  --sidebar-foreground: 65 27% 91%;
+  --background: 140 25% 97%;
+  --foreground: 147 28% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 147 28% 12%;
+  --border: 140 17% 84%;
+  --input: 140 18% 87%;
+  --ring: 145 58% 38%;
+  --primary: 145 58% 32%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 355 78% 43%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 138 22% 93%;
+  --muted-foreground: 145 13% 38%;
+  --accent: 350 68% 39%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 43%;
+  --destructive-foreground: 0 0% 100%;
+  --sidebar: 149 38% 12%;
+  --sidebar-foreground: 0 0% 96%;
+  --sidebar-accent: 2 100% 78%;
   --app-font-sans: 'Space Grotesk', sans-serif;
   --app-font-mono: 'DM Mono', monospace;
   --radius: 0.7rem;
@@ -66,8 +67,8 @@ button { cursor: pointer; }
 ::selection { color: hsl(var(--foreground)); background: hsl(var(--secondary)); }
 .swamp-app {
   background:
-    radial-gradient(circle at 85% 10%, hsl(43 73% 61% / .12), transparent 25rem),
-    radial-gradient(circle at 15% 90%, hsl(166 48% 39% / .1), transparent 28rem),
+    radial-gradient(circle at 85% 10%, hsl(var(--secondary) / .09), transparent 25rem),
+    radial-gradient(circle at 15% 90%, hsl(var(--primary) / .12), transparent 28rem),
     hsl(var(--background));
 }
 .noise::after {
@@ -81,7 +82,7 @@ button { cursor: pointer; }
 }
 .mono { font-family: var(--app-font-mono); }
 .soft-scrollbar::-webkit-scrollbar { width: 7px; height: 7px; }
-.soft-scrollbar::-webkit-scrollbar-thumb { background: hsl(166 13% 58% / .32); border-radius: 999px; }
+.soft-scrollbar::-webkit-scrollbar-thumb { background: hsl(var(--primary) / .34); border-radius: 999px; }
 .soft-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .appear { animation: appear .42s ease both; }
 .appear-delay-1 { animation-delay: .08s; }
@@ -90,9 +91,9 @@ button { cursor: pointer; }
 .pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
 .lift { transition: transform .2s ease, border-color .2s ease, background-color .2s ease; }
 .lift:hover { transform: translateY(-2px); }
-.glass { background: hsl(64 33% 97% / .72); backdrop-filter: blur(18px); }
+.glass { background: hsl(var(--card) / .72); backdrop-filter: blur(18px); }
 .wallet-grid {
-  background-image: linear-gradient(hsl(166 20% 40% / .11) 1px, transparent 1px), linear-gradient(90deg, hsl(166 20% 40% / .11) 1px, transparent 1px);
+  background-image: linear-gradient(hsl(var(--primary) / .12) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary) / .12) 1px, transparent 1px);
   background-size: 26px 26px;
 }
 @keyframes appear { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
