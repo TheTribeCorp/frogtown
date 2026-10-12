@@ -17,6 +17,14 @@ function Mark() {
   );
 }
 
+function XrpLogo() {
+  return (
+    <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+      <path d="M5 7c4 0 4.6 6 11 6s7-6 11-6M5 25c4 0 4.6-6 11-6s7 6 11 6" />
+    </svg>
+  );
+}
+
 export function Playful() {
   const [notice, setNotice] = useState(false);
 
@@ -41,6 +49,21 @@ export function Playful() {
           <div className="playful-art" aria-label="The $HERMIT frog mascot and a sample private conversation">
             <div className="playful-art-orbit playful-orbit-one" />
             <div className="playful-art-orbit playful-orbit-two" />
+            <div className="playful-xrp-network" aria-hidden="true">
+              <svg className="playful-xrp-lines" viewBox="0 0 500 360" preserveAspectRatio="none">
+                <path d="M30 65 210 14 395 65 460 104M30 65 30 234M30 234Q245 308 460 104" />
+                <circle cx="30" cy="65" r="2.5" />
+                <circle cx="210" cy="14" r="2.5" />
+                <circle cx="395" cy="65" r="2.5" />
+                <circle cx="460" cy="104" r="2.5" />
+                <circle cx="30" cy="234" r="2.5" />
+              </svg>
+              <span className="playful-xrp-node xrp-node-a"><XrpLogo /><b>XRP</b></span>
+              <span className="playful-xrp-node xrp-node-b"><XrpLogo /><b>XRP</b></span>
+              <span className="playful-xrp-node xrp-node-c"><XrpLogo /><b>XRP</b></span>
+              <span className="playful-xrp-node xrp-node-d"><XrpLogo /><b>XRP</b></span>
+              <span className="playful-xrp-node xrp-node-e"><XrpLogo /><b>XRP</b></span>
+            </div>
             <div className="playful-mascot-wrap">
               <div className="playful-mascot-halo" />
               <img className="playful-mascot" src="/__mockup/images/hermit-mascot.jpg" alt="$HERMIT frog mascot in a red hood" />
