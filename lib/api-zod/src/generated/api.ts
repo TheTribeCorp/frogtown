@@ -586,3 +586,79 @@ export const ResolveTimelineModerationReportResponse = zod.object({
 })
 
 
+/**
+ * @summary Get the authenticated wallet's daily quests, points, streak, and badge
+ */
+export const GetGamificationSummaryResponse = zod.object({
+  "dayKey": zod.coerce.date(),
+  "points": zod.number(),
+  "currentStreak": zod.number().int(),
+  "longestStreak": zod.number().int(),
+  "frogBadgeEarned": zod.boolean(),
+  "frogBadgeEarnedAt": zod.coerce.date().nullable(),
+  "tasks": zod.array(zod.object({
+  "id": zod.enum(['check_in', 'ledger_minute', 'community_engagement', 'room_spotlight']),
+  "completed": zod.boolean(),
+  "progress": zod.number().int(),
+  "target": zod.number().int()
+}))
+})
+
+
+/**
+ * @summary Complete today's check-in quest once
+ */
+export const CheckInGamificationResponse = zod.object({
+  "dayKey": zod.coerce.date(),
+  "points": zod.number(),
+  "currentStreak": zod.number().int(),
+  "longestStreak": zod.number().int(),
+  "frogBadgeEarned": zod.boolean(),
+  "frogBadgeEarnedAt": zod.coerce.date().nullable(),
+  "tasks": zod.array(zod.object({
+  "id": zod.enum(['check_in', 'ledger_minute', 'community_engagement', 'room_spotlight']),
+  "completed": zod.boolean(),
+  "progress": zod.number().int(),
+  "target": zod.number().int()
+}))
+})
+
+
+/**
+ * @summary Get the ten wallets with the highest current point balances
+ */
+export const GetGamificationLeaderboardResponse = zod.object({
+  "items": zod.array(zod.object({
+  "rank": zod.number().int(),
+  "walletAddress": zod.string(),
+  "points": zod.number(),
+  "currentStreak": zod.number().int(),
+  "frogBadgeEarned": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Wager one internal point on a server-resolved coin flip
+ */
+export const PlayGamificationCoinFlipBody = zod.object({
+  "requestId": zod.string().uuid(),
+  "choice": zod.enum(['heads', 'tails'])
+})
+
+export const PlayGamificationCoinFlipResponse = zod.object({
+  "id": zod.string(),
+  "requestId": zod.string().uuid(),
+  "choice": zod.enum(['heads', 'tails']),
+  "result": zod.enum(['heads', 'tails']),
+  "won": zod.boolean(),
+  "stakePoints": zod.number(),
+  "payoutPoints": zod.number(),
+  "netChangePoints": zod.number(),
+  "points": zod.number(),
+  "frogBadgeEarned": zod.boolean(),
+  "frogBadgeEarnedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+

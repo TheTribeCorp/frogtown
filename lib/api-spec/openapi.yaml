@@ -18,6 +18,8 @@ tags:
     description: Group discovery and membership operations
   - name: timeline
     description: Public member timeline posts, likes, and comments
+  - name: gamification
+    description: Daily quests, points, streaks, and coin flips
 paths:
   /healthz:
     get:
@@ -751,6 +753,96 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /gamification/summary:
+    get:
+      operationId: getGamificationSummary
+      tags: [gamification]
+      summary: Get the authenticated wallet's daily quests, points, streak, and badge
+      responses:
+        "200":
+          description: Current gamification state and daily quest progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GamificationSummary"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /gamification/check-in:
+    post:
+      operationId: checkInGamification
+      tags: [gamification]
+      summary: Complete today's check-in quest once
+      responses:
+        "200":
+          description: Updated daily quest and streak state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GamificationSummary"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /gamification/leaderboard:
+    get:
+      operationId: getGamificationLeaderboard
+      tags: [gamification]
+      summary: Get the ten wallets with the highest current point balances
+      responses:
+        "200":
+          description: Top ten Frogtown point balances
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GamificationLeaderboard"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /gamification/coin-flips:
+    post:
+      operationId: playGamificationCoinFlip
+      tags: [gamification]
+      summary: Wager one internal point on a server-resolved coin flip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoinFlipInput"
+      responses:
+        "200":
+          description: Coin flip result and updated point balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoinFlipResult"
+        "400":
+          description: Invalid flip request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Not enough points or the request ID was reused for another choice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   parameters:
     SessionId:
@@ -1190,4 +1282,110 @@ components:
         resolved:
           type: boolean
       required: [subjectType, subjectId, action, resolved]
+    GamificationTask:
+      type: object
+      properties:
+        id:
+          type: string
+          enum: [check_in, ledger_minute, community_engagement, room_spotlight]
+        completed:
+          type: boolean
+        progress:
+          type: integer
+        target:
+          type: integer
+      required: [id, completed, progress, target]
+    GamificationSummary:
+      type: object
+      properties:
+        dayKey:
+          type: string
+          format: date
+        points:
+          type: number
+          format: double
+        currentStreak:
+          type: integer
+        longestStreak:
+          type: integer
+        frogBadgeEarned:
+          type: boolean
+        frogBadgeEarnedAt:
+          type: ["string", "null"]
+          format: date-time
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/GamificationTask"
+      required: [dayKey, points, currentStreak, longestStreak, frogBadgeEarned, frogBadgeEarnedAt, tasks]
+    GamificationLeaderboardEntry:
+      type: object
+      properties:
+        rank:
+          type: integer
+        walletAddress:
+          type: string
+        points:
+          type: number
+          format: double
+        currentStreak:
+          type: integer
+        frogBadgeEarned:
+          type: boolean
+      required: [rank, walletAddress, points, currentStreak, frogBadgeEarned]
+    GamificationLeaderboard:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GamificationLeaderboardEntry"
+      required: [items]
+    CoinFlipInput:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        choice:
+          type: string
+          enum: [heads, tails]
+      required: [requestId, choice]
+    CoinFlipResult:
+      type: object
+      properties:
+        id:
+          type: string
+        requestId:
+          type: string
+          format: uuid
+        choice:
+          type: string
+          enum: [heads, tails]
+        result:
+          type: string
+          enum: [heads, tails]
+        won:
+          type: boolean
+        stakePoints:
+          type: number
+          format: double
+        payoutPoints:
+          type: number
+          format: double
+        netChangePoints:
+          type: number
+          format: double
+        points:
+          type: number
+          format: double
+        frogBadgeEarned:
+          type: boolean
+        frogBadgeEarnedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, requestId, choice, result, won, stakePoints, payoutPoints, netChangePoints, points, frogBadgeEarned, frogBadgeEarnedAt, createdAt]
 

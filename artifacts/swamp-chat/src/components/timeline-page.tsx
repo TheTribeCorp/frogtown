@@ -5,6 +5,8 @@ import {
   getGetTimelineModerationAccessQueryKey,
   getListTimelineCommentsQueryKey,
   getListTimelinePostsQueryKey,
+  getGetGamificationLeaderboardQueryKey,
+  getGetGamificationSummaryQueryKey,
   useCreateTimelineComment,
   useCreateTimelinePost,
   useGetTimelineModerationAccess,
@@ -179,6 +181,8 @@ function TimelinePostCard({
       onSuccess: (reaction) => {
         onPostUpdate(post.id, { likeCount: reaction.likeCount, likedByMe: reaction.likedByMe });
         void client.invalidateQueries({ queryKey: getListTimelinePostsQueryKey() });
+        void client.invalidateQueries({ queryKey: getGetGamificationSummaryQueryKey() });
+        void client.invalidateQueries({ queryKey: getGetGamificationLeaderboardQueryKey() });
       },
     });
   };
@@ -199,6 +203,8 @@ function TimelinePostCard({
         onPostUpdate(post.id, { commentCount: post.commentCount + 1 });
         void client.invalidateQueries({ queryKey: getListTimelineCommentsQueryKey(post.id) });
         void client.invalidateQueries({ queryKey: getListTimelinePostsQueryKey() });
+        void client.invalidateQueries({ queryKey: getGetGamificationSummaryQueryKey() });
+        void client.invalidateQueries({ queryKey: getGetGamificationLeaderboardQueryKey() });
       },
       onError: (error) => setCommentError(error instanceof Error ? error.message : 'Your comment could not be sent. Try again.'),
     });
@@ -422,6 +428,8 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
         setPostCursor(undefined);
         setPostPages([]);
         void client.invalidateQueries({ queryKey: getListTimelinePostsQueryKey() });
+        void client.invalidateQueries({ queryKey: getGetGamificationSummaryQueryKey() });
+        void client.invalidateQueries({ queryKey: getGetGamificationLeaderboardQueryKey() });
       },
       onError: (error) => setComposerError(error instanceof Error ? error.message : 'Your post could not be published. Try again.'),
     });

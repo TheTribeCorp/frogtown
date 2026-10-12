@@ -25,11 +25,15 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CoinFlipInput,
+  CoinFlipResult,
   Conversation,
   ConversationKey,
   CurrentWallet,
   DirectConversationInput,
   ErrorResponse,
+  GamificationLeaderboard,
+  GamificationSummary,
   Group,
   GroupInput,
   HealthStatus,
@@ -2866,5 +2870,369 @@ export const useResolveTimelineModerationReport = <TError = ErrorType<ErrorRespo
         TContext
       > => {
       return useMutation(getResolveTimelineModerationReportMutationOptions(options), queryClient);
+    }
+
+export const getGetGamificationSummaryUrl = () => {
+
+
+
+
+  return `/api/gamification/summary`
+}
+
+/**
+ * @summary Get the authenticated wallet's daily quests, points, streak, and badge
+ */
+export const getGamificationSummary = async ( options?: Parameters<typeof customFetch>[1]): Promise<GamificationSummary> => {
+
+  return customFetch<GamificationSummary>(getGetGamificationSummaryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGamificationSummaryQueryKey = () => {
+    return [
+    `/api/gamification/summary`
+    ] as const;
+    }
+
+
+export const getGetGamificationSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getGamificationSummary>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationSummary>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGamificationSummaryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGamificationSummary>>> = ({ signal }) => getGamificationSummary({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGamificationSummary>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGamificationSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getGamificationSummary>>>
+export type GetGamificationSummaryQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetGamificationSummary<TData = Awaited<ReturnType<typeof getGamificationSummary>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationSummary>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGamificationSummary>>,
+          TError,
+          Awaited<ReturnType<typeof getGamificationSummary>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGamificationSummary<TData = Awaited<ReturnType<typeof getGamificationSummary>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationSummary>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGamificationSummary>>,
+          TError,
+          Awaited<ReturnType<typeof getGamificationSummary>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGamificationSummary<TData = Awaited<ReturnType<typeof getGamificationSummary>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationSummary>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get the authenticated wallet's daily quests, points, streak, and badge
+ */
+
+export function useGetGamificationSummary<TData = Awaited<ReturnType<typeof getGamificationSummary>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationSummary>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGamificationSummaryQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCheckInGamificationUrl = () => {
+
+
+
+
+  return `/api/gamification/check-in`
+}
+
+/**
+ * @summary Complete today's check-in quest once
+ */
+export const checkInGamification = async ( options?: Parameters<typeof customFetch>[1]): Promise<GamificationSummary> => {
+
+  return customFetch<GamificationSummary>(getCheckInGamificationUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCheckInGamificationMutationKey = () => ['checkInGamification'] as const;
+
+export const getCheckInGamificationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkInGamification>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof checkInGamification>>, TError,void, TContext> => {
+
+const mutationKey = getCheckInGamificationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof checkInGamification>>, void> = () => {
+
+
+          return  checkInGamification(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CheckInGamificationMutationResult = NonNullable<Awaited<ReturnType<typeof checkInGamification>>>
+
+    export type CheckInGamificationMutationError = ErrorType<ErrorResponse>
+
+
+    /**
+ * @summary Complete today's check-in quest once
+ */
+export const useCheckInGamification = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkInGamification>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof checkInGamification>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCheckInGamificationMutationOptions(options), queryClient);
+    }
+
+export const getGetGamificationLeaderboardUrl = () => {
+
+
+
+
+  return `/api/gamification/leaderboard`
+}
+
+/**
+ * @summary Get the ten wallets with the highest current point balances
+ */
+export const getGamificationLeaderboard = async ( options?: Parameters<typeof customFetch>[1]): Promise<GamificationLeaderboard> => {
+
+  return customFetch<GamificationLeaderboard>(getGetGamificationLeaderboardUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGamificationLeaderboardQueryKey = () => {
+    return [
+    `/api/gamification/leaderboard`
+    ] as const;
+    }
+
+
+export const getGetGamificationLeaderboardQueryOptions = <TData = Awaited<ReturnType<typeof getGamificationLeaderboard>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationLeaderboard>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGamificationLeaderboardQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGamificationLeaderboard>>> = ({ signal }) => getGamificationLeaderboard({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGamificationLeaderboard>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGamificationLeaderboardQueryResult = NonNullable<Awaited<ReturnType<typeof getGamificationLeaderboard>>>
+export type GetGamificationLeaderboardQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetGamificationLeaderboard<TData = Awaited<ReturnType<typeof getGamificationLeaderboard>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationLeaderboard>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGamificationLeaderboard>>,
+          TError,
+          Awaited<ReturnType<typeof getGamificationLeaderboard>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGamificationLeaderboard<TData = Awaited<ReturnType<typeof getGamificationLeaderboard>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationLeaderboard>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGamificationLeaderboard>>,
+          TError,
+          Awaited<ReturnType<typeof getGamificationLeaderboard>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGamificationLeaderboard<TData = Awaited<ReturnType<typeof getGamificationLeaderboard>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationLeaderboard>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get the ten wallets with the highest current point balances
+ */
+
+export function useGetGamificationLeaderboard<TData = Awaited<ReturnType<typeof getGamificationLeaderboard>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationLeaderboard>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGamificationLeaderboardQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPlayGamificationCoinFlipUrl = () => {
+
+
+
+
+  return `/api/gamification/coin-flips`
+}
+
+/**
+ * @summary Wager one internal point on a server-resolved coin flip
+ */
+export const playGamificationCoinFlip = async (coinFlipInput: CoinFlipInput, options?: Parameters<typeof customFetch>[1]): Promise<CoinFlipResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<CoinFlipResult>(getPlayGamificationCoinFlipUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(coinFlipInput)
+  }
+);}
+
+
+
+
+
+export const getPlayGamificationCoinFlipMutationKey = () => ['playGamificationCoinFlip'] as const;
+
+export const getPlayGamificationCoinFlipMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof playGamificationCoinFlip>>, TError,PlayGamificationCoinFlipMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof playGamificationCoinFlip>>, TError,PlayGamificationCoinFlipMutationVariables, TContext> => {
+
+const mutationKey = getPlayGamificationCoinFlipMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof playGamificationCoinFlip>>, PlayGamificationCoinFlipMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  playGamificationCoinFlip(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PlayGamificationCoinFlipMutationResult = NonNullable<Awaited<ReturnType<typeof playGamificationCoinFlip>>>
+    export type PlayGamificationCoinFlipMutationBody = BodyType<CoinFlipInput>
+    export type PlayGamificationCoinFlipMutationError = ErrorType<ErrorResponse>
+    export type PlayGamificationCoinFlipMutationVariables = {data: BodyType<CoinFlipInput>}
+
+    /**
+ * @summary Wager one internal point on a server-resolved coin flip
+ */
+export const usePlayGamificationCoinFlip = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof playGamificationCoinFlip>>, TError,PlayGamificationCoinFlipMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof playGamificationCoinFlip>>,
+        TError,
+        PlayGamificationCoinFlipMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPlayGamificationCoinFlipMutationOptions(options), queryClient);
     }
 

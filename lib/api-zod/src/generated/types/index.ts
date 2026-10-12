@@ -6,12 +6,22 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './coinFlipInput';
+export * from './coinFlipInputChoice';
+export * from './coinFlipResult';
+export * from './coinFlipResultChoice';
+export * from './coinFlipResultResult';
 export * from './conversation';
 export * from './conversationKey';
 export * from './conversationType';
 export * from './currentWallet';
 export * from './directConversationInput';
 export * from './errorResponse';
+export * from './gamificationLeaderboard';
+export * from './gamificationLeaderboardEntry';
+export * from './gamificationSummary';
+export * from './gamificationTask';
+export * from './gamificationTaskId';
 export * from './group';
 export * from './groupInput';
 export * from './healthStatus';

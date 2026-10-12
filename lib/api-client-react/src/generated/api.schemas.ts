@@ -333,6 +333,91 @@ export interface TimelineModerationActionResult {
   resolved: boolean;
 }
 
+export type GamificationTaskId = typeof GamificationTaskId[keyof typeof GamificationTaskId];
+
+
+export const GamificationTaskId = {
+  check_in: 'check_in',
+  ledger_minute: 'ledger_minute',
+  community_engagement: 'community_engagement',
+  room_spotlight: 'room_spotlight',
+} as const;
+
+export interface GamificationTask {
+  id: GamificationTaskId;
+  completed: boolean;
+  progress: number;
+  target: number;
+}
+
+export interface GamificationSummary {
+  dayKey: string;
+  points: number;
+  currentStreak: number;
+  longestStreak: number;
+  frogBadgeEarned: boolean;
+  /** @nullable */
+  frogBadgeEarnedAt: string | null;
+  tasks: GamificationTask[];
+}
+
+export interface GamificationLeaderboardEntry {
+  rank: number;
+  walletAddress: string;
+  points: number;
+  currentStreak: number;
+  frogBadgeEarned: boolean;
+}
+
+export interface GamificationLeaderboard {
+  items: GamificationLeaderboardEntry[];
+}
+
+export type CoinFlipInputChoice = typeof CoinFlipInputChoice[keyof typeof CoinFlipInputChoice];
+
+
+export const CoinFlipInputChoice = {
+  heads: 'heads',
+  tails: 'tails',
+} as const;
+
+export interface CoinFlipInput {
+  requestId: string;
+  choice: CoinFlipInputChoice;
+}
+
+export type CoinFlipResultChoice = typeof CoinFlipResultChoice[keyof typeof CoinFlipResultChoice];
+
+
+export const CoinFlipResultChoice = {
+  heads: 'heads',
+  tails: 'tails',
+} as const;
+
+export type CoinFlipResultResult = typeof CoinFlipResultResult[keyof typeof CoinFlipResultResult];
+
+
+export const CoinFlipResultResult = {
+  heads: 'heads',
+  tails: 'tails',
+} as const;
+
+export interface CoinFlipResult {
+  id: string;
+  requestId: string;
+  choice: CoinFlipResultChoice;
+  result: CoinFlipResultResult;
+  won: boolean;
+  stakePoints: number;
+  payoutPoints: number;
+  netChangePoints: number;
+  points: number;
+  frogBadgeEarned: boolean;
+  /** @nullable */
+  frogBadgeEarnedAt: string | null;
+  createdAt: string;
+}
+
 export type WalletAddressParameter = string;
 
 export type ListConversationsParams = {

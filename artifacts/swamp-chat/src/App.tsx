@@ -30,6 +30,7 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Trophy,
   Users,
   WalletCards,
   Wifi,
@@ -40,6 +41,8 @@ import { Link, Route, Router as WouterRouter, Switch, useLocation } from 'wouter
 import {
   getGetWalletSessionQueryKey,
   getGetCurrentWalletQueryKey,
+  getGetGamificationLeaderboardQueryKey,
+  getGetGamificationSummaryQueryKey,
   getHealthCheckQueryKey,
   getListConversationMessagesQueryKey,
   getListConversationsQueryKey,
@@ -63,6 +66,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { BrowserNotificationSettings } from '@/components/browser-notification-settings';
 import { EncryptionRecoveryPanel } from '@/components/encryption-recovery';
 import { TimelinePage } from '@/components/timeline-page';
+import { DailyQuestsPage } from '@/components/daily-quests-page';
 import { notifyIncomingMessage } from '@/lib/browser-notifications';
 import {
   conversationSafetyCode,
@@ -269,6 +273,7 @@ function Sidebar({ mobileOpen, onClose, onNewChat }: { mobileOpen: boolean; onCl
           <Link href="/" onClick={onClose} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${location === '/' ? 'bg-[hsl(var(--sidebar-foreground)/.1)] text-[hsl(var(--sidebar-foreground))]' : 'text-[hsl(var(--sidebar-foreground)/.62)] hover:bg-[hsl(var(--sidebar-foreground)/.06)] hover:text-[hsl(var(--sidebar-foreground))]'}`} data-testid="link-chat"><MessageCircle className="size-[17px]" /><span>Chats</span><span className="mono ml-auto text-[10px] text-[hsl(var(--sidebar-foreground)/.35)]">01</span></Link>
           <Link href="/groups" onClick={onClose} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${location === '/groups' ? 'bg-[hsl(var(--sidebar-foreground)/.1)] text-[hsl(var(--sidebar-foreground))]' : 'text-[hsl(var(--sidebar-foreground)/.62)] hover:bg-[hsl(var(--sidebar-foreground)/.06)] hover:text-[hsl(var(--sidebar-foreground))]'}`} data-testid="link-groups"><Users className="size-[17px]" /><span>Community rooms</span><ArrowUpRight className="ml-auto size-3.5 opacity-35" /></Link>
           <Link href="/timeline" onClick={onClose} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${location === '/timeline' ? 'bg-[hsl(var(--sidebar-foreground)/.1)] text-[hsl(var(--sidebar-foreground))]' : 'text-[hsl(var(--sidebar-foreground)/.62)] hover:bg-[hsl(var(--sidebar-foreground)/.06)] hover:text-[hsl(var(--sidebar-foreground))]'}`} data-testid="link-timeline"><Rss className="size-[17px]" /><span>Timeline</span><ArrowUpRight className="ml-auto size-3.5 opacity-35" /></Link>
+          <Link href="/quests" onClick={onClose} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${location === '/quests' ? 'bg-[hsl(var(--sidebar-foreground)/.1)] text-[hsl(var(--sidebar-foreground))]' : 'text-[hsl(var(--sidebar-foreground)/.62)] hover:bg-[hsl(var(--sidebar-foreground)/.06)] hover:text-[hsl(var(--sidebar-foreground))]'}`} data-testid="link-quests"><Trophy className="size-[17px]" /><span>Daily quests</span><ArrowUpRight className="ml-auto size-3.5 opacity-35" /></Link>
         </nav>
       </div>
       <div className="mt-8">
@@ -622,6 +627,8 @@ function MessagePane({ conversation, onBack, isActive }: { conversation: { id: s
           if (messageAttempt.current?.messageId === messageId) messageAttempt.current = null;
           client.invalidateQueries({ queryKey: getListConversationMessagesQueryKey(conversation.id, params) });
           client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
+          void client.invalidateQueries({ queryKey: getGetGamificationSummaryQueryKey() });
+          void client.invalidateQueries({ queryKey: getGetGamificationLeaderboardQueryKey() });
         },
         onError: (error) => {
           if (messageAttempt.current?.messageId !== messageId) return;
@@ -733,13 +740,18 @@ function RouterView() {
       window.sessionStorage.setItem('frogtown-signin-return-to', location);
     }
   }, [location, walletAddress]);
-  if (!walletAddress && location !== '/') return <LockedPage title={location === '/groups' ? 'Group discovery' : location === '/timeline' ? 'Community timeline' : 'Settings'} />;
-  return <Switch><Route path="/" component={() => <HomePage />} /><Route path="/groups" component={() => <GroupsPage onOpenGroup={(id) => { window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, id); setLocation('/'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: id })), 0); }} />} /><Route path="/timeline" component={() => <TimelineRoute />} /><Route path="/settings/recovery" component={() => <EncryptionRecoveryRoute />} /><Route path="/settings" component={SettingsPage} /><Route component={() => <HomePage />} /></Switch>;
+  if (!walletAddress && location !== '/') return <LockedPage title={location === '/groups' ? 'Group discovery' : location === '/timeline' ? 'Community timeline' : location === '/quests' ? 'Daily quests' : 'Settings'} />;
+  return <Switch><Route path="/" component={() => <HomePage />} /><Route path="/groups" component={() => <GroupsPage onOpenGroup={(id) => { window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, id); setLocation('/'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: id })), 0); }} />} /><Route path="/timeline" component={() => <TimelineRoute />} /><Route path="/quests" component={() => <DailyQuestsRoute />} /><Route path="/settings/recovery" component={() => <EncryptionRecoveryRoute />} /><Route path="/settings" component={SettingsPage} /><Route component={() => <HomePage />} /></Switch>;
 }
 
 function TimelineRoute() {
   const { walletAddress } = useWallet();
   return <AppShell title="Timeline" eyebrow="public / community"><TimelinePage walletAddress={walletAddress} /></AppShell>;
+}
+
+function DailyQuestsRoute() {
+  const { walletAddress } = useWallet();
+  return <AppShell title="Daily quests" eyebrow="points / community"><DailyQuestsPage walletAddress={walletAddress} /></AppShell>;
 }
 
 function EncryptionRecoveryRoute() {

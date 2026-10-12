@@ -21,6 +21,7 @@ import {
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import { publishMessageCreated, publishMessageRead, subscribeToWalletMessages } from "../lib/message-events";
+import { recordDailyQuestActionInTransaction } from "../lib/gamification";
 import {
   conversationMembersTable,
   conversationsTable,
@@ -629,6 +630,11 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
       res.status(403).json({ error: "You are not a member of this conversation." });
       return;
     }
+    const [conversation] = await db
+      .select({ type: conversationsTable.type })
+      .from(conversationsTable)
+      .where(eq(conversationsTable.id, conversationId))
+      .limit(1);
 
     const message = {
       id: input.messageId,
@@ -662,6 +668,9 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
         .update(conversationsTable)
         .set({ lastMessage: "e2ee:v1:", lastMessageAt: message.sentAt })
         .where(eq(conversationsTable.id, conversationId));
+      if (conversation?.type === "group") {
+        await recordDailyQuestActionInTransaction(transaction, input.senderAddress, "room_message", input.messageId);
+      }
       return { message, created: true };
     });
     if (outcome.created) {

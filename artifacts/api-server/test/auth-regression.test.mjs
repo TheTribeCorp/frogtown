@@ -3,9 +3,11 @@ import { spawn } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { after, before, test } from "node:test";
+import pg from "pg";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+const { Client } = pg;
 const testSecret = "swamp-auth-regression-only-local-test-key-not-a-real-secret";
 const walletA = "r123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const walletB = "r987654321ZYXWVUTSRQPNMLKJHGFEDCBA";
@@ -30,6 +32,10 @@ function sessionCookie(walletAddress, expiresAt = Date.now() + 60_000) {
   const payload = Buffer.from(JSON.stringify({ walletAddress, expiresAt })).toString("base64url");
   const signature = createHmac("sha256", testSecret).update(payload).digest("base64url");
   return `swamp_session=${payload}.${signature}`;
+}
+
+function randomWalletAddress() {
+  return `r${randomUUID().replaceAll("-", "").replaceAll("0", "1")}`;
 }
 
 async function request(pathname, { method = "GET", cookie, body, origin } = {}) {
@@ -169,6 +175,10 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/timeline/moderation/access", "GET"],
     ["/api/timeline/moderation/reports", "GET"],
     ["/api/timeline/moderation/reports/post/post-test", "POST", { action: "dismiss" }],
+    ["/api/gamification/summary", "GET"],
+    ["/api/gamification/check-in", "POST"],
+    ["/api/gamification/leaderboard", "GET"],
+    ["/api/gamification/coin-flips", "POST", { requestId: randomUUID(), choice: "heads" }],
   ];
 
   for (const [pathname, method, body] of unauthenticated) {
@@ -441,4 +451,161 @@ test("only configured moderators can review reports and dismiss or remove report
     cookie: memberCookie,
   });
   assert.equal(removedOwnerPost.status, 404);
+});
+
+test("daily quests, points, and coin flips are authenticated, idempotent, and server-awarded", async () => {
+  const wallet = randomWalletAddress();
+  const otherWallet = randomWalletAddress();
+  const cookie = sessionCookie(wallet);
+  const otherCookie = sessionCookie(otherWallet);
+  const getSummary = async () => {
+    const response = await request("/api/gamification/summary", { cookie });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const task = (summary, id) => summary.tasks.find((entry) => entry.id === id);
+
+  const initial = await getSummary();
+  const checkedIn = await request("/api/gamification/check-in", { method: "POST", cookie });
+  assert.equal(checkedIn.status, 200);
+  const afterCheckIn = await checkedIn.json();
+  assert.equal(afterCheckIn.points, initial.points + 1);
+  assert.equal(task(afterCheckIn, "check_in").completed, true);
+  const repeatedCheckIn = await request("/api/gamification/check-in", { method: "POST", cookie });
+  assert.equal((await repeatedCheckIn.json()).points, afterCheckIn.points, "same-day check-in must not award twice");
+
+  const ownPostResponse = await request("/api/timeline/posts", {
+    method: "POST",
+    cookie,
+    body: { body: `Quest test post ${randomUUID()}` },
+  });
+  assert.equal(ownPostResponse.status, 201);
+  const ownPost = await ownPostResponse.json();
+  const ownLike = await request(`/api/timeline/posts/${ownPost.id}/likes`, { method: "POST", cookie });
+  assert.equal(ownLike.status, 200);
+  const ownComment = await request(`/api/timeline/posts/${ownPost.id}/comments`, {
+    method: "POST",
+    cookie,
+    body: { body: "A self-comment does not complete the engagement quest." },
+  });
+  assert.equal(ownComment.status, 201);
+  const afterOwnActions = await getSummary();
+  assert.equal(afterOwnActions.points, afterCheckIn.points + 1, "one original timeline post earns one point, but self-actions do not");
+  assert.equal(task(afterOwnActions, "ledger_minute").completed, true);
+  assert.equal(task(afterOwnActions, "community_engagement").progress, 0);
+
+  const otherPostResponse = await request("/api/timeline/posts", {
+    method: "POST",
+    cookie: otherCookie,
+    body: { body: `Community quest post ${randomUUID()}` },
+  });
+  assert.equal(otherPostResponse.status, 201);
+  const otherPost = await otherPostResponse.json();
+  const like = await request(`/api/timeline/posts/${otherPost.id}/likes`, { method: "POST", cookie });
+  assert.equal(like.status, 200);
+  const afterLike = await getSummary();
+  assert.equal(task(afterLike, "community_engagement").progress, 1);
+  assert.equal(afterLike.points, afterOwnActions.points);
+  const comment = await request(`/api/timeline/posts/${otherPost.id}/comments`, {
+    method: "POST",
+    cookie,
+    body: { body: "An eligible comment completes the pair." },
+  });
+  assert.equal(comment.status, 201);
+  const afterEngagement = await getSummary();
+  assert.equal(task(afterEngagement, "community_engagement").completed, true);
+  assert.equal(afterEngagement.points, afterLike.points + 1);
+
+  const groupResponse = await request("/api/groups", {
+    method: "POST",
+    cookie,
+    body: { name: `Quest room ${randomUUID()}`, description: "", creatorAddress: wallet },
+  });
+  assert.equal(groupResponse.status, 201);
+  const group = await groupResponse.json();
+  const messageId = randomUUID();
+  const groupMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie,
+    body: { senderAddress: wallet, messageId, body: "e2ee:v1:encrypted-room-quest" },
+  });
+  assert.equal(groupMessage.status, 201);
+  const repeatedGroupMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie,
+    body: { senderAddress: wallet, messageId, body: "e2ee:v1:encrypted-room-quest" },
+  });
+  assert.equal(repeatedGroupMessage.status, 200);
+  const allQuests = await getSummary();
+  assert.equal(task(allQuests, "room_spotlight").completed, true);
+  assert.equal(allQuests.points, afterEngagement.points + 1, "duplicate message retries must not award twice");
+
+  const leaderboardResponse = await request("/api/gamification/leaderboard", { cookie });
+  assert.equal(leaderboardResponse.status, 200);
+  const leaderboard = await leaderboardResponse.json();
+  assert.ok(leaderboard.items.length <= 10);
+  assert.deepEqual(leaderboard.items.map((entry) => entry.rank), leaderboard.items.map((_, index) => index + 1));
+  assert.ok(leaderboard.items.every((entry, index) => index === 0 || leaderboard.items[index - 1].points >= entry.points));
+
+  const requestId = randomUUID();
+  const flipInput = { requestId, choice: "heads" };
+  const balanceBeforeFlip = allQuests.points;
+  const flipResponse = await request("/api/gamification/coin-flips", { method: "POST", cookie, body: flipInput });
+  assert.equal(flipResponse.status, 200);
+  const flip = await flipResponse.json();
+  assert.equal(flip.stakePoints, 1);
+  assert.equal(flip.payoutPoints, flip.won ? 1.8 : 0);
+  assert.equal(flip.netChangePoints, flip.won ? 0.8 : -1);
+  assert.equal(flip.points, balanceBeforeFlip + flip.netChangePoints);
+  const replay = await request("/api/gamification/coin-flips", { method: "POST", cookie, body: flipInput });
+  const replayedFlip = await replay.json();
+  assert.equal(replay.status, 200);
+  assert.equal(replayedFlip.id, flip.id);
+  assert.equal(replayedFlip.points, flip.points, "a retried flip must not charge or pay a second time");
+  const conflictingReplay = await request("/api/gamification/coin-flips", {
+    method: "POST",
+    cookie,
+    body: { requestId, choice: "tails" },
+  });
+  assert.equal(conflictingReplay.status, 409);
+
+  const emptyWalletCookie = sessionCookie(randomWalletAddress());
+  const insufficient = await request("/api/gamification/coin-flips", {
+    method: "POST",
+    cookie: emptyWalletCookie,
+    body: { requestId: randomUUID(), choice: "tails" },
+  });
+  assert.equal(insufficient.status, 409);
+});
+
+test("the first 100-point balance earns the permanent Frog badge", async () => {
+  const wallet = randomWalletAddress();
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(
+      "INSERT INTO frogtown_gamification_profiles (wallet_address, points_hundredths) VALUES ($1, $2)",
+      [wallet, 9900],
+    );
+  } finally {
+    await client.end();
+  }
+
+  const checkIn = await request("/api/gamification/check-in", {
+    method: "POST",
+    cookie: sessionCookie(wallet),
+  });
+  assert.equal(checkIn.status, 200);
+  const summary = await checkIn.json();
+  assert.equal(summary.points, 100);
+  assert.equal(summary.frogBadgeEarned, true);
+  assert.ok(summary.frogBadgeEarnedAt);
+
+  const flip = await request("/api/gamification/coin-flips", {
+    method: "POST",
+    cookie: sessionCookie(wallet),
+    body: { requestId: randomUUID(), choice: "heads" },
+  });
+  assert.equal(flip.status, 200);
+  assert.equal((await flip.json()).frogBadgeEarned, true);
 });

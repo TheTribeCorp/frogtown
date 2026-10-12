@@ -39,6 +39,7 @@ import {
   timelinePostLikesTable,
   timelinePostsTable,
 } from "@workspace/db";
+import { recordDailyQuestActionInTransaction } from "../lib/gamification";
 import { requireAuth } from "./swamp";
 
 const router: IRouter = Router();
@@ -286,15 +287,19 @@ router.post("/timeline/posts", async (req, res) => {
     return;
   }
   try {
-    const inserted = await db
-      .insert(timelinePostsTable)
-      .values({
-        id: `post-${randomUUID()}`,
-        authorAddress: walletAddress,
-        body: parsed.data.body.trim(),
-      })
-      .returning();
-    const post = (await serializePosts(inserted, walletAddress))[0];
+    const inserted = await db.transaction(async (tx) => {
+      const [post] = await tx
+        .insert(timelinePostsTable)
+        .values({
+          id: `post-${randomUUID()}`,
+          authorAddress: walletAddress,
+          body: parsed.data.body.trim(),
+        })
+        .returning();
+      await recordDailyQuestActionInTransaction(tx, walletAddress, "timeline_post", post.id);
+      return post;
+    });
+    const post = (await serializePosts([inserted], walletAddress))[0];
     res.status(201).json(CreateTimelinePostResponse.parse(post));
   } catch {
     res.status(500).json({ error: "Unable to publish this post." });
@@ -375,22 +380,35 @@ async function handleLike(req: Request, res: Response, shouldLike: boolean) {
   }
   const postId = parsed.data.postId;
   try {
-    if (!(await postExists(postId))) {
+    const exists = await db.transaction(async (tx) => {
+      const [post] = await tx
+        .select({ authorAddress: timelinePostsTable.authorAddress })
+        .from(timelinePostsTable)
+        .where(eq(timelinePostsTable.id, postId))
+        .limit(1);
+      if (!post) return false;
+      if (shouldLike) {
+        const inserted = await tx
+          .insert(timelinePostLikesTable)
+          .values({ postId, walletAddress })
+          .onConflictDoNothing()
+          .returning({ postId: timelinePostLikesTable.postId });
+        if (inserted.length > 0 && post.authorAddress !== walletAddress) {
+          await recordDailyQuestActionInTransaction(tx, walletAddress, "other_post_like", postId);
+        }
+      } else {
+        await tx
+          .delete(timelinePostLikesTable)
+          .where(and(
+            eq(timelinePostLikesTable.postId, postId),
+            eq(timelinePostLikesTable.walletAddress, walletAddress),
+          ));
+      }
+      return true;
+    });
+    if (!exists) {
       res.status(404).json({ error: "Post not found." });
       return;
-    }
-    if (shouldLike) {
-      await db
-        .insert(timelinePostLikesTable)
-        .values({ postId, walletAddress })
-        .onConflictDoNothing();
-    } else {
-      await db
-        .delete(timelinePostLikesTable)
-        .where(and(
-          eq(timelinePostLikesTable.postId, postId),
-          eq(timelinePostLikesTable.walletAddress, walletAddress),
-        ));
     }
     const reaction = shouldLike
       ? LikeTimelinePostResponse.parse(await serializeReaction(postId, walletAddress))
@@ -646,21 +664,33 @@ router.post("/timeline/posts/:postId/comments", async (req, res) => {
     return;
   }
   try {
-    if (!(await postExists(path.data.postId))) {
+    const comment = await db.transaction(async (tx) => {
+      const [post] = await tx
+        .select({ authorAddress: timelinePostsTable.authorAddress })
+        .from(timelinePostsTable)
+        .where(eq(timelinePostsTable.id, path.data.postId))
+        .limit(1);
+      if (!post) return null;
+      const [created] = await tx
+        .insert(timelinePostCommentsTable)
+        .values({
+          id: `comment-${randomUUID()}`,
+          postId: path.data.postId,
+          authorAddress: walletAddress,
+          body: body.data.body.trim(),
+        })
+        .returning();
+      if (post.authorAddress !== walletAddress) {
+        await recordDailyQuestActionInTransaction(tx, walletAddress, "other_post_comment", created.id);
+      }
+      return created;
+    });
+    if (!comment) {
       res.status(404).json({ error: "Post not found." });
       return;
     }
-    const inserted = await db
-      .insert(timelinePostCommentsTable)
-      .values({
-        id: `comment-${randomUUID()}`,
-        postId: path.data.postId,
-        authorAddress: walletAddress,
-        body: body.data.body.trim(),
-      })
-      .returning();
     res.status(201).json(CreateTimelineCommentResponse.parse({
-      ...inserted[0],
+      ...comment,
       reportedByMe: false,
     }));
   } catch {

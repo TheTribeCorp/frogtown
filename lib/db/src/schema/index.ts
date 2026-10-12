@@ -19,3 +19,4 @@
 
 export * from "./swamp";
 export * from "./timeline";
+export * from "./gamification";
