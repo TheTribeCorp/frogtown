@@ -45,6 +45,7 @@ import {
   useCreateDirectConversation,
   useCreateGroup,
   useCreateWalletSession,
+  useGetConversationEncryptionKeys,
   useGetCurrentWallet,
   useGetWalletSession,
   useHealthCheck,
@@ -56,6 +57,14 @@ import {
   useSendMessage,
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
+import {
+  conversationSafetyCode,
+  decryptForConversation,
+  encryptForConversation,
+  ensureIdentityKey,
+  getLocalIdentityKey,
+  type ConversationPublicKey,
+} from '@/lib/e2ee';
 
 const queryClient = new QueryClient();
 
@@ -359,29 +368,91 @@ function MessagePane({ conversation, onBack }: { conversation: { id: string; tit
   const client = useQueryClient();
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState('');
+  const [encrypting, setEncrypting] = useState(false);
+  const [showSafetyCode, setShowSafetyCode] = useState(false);
+  const [safetyCode, setSafetyCode] = useState('');
+  const [decryptedMessages, setDecryptedMessages] = useState<Array<{ id: string; conversationId: string; senderAddress: string; body: string; sentAt: string; isMine: boolean; encrypted: boolean }>>([]);
   const params = useMemo(() => ({ walletAddress }), [walletAddress]);
   const messagesQuery = useListConversationMessages(conversation?.id ?? '', params, { query: { enabled: Boolean(conversation?.id), queryKey: getListConversationMessagesQueryKey(conversation?.id ?? '', params), refetchInterval: 5000 } });
+  const keysQuery = useGetConversationEncryptionKeys(conversation?.id ?? '', { query: { enabled: Boolean(conversation?.id), queryKey: ['/api/conversations', conversation?.id, 'keys'], refetchInterval: 15000 } });
   const sendMessage = useSendMessage();
-  const messages = messagesQuery.data ?? [];
-  const submit = (event: FormEvent) => {
+  const members: ConversationPublicKey[] = keysQuery.data ?? [];
+  const missingMembers = members.filter((member) => !member.publicKey);
+
+  useEffect(() => {
+    let cancelled = false;
+    const decryptMessages = async () => {
+      if (!conversation || !messagesQuery.data || !keysQuery.data) {
+        setDecryptedMessages([]);
+        return;
+      }
+      try {
+        const identity = await getLocalIdentityKey(walletAddress);
+        const visible = await Promise.all(messagesQuery.data.map(async (message) => {
+          try {
+            const body = await decryptForConversation(
+              message.body,
+              conversation.id,
+              message.senderAddress,
+              walletAddress,
+              identity,
+              keysQuery.data ?? [],
+            );
+            return { ...message, body };
+          } catch {
+            return { ...message, body: 'Unable to decrypt this message with the available wallet key.' };
+          }
+        }));
+        if (!cancelled) setDecryptedMessages(visible);
+      } catch {
+        if (!cancelled) setDecryptedMessages([]);
+      }
+    };
+    void decryptMessages();
+    return () => { cancelled = true; };
+  }, [conversation?.id, messagesQuery.data, keysQuery.data, walletAddress]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!keysQuery.data) {
+      setSafetyCode('');
+      return () => { cancelled = true; };
+    }
+    void conversationSafetyCode(keysQuery.data).then((value) => {
+      if (!cancelled) setSafetyCode(value);
+    });
+    return () => { cancelled = true; };
+  }, [keysQuery.data]);
+
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!conversation || !draft.trim()) return;
+    if (!conversation || !draft.trim() || !keysQuery.data || missingMembers.length > 0 || sendMessage.isPending || encrypting) return;
     setSendError('');
     const body = draft.trim();
-    setDraft('');
-    sendMessage.mutate({ conversationId: conversation.id, data: { senderAddress: walletAddress, body } }, {
-      onSuccess: () => {
-        client.invalidateQueries({ queryKey: getListConversationMessagesQueryKey(conversation.id, params) });
-        client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
-      },
-      onError: (error) => { setDraft(body); setSendError(errorMessage(error, 'Message did not send. Nothing was lost.')); },
-    });
+    setEncrypting(true);
+    try {
+      const identity = await getLocalIdentityKey(walletAddress);
+      const encryptedBody = await encryptForConversation(body, conversation.id, walletAddress, identity, keysQuery.data);
+      setDraft('');
+      sendMessage.mutate({ conversationId: conversation.id, data: { senderAddress: walletAddress, body: encryptedBody } }, {
+        onSuccess: () => {
+          client.invalidateQueries({ queryKey: getListConversationMessagesQueryKey(conversation.id, params) });
+          client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
+        },
+        onError: (error) => { setDraft(body); setSendError(errorMessage(error, 'Message did not send. Nothing was lost.')); },
+      });
+    } catch (error) {
+      setSendError(errorMessage(error, 'The message could not be encrypted on this device.'));
+    } finally {
+      setEncrypting(false);
+    }
   };
   if (!conversation) return <div className="hidden min-w-0 flex-1 items-center justify-center p-8 md:flex"><div className="max-w-sm text-center"><div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[hsl(var(--secondary)/.35)] text-[hsl(var(--foreground))]"><MessageCircle className="size-6" /></div><h2 className="mt-5 text-2xl font-semibold tracking-[-.05em]">Pick a conversation</h2><p className="mt-2 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Your private lines live here. Start one with any XRPL address.</p></div></div>;
   return <section className="flex min-h-[520px] min-w-0 flex-1 flex-col bg-[hsl(var(--background)/.42)]" data-testid="message-pane">
-    <div className="flex items-center gap-3 border-b border-[hsl(var(--border))] px-4 py-4 md:px-7"><button onClick={onBack} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] md:hidden" aria-label="Back to conversations" data-testid="button-back-conversations"><ArrowLeft className="size-4" /></button><div className="flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]">{conversation.type === 'group' ? <Hash className="size-4" /> : <AtSign className="size-4" />}</div><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{conversation.title}</h2><span className="flex items-center gap-1 text-[10px] text-[hsl(var(--primary))]"><LockKeyhole className="size-3" /> encrypted</span></div><p className="mono mt-0.5 truncate text-[10px] text-[hsl(var(--muted-foreground))]">{conversation.participantLabel} {conversation.memberCount > 1 ? `· ${conversation.memberCount} members` : ''}</p></div><button className="ml-auto rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]" aria-label="Conversation options" data-testid="button-conversation-options"><MoreHorizontal className="size-5" /></button></div>
-    <div className="soft-scrollbar flex flex-1 flex-col gap-4 overflow-auto px-4 py-6 md:px-10">{messagesQuery.isLoading && [1, 2, 3].map((item) => <div key={item} className={`flex animate-pulse ${item % 2 ? 'justify-start' : 'justify-end'}`}><div className="h-14 w-44 rounded-2xl bg-[hsl(var(--muted))]" /></div>)}{messagesQuery.isError && <div className="m-auto max-w-sm text-center text-sm text-[hsl(var(--muted-foreground))]" data-testid="status-messages-error"><CircleAlert className="mx-auto mb-3 size-5 text-[hsl(var(--destructive))]" />Messages could not be loaded. Refresh to try again.</div>}{!messagesQuery.isLoading && !messagesQuery.isError && messages.length === 0 && <div className="m-auto max-w-sm text-center"><div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"><LockKeyhole className="size-5" /></div><p className="mt-4 text-sm font-medium">This line is quiet.</p><p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send the first encrypted message.</p></div>}{messages.map((message) => <div key={message.id} className={`flex ${message.isMine ? 'justify-end' : 'justify-start'}`} data-testid={`message-${message.id}`}><div className={`max-w-[min(75%,520px)] ${message.isMine ? 'items-end' : 'items-start'} flex flex-col`}><div className={`rounded-2xl px-4 py-3 text-sm leading-6 ${message.isMine ? 'rounded-br-md bg-[hsl(var(--foreground))] text-[hsl(var(--card))]' : 'rounded-bl-md border border-[hsl(var(--border))] bg-[hsl(var(--card))]'}`}><p>{message.body}</p></div><div className="mono mt-1.5 flex items-center gap-2 px-1 text-[9px] text-[hsl(var(--muted-foreground))]"><span>{message.isMine ? 'you' : shortAddress(message.senderAddress)}</span><span>{formatClock(message.sentAt)}</span>{message.encrypted && <LockKeyhole className="size-2.5" />}</div></div></div>)}</div>
-    <div className="border-t border-[hsl(var(--border))] bg-[hsl(var(--card)/.45)] p-4 md:px-7"><form onSubmit={submit} className="relative"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(event); } }} rows={1} placeholder="Write something unbothered…" className="soft-scrollbar min-h-[52px] w-full resize-none rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] py-4 pl-4 pr-14 text-sm outline-none transition placeholder:text-[hsl(var(--muted-foreground)/.7)] focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary)/.13)]" data-testid="input-message" /><button type="submit" disabled={!draft.trim() || sendMessage.isPending} className="absolute bottom-2.5 right-2.5 flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] transition hover:bg-[hsl(var(--foreground))] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Send encrypted message" data-testid="button-send-message">{sendMessage.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Send className="size-4" />}</button></form>{sendError && <p className="mt-2 flex items-center gap-1 text-xs text-[hsl(var(--destructive))]" data-testid="text-send-error"><CircleAlert className="size-3" />{sendError}</p>}<p className="mt-2 flex items-center gap-1.5 px-1 text-[10px] text-[hsl(var(--muted-foreground))]"><ShieldCheck className="size-3 text-[hsl(var(--primary))]" /> Messages are encrypted in transit and tied to your wallet identity.</p></div>
+     <div className="flex items-center gap-3 border-b border-[hsl(var(--border))] px-4 py-4 md:px-7"><button onClick={onBack} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] md:hidden" aria-label="Back to conversations" data-testid="button-back-conversations"><ArrowLeft className="size-4" /></button><div className="flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]">{conversation.type === 'group' ? <Hash className="size-4" /> : <AtSign className="size-4" />}</div><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{conversation.title}</h2><button onClick={() => setShowSafetyCode(true)} className="flex items-center gap-1 text-[10px] text-[hsl(var(--primary))] hover:underline" data-testid="button-show-safety-code"><LockKeyhole className="size-3" /> end-to-end</button></div><p className="mono mt-0.5 truncate text-[10px] text-[hsl(var(--muted-foreground))]">{conversation.participantLabel} {conversation.memberCount > 1 ? `· ${conversation.memberCount} members` : ''}</p></div><button className="ml-auto rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]" aria-label="Conversation options" data-testid="button-conversation-options"><MoreHorizontal className="size-5" /></button></div>
+     <div className="soft-scrollbar flex flex-1 flex-col gap-4 overflow-auto px-4 py-6 md:px-10">{(messagesQuery.isLoading || keysQuery.isLoading) && [1, 2, 3].map((item) => <div key={item} className={`flex animate-pulse ${item % 2 ? 'justify-start' : 'justify-end'}`}><div className="h-14 w-44 rounded-2xl bg-[hsl(var(--muted))]" /></div>)}{(messagesQuery.isError || keysQuery.isError) && <div className="m-auto max-w-sm text-center text-sm text-[hsl(var(--muted-foreground))]" data-testid="status-messages-error"><CircleAlert className="mx-auto mb-3 size-5 text-[hsl(var(--destructive))]" />Messages or encryption keys could not be loaded. Refresh to try again.</div>}{!messagesQuery.isLoading && !messagesQuery.isError && messagesQuery.data?.length === 0 && <div className="m-auto max-w-sm text-center"><div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"><LockKeyhole className="size-5" /></div><p className="mt-4 text-sm font-medium">This line is quiet.</p><p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send the first end-to-end encrypted message.</p></div>}{decryptedMessages.map((message) => <div key={message.id} className={`flex ${message.isMine ? 'justify-end' : 'justify-start'}`} data-testid={`message-${message.id}`}><div className={`max-w-[min(75%,520px)] ${message.isMine ? 'items-end' : 'items-start'} flex flex-col`}><div className={`rounded-2xl px-4 py-3 text-sm leading-6 ${message.isMine ? 'rounded-br-md bg-[hsl(var(--foreground))] text-[hsl(var(--card))]' : 'rounded-bl-md border border-[hsl(var(--border))] bg-[hsl(var(--card))]'}`}><p>{message.body}</p></div><div className="mono mt-1.5 flex items-center gap-2 px-1 text-[9px] text-[hsl(var(--muted-foreground))]"><span>{message.isMine ? 'you' : shortAddress(message.senderAddress)}</span><span>{formatClock(message.sentAt)}</span>{message.encrypted && <LockKeyhole className="size-2.5" />}</div></div></div>)}</div>
+     <div className="border-t border-[hsl(var(--border))] bg-[hsl(var(--card)/.45)] p-4 md:px-7">{missingMembers.length > 0 && <p className="mb-3 rounded-lg border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] px-3 py-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="status-missing-member-keys">Encrypted sending is paused until every room member registers a device key. Missing: {missingMembers.map((member) => shortAddress(member.walletAddress)).join(', ')}.</p>}<form onSubmit={submit} className="relative"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(event as unknown as FormEvent); } }} rows={1} disabled={!keysQuery.data || missingMembers.length > 0} placeholder={missingMembers.length > 0 ? 'Waiting for room members to enable encryption…' : 'Write something unbothered…'} className="soft-scrollbar min-h-[52px] w-full resize-none rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] py-4 pl-4 pr-14 text-sm outline-none transition placeholder:text-[hsl(var(--muted-foreground)/.7)] focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary)/.13)] disabled:opacity-60" data-testid="input-message" /><button type="submit" disabled={!draft.trim() || sendMessage.isPending || encrypting || !keysQuery.data || missingMembers.length > 0} className="absolute bottom-2.5 right-2.5 flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] transition hover:bg-[hsl(var(--foreground))] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Send encrypted message" data-testid="button-send-message">{sendMessage.isPending || encrypting ? <RefreshCw className="size-4 animate-spin" /> : <Send className="size-4" />}</button></form>{sendError && <p className="mt-2 flex items-center gap-1 text-xs text-[hsl(var(--destructive))]" data-testid="text-send-error"><CircleAlert className="size-3" />{sendError}</p>}<p className="mt-2 flex items-center gap-1.5 px-1 text-[10px] text-[hsl(var(--muted-foreground))]"><ShieldCheck className="size-3 text-[hsl(var(--primary))]" /> Message content is encrypted on your device; verify the safety code with members.</p></div>
+     {showSafetyCode && <Modal title="Encryption safety code" eyebrow="verify / out of band" onClose={() => setShowSafetyCode(false)}><p className="text-sm leading-6 text-[hsl(var(--muted-foreground))]">Compare this code with the other member using a separate trusted channel. Matching codes help detect a substituted public key. Until verified, a malicious server could replace keys.</p><div className="mt-5 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4 text-center"><p className="mono break-all text-lg font-semibold tracking-[.08em]" data-testid="text-encryption-safety-code">{safetyCode || 'Loading…'}</p></div><p className="mt-4 text-xs text-[hsl(var(--muted-foreground))]">Keep this device’s browser data. Key backup and multi-device transfer are not available yet.</p></Modal>}
   </section>;
 }
 
@@ -466,6 +537,36 @@ function RouterView() {
   return <Switch><Route path="/" component={() => <HomePage />} /><Route path="/groups" component={() => <GroupsPage onOpenGroup={(id) => { window.sessionStorage.setItem('swamp-selected-conversation', id); setLocation('/'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: id })), 0); }} />} /><Route path="/settings" component={SettingsPage} /><Route component={() => <HomePage />} /></Switch>;
 }
 
+function KeyBootstrapGate({ children }: { children: ReactNode }) {
+  const { walletAddress, disconnect } = useWallet();
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    if (!walletAddress) {
+      setStatus('idle');
+      setError('');
+      return;
+    }
+    let cancelled = false;
+    setStatus('loading');
+    setError('');
+    void ensureIdentityKey(walletAddress).then(() => {
+      if (!cancelled) setStatus('ready');
+    }).catch((cause: unknown) => {
+      if (!cancelled) {
+        setError(errorMessage(cause, 'Could not initialize this device’s encryption key.'));
+        setStatus('error');
+      }
+    });
+    return () => { cancelled = true; };
+  }, [walletAddress, attempt]);
+
+  if (!walletAddress || status === 'ready') return <>{children}</>;
+  return <div className="swamp-app noise flex min-h-[100dvh] items-center justify-center p-6"><section className="w-full max-w-lg rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.9)] p-7 shadow-xl"><div className="flex size-12 items-center justify-center rounded-2xl bg-[hsl(var(--primary)/.12)] text-[hsl(var(--primary))]"><LockKeyhole className="size-5" /></div><p className="mono mt-6 text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">device encryption setup</p><h1 className="mt-2 text-3xl font-semibold tracking-[-.06em]">{status === 'error' ? 'Encryption needs attention.' : 'Preparing your private key.'}</h1>{status === 'loading' ? <p className="mt-3 flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]"><RefreshCw className="size-4 animate-spin" /> Creating or checking this device’s encryption key…</p> : <p className="mt-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]" data-testid="status-encryption-bootstrap-error">{error}</p>}<p className="mt-4 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Your private key stays in this browser’s local key vault and is never sent to SWAMP. Key backup and transfer to another device are not available yet. Keep this browser’s site data to retain access to encrypted messages.</p>{status === 'error' && <div className="mt-6 flex gap-3"><button onClick={() => setAttempt((value) => value + 1)} className="rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))]" data-testid="button-retry-encryption-setup">Try again</button><button onClick={disconnect} className="rounded-xl border border-[hsl(var(--border))] px-4 py-3 text-sm font-medium hover:bg-[hsl(var(--muted))]" data-testid="button-disconnect-encryption-setup">Disconnect</button></div>}</section></div>;
+}
+
 function AuthGate() {
   const storedAddress = window.localStorage.getItem('swamp-wallet-address') ?? '';
   const [walletAddress, setWalletAddressState] = useState(storedAddress);
@@ -516,7 +617,7 @@ function AuthGate() {
     return <div className="swamp-app noise flex min-h-[100dvh] items-center justify-center p-6"><div className="flex items-center gap-3 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.8)] px-5 py-4 text-sm text-[hsl(var(--muted-foreground))] shadow-lg"><RefreshCw className="size-4 animate-spin text-[hsl(var(--primary))]" /> Checking wallet session…</div></div>;
   }
 
-  return <WalletContext.Provider value={{ walletAddress, setWalletAddress, disconnect }}><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><ErrorBoundary resetKey={window.location.pathname}><RouterView /></ErrorBoundary></WouterRouter></WalletContext.Provider>;
+  return <WalletContext.Provider value={{ walletAddress, setWalletAddress, disconnect }}><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><ErrorBoundary resetKey={window.location.pathname}><KeyBootstrapGate><RouterView /></KeyBootstrapGate></ErrorBoundary></WouterRouter></WalletContext.Provider>;
 }
 
 function App() {

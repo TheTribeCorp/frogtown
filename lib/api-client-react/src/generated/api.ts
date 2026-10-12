@@ -21,6 +21,7 @@ import type {
 
 import type {
   Conversation,
+  ConversationKey,
   CurrentWallet,
   DirectConversationInput,
   ErrorResponse,
@@ -33,6 +34,8 @@ import type {
   ListGroupsParams,
   Message,
   MessageInput,
+  WalletKey,
+  WalletKeyInput,
   WalletSession,
   WalletSessionStatus
 } from './api.schemas';
@@ -444,6 +447,171 @@ export const useLogoutWallet = <TError = ErrorType<unknown>,
       return useMutation(getLogoutWalletMutationOptions(options));
     }
 
+export const getGetWalletEncryptionKeyUrl = (walletAddress: string,) => {
+
+
+
+
+  return `/api/wallet/keys/${walletAddress}`
+}
+
+/**
+ * @summary Get a wallet's registered public encryption key
+ */
+export const getWalletEncryptionKey = async (walletAddress: string, options?: Parameters<typeof customFetch>[1]): Promise<WalletKey> => {
+
+  return customFetch<WalletKey>(getGetWalletEncryptionKeyUrl(walletAddress),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWalletEncryptionKeyQueryKey = (walletAddress: string,) => {
+    return [
+    `/api/wallet/keys/${walletAddress}`
+    ] as const;
+    }
+
+
+export const getGetWalletEncryptionKeyQueryOptions = <TData = Awaited<ReturnType<typeof getWalletEncryptionKey>>, TError = ErrorType<ErrorResponse>>(walletAddress: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWalletEncryptionKey>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWalletEncryptionKeyQueryKey(walletAddress);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWalletEncryptionKey>>> = ({ signal }) => getWalletEncryptionKey(walletAddress, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: walletAddress !== null && walletAddress !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWalletEncryptionKey>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWalletEncryptionKeyQueryResult = NonNullable<Awaited<ReturnType<typeof getWalletEncryptionKey>>>
+export type GetWalletEncryptionKeyQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get a wallet's registered public encryption key
+ */
+
+export function useGetWalletEncryptionKey<TData = Awaited<ReturnType<typeof getWalletEncryptionKey>>, TError = ErrorType<ErrorResponse>>(
+ walletAddress: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWalletEncryptionKey>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWalletEncryptionKeyQueryOptions(walletAddress,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRegisterWalletEncryptionKeyUrl = () => {
+
+
+
+
+  return `/api/wallet/keys`
+}
+
+/**
+ * @summary Register the current wallet's public encryption key
+ */
+export const registerWalletEncryptionKey = async (walletKeyInput: WalletKeyInput, options?: Parameters<typeof customFetch>[1]): Promise<WalletKey> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<WalletKey>(getRegisterWalletEncryptionKeyUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(walletKeyInput)
+  }
+);}
+
+
+
+
+
+export const getRegisterWalletEncryptionKeyMutationKey = () => ['registerWalletEncryptionKey'] as const;
+
+export const getRegisterWalletEncryptionKeyMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerWalletEncryptionKey>>, TError,RegisterWalletEncryptionKeyMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof registerWalletEncryptionKey>>, TError,RegisterWalletEncryptionKeyMutationVariables, TContext> => {
+
+const mutationKey = getRegisterWalletEncryptionKeyMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof registerWalletEncryptionKey>>, RegisterWalletEncryptionKeyMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  registerWalletEncryptionKey(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegisterWalletEncryptionKeyMutationResult = NonNullable<Awaited<ReturnType<typeof registerWalletEncryptionKey>>>
+    export type RegisterWalletEncryptionKeyMutationBody = BodyType<WalletKeyInput>
+    export type RegisterWalletEncryptionKeyMutationError = ErrorType<ErrorResponse>
+    export type RegisterWalletEncryptionKeyMutationVariables = {data: BodyType<WalletKeyInput>}
+
+    /**
+ * @summary Register the current wallet's public encryption key
+ */
+export const useRegisterWalletEncryptionKey = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerWalletEncryptionKey>>, TError,RegisterWalletEncryptionKeyMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof registerWalletEncryptionKey>>,
+        TError,
+        RegisterWalletEncryptionKeyMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRegisterWalletEncryptionKeyMutationOptions(options));
+    }
+
 export const getListConversationsUrl = (params: ListConversationsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -705,12 +873,89 @@ export function useListConversationMessages<TData = Awaited<ReturnType<typeof li
 
 
 
+export const getGetConversationEncryptionKeysUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/keys`
+}
+
+/**
+ * @summary Get registered public keys for the current conversation members
+ */
+export const getConversationEncryptionKeys = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<ConversationKey[]> => {
+
+  return customFetch<ConversationKey[]>(getGetConversationEncryptionKeysUrl(conversationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetConversationEncryptionKeysQueryKey = (conversationId: string,) => {
+    return [
+    `/api/conversations/${conversationId}/keys`
+    ] as const;
+    }
+
+
+export const getGetConversationEncryptionKeysQueryOptions = <TData = Awaited<ReturnType<typeof getConversationEncryptionKeys>>, TError = ErrorType<ErrorResponse>>(conversationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConversationEncryptionKeys>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetConversationEncryptionKeysQueryKey(conversationId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getConversationEncryptionKeys>>> = ({ signal }) => getConversationEncryptionKeys(conversationId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: conversationId !== null && conversationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getConversationEncryptionKeys>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetConversationEncryptionKeysQueryResult = NonNullable<Awaited<ReturnType<typeof getConversationEncryptionKeys>>>
+export type GetConversationEncryptionKeysQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get registered public keys for the current conversation members
+ */
+
+export function useGetConversationEncryptionKeys<TData = Awaited<ReturnType<typeof getConversationEncryptionKeys>>, TError = ErrorType<ErrorResponse>>(
+ conversationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConversationEncryptionKeys>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetConversationEncryptionKeysQueryOptions(conversationId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getSendMessageUrl = (conversationId: string,) => {
 
 
 
 
-  return `/api/conversations/${conversationId}/messages`
+  return `/api/conversations/${conversationId}/keys`
 }
 
 /**

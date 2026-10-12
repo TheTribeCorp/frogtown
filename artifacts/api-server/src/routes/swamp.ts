@@ -4,6 +4,8 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   CreateDirectConversationBody,
   CreateGroupBody,
+  GetConversationEncryptionKeysParams,
+  GetWalletEncryptionKeyParams,
   GetWalletSessionParams,
   JoinGroupBody,
   JoinGroupParams,
@@ -11,6 +13,7 @@ import {
   ListConversationMessagesQueryParams,
   ListConversationsQueryParams,
   ListGroupsQueryParams,
+  RegisterWalletEncryptionKeyBody,
   SendMessageBody,
   SendMessageParams,
 } from "@workspace/api-zod";
@@ -21,8 +24,8 @@ import {
   groupMembersTable,
   groupsTable,
   messagesTable,
+  walletKeysTable,
 } from "@workspace/db";
-import { decryptMessage, encryptMessage } from "../lib/message-crypto";
 
 const router: IRouter = Router();
 
@@ -41,7 +44,7 @@ const isWalletAddress = (value: string) => /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test
 function serializeConversation(row: typeof conversationsTable.$inferSelect) {
   return {
     ...row,
-    lastMessage: row.lastMessage ? decryptMessage(row.lastMessage) : null,
+    lastMessage: row.lastMessage ? "Encrypted message" : null,
   };
 }
 
@@ -268,6 +271,87 @@ router.post("/wallet/logout", (_req, res) => {
   res.status(204).send();
 });
 
+router.get("/wallet/keys/:walletAddress", async (req, res): Promise<void> => {
+  const sessionWallet = requireAuth(req, res);
+  if (!sessionWallet) return;
+  const parsedParams = GetWalletEncryptionKeyParams.safeParse(req.params);
+  if (!parsedParams.success) {
+    res.status(400).json({ error: "Enter a valid XRPL wallet address." });
+    return;
+  }
+  const walletAddress = parsedParams.data.walletAddress;
+  const keys = await db
+    .select({ walletAddress: walletKeysTable.walletAddress, publicKey: walletKeysTable.publicKey })
+    .from(walletKeysTable)
+    .where(eq(walletKeysTable.walletAddress, walletAddress))
+    .limit(1);
+  if (!keys[0]) {
+    res.status(404).json({ error: "This wallet has not registered an encryption key yet." });
+    return;
+  }
+  res.json(keys[0]);
+});
+
+router.put("/wallet/keys", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const parsedBody = RegisterWalletEncryptionKeyBody.safeParse(req.body);
+  if (!parsedBody.success) {
+    res.status(400).json({ error: "A valid public encryption key is required." });
+    return;
+  }
+  const publicKey = parsedBody.data.publicKey;
+  try {
+    const parsed = JSON.parse(publicKey) as Record<string, unknown>;
+    if (parsed.kty !== "EC" || parsed.crv !== "P-256" || typeof parsed.x !== "string" || typeof parsed.y !== "string" || "d" in parsed) {
+      res.status(400).json({ error: "Only public P-256 encryption keys are accepted." });
+      return;
+    }
+  } catch {
+    res.status(400).json({ error: "Encryption key must be valid JSON." });
+    return;
+  }
+  const existing = await db.select().from(walletKeysTable).where(eq(walletKeysTable.walletAddress, walletAddress)).limit(1);
+  if (existing[0]) {
+    if (existing[0].publicKey !== publicKey) {
+      res.status(409).json({ error: "An encryption key is already registered for this wallet. Restore this device’s key before continuing; replacing it would hide old messages." });
+      return;
+    }
+    res.json({ walletAddress, publicKey });
+    return;
+  }
+  await db.insert(walletKeysTable).values({ walletAddress, publicKey });
+  res.status(201).json({ walletAddress, publicKey });
+});
+
+router.get("/conversations/:conversationId/keys", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const parsedParams = GetConversationEncryptionKeysParams.safeParse(req.params);
+  if (!parsedParams.success) {
+    res.status(400).json({ error: "Invalid conversation." });
+    return;
+  }
+  const conversationId = parsedParams.data.conversationId;
+  const membership = await db
+    .select({ walletAddress: conversationMembersTable.walletAddress })
+    .from(conversationMembersTable)
+    .where(eq(conversationMembersTable.conversationId, conversationId));
+  if (!membership.some((member) => member.walletAddress === walletAddress)) {
+    res.status(403).json({ error: "You are not a member of this conversation." });
+    return;
+  }
+  const keys = await db
+    .select({
+      walletAddress: conversationMembersTable.walletAddress,
+      publicKey: walletKeysTable.publicKey,
+    })
+    .from(conversationMembersTable)
+    .leftJoin(walletKeysTable, eq(conversationMembersTable.walletAddress, walletKeysTable.walletAddress))
+    .where(eq(conversationMembersTable.conversationId, conversationId));
+  res.json(keys);
+});
+
 router.get("/conversations", async (req, res) => {
   try {
     const sessionWallet = requireAuth(req, res);
@@ -380,11 +464,7 @@ router.get("/conversations/:conversationId/messages", async (req, res) => {
       .from(messagesTable)
       .where(eq(messagesTable.conversationId, conversationId))
       .orderBy(asc(messagesTable.sentAt));
-    res.json(rows.map((row) => ({
-      ...row,
-      body: decryptMessage(row.body),
-      isMine: row.senderAddress === walletAddress,
-    })));
+    res.json(rows.map((row) => ({ ...row, isMine: row.senderAddress === walletAddress })));
   } catch {
     res.status(400).json({ error: "Unable to load this conversation." });
   }
@@ -400,6 +480,10 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
     if (!requireMatchingWallet(sessionWallet, input.senderAddress, res)) return;
     if (!input.body.trim()) {
       res.status(400).json({ error: "Message cannot be empty." });
+      return;
+    }
+    if (!input.body.startsWith("e2ee:v1:")) {
+      res.status(400).json({ error: "Messages must be encrypted on your device before sending." });
       return;
     }
 
@@ -422,16 +506,16 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
       id: `message-${randomUUID()}`,
       conversationId,
       senderAddress: input.senderAddress,
-      body: encryptMessage(input.body.trim()),
+      body: input.body,
       sentAt: new Date(),
       encrypted: true,
     };
     await db.insert(messagesTable).values(message);
     await db
       .update(conversationsTable)
-      .set({ lastMessage: message.body, lastMessageAt: message.sentAt })
+      .set({ lastMessage: "e2ee:v1:", lastMessageAt: message.sentAt })
       .where(eq(conversationsTable.id, conversationId));
-    res.status(201).json({ ...message, body: decryptMessage(message.body), isMine: true });
+    res.status(201).json({ ...message, isMine: true });
   } catch {
     res.status(400).json({ error: "Message could not be sent." });
   }

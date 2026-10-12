@@ -59,6 +59,40 @@ export const LogoutWalletResponse = zod.void()
 
 
 /**
+ * @summary Get a wallet's registered public encryption key
+ */
+export const getWalletEncryptionKeyPathWalletAddressMin = 25;
+
+
+
+export const GetWalletEncryptionKeyParams = zod.object({
+  "walletAddress": zod.coerce.string().min(getWalletEncryptionKeyPathWalletAddressMin)
+})
+
+export const GetWalletEncryptionKeyResponse = zod.object({
+  "walletAddress": zod.string(),
+  "publicKey": zod.string()
+})
+
+
+/**
+ * @summary Register the current wallet's public encryption key
+ */
+export const registerWalletEncryptionKeyBodyPublicKeyMax = 2048;
+
+
+
+export const RegisterWalletEncryptionKeyBody = zod.object({
+  "publicKey": zod.string().max(registerWalletEncryptionKeyBodyPublicKeyMax)
+})
+
+export const RegisterWalletEncryptionKeyResponse = zod.object({
+  "walletAddress": zod.string(),
+  "publicKey": zod.string()
+})
+
+
+/**
  * @summary List conversations for a wallet address
  */
 export const listConversationsQueryWalletAddressMin = 25;
@@ -135,6 +169,20 @@ export const ListConversationMessagesResponseItem = zod.object({
   "encrypted": zod.boolean()
 })
 export const ListConversationMessagesResponse = zod.array(ListConversationMessagesResponseItem)
+
+
+/**
+ * @summary Get registered public keys for the current conversation members
+ */
+export const GetConversationEncryptionKeysParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const GetConversationEncryptionKeysResponseItem = zod.object({
+  "walletAddress": zod.string(),
+  "publicKey": zod.string().nullable()
+})
+export const GetConversationEncryptionKeysResponse = zod.array(GetConversationEncryptionKeysResponseItem)
 
 
 /**

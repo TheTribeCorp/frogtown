@@ -42,6 +42,22 @@ export interface CurrentWallet {
   network: string;
 }
 
+export interface WalletKey {
+  walletAddress: string;
+  publicKey: string;
+}
+
+export interface WalletKeyInput {
+  /** @maxLength 2048 */
+  publicKey: string;
+}
+
+export interface ConversationKey {
+  walletAddress: string;
+  /** @nullable */
+  publicKey: string | null;
+}
+
 export type ConversationType = typeof ConversationType[keyof typeof ConversationType];
 
 

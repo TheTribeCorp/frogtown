@@ -7,6 +7,7 @@
  */
 
 export * from './conversation';
+export * from './conversationKey';
 export * from './conversationType';
 export * from './currentWallet';
 export * from './directConversationInput';
@@ -21,6 +22,8 @@ export * from './listGroupsParams';
 export * from './message';
 export * from './messageInput';
 export * from './walletAddressParameter';
+export * from './walletKey';
+export * from './walletKeyInput';
 export * from './walletSession';
 export * from './walletSessionStatus';
 export * from './walletSessionStatusStatus';

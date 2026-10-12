@@ -1,0 +1,1 @@
+- [SWAMP encryption model](swamp-encryption-model.md) — wallet login keys and client encryption keys are separate; verify public keys out of band.

@@ -94,6 +94,56 @@ paths:
       responses:
         "204":
           description: Session cleared
+  /wallet/keys/{walletAddress}:
+    get:
+      operationId: getWalletEncryptionKey
+      tags: [wallet]
+      summary: Get a wallet's registered public encryption key
+      parameters:
+        - $ref: "#/components/parameters/WalletAddressPath"
+      responses:
+        "200":
+          description: Public encryption key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletKey"
+        "404":
+          description: No encryption key registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /wallet/keys:
+    put:
+      operationId: registerWalletEncryptionKey
+      tags: [wallet]
+      summary: Register the current wallet's public encryption key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalletKeyInput"
+      responses:
+        "200":
+          description: Existing key confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletKey"
+        "201":
+          description: Public key registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletKey"
+        "409":
+          description: A different key is already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /conversations:
     get:
       operationId: listConversations
@@ -144,6 +194,28 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Message"
+  /conversations/{conversationId}/keys:
+    get:
+      operationId: getConversationEncryptionKeys
+      tags: [conversations]
+      summary: Get registered public keys for the current conversation members
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      responses:
+        "200":
+          description: Conversation member keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConversationKey"
+        "403":
+          description: Caller is not a conversation member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     post:
       operationId: sendMessage
       tags: [conversations]
@@ -241,6 +313,13 @@ components:
       schema:
         type: string
         minLength: 25
+    WalletAddressPath:
+      name: walletAddress
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 25
   schemas:
     HealthStatus:
       type: object
@@ -289,6 +368,29 @@ components:
         network:
           type: string
       required: [walletAddress, network]
+    WalletKey:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        publicKey:
+          type: string
+      required: [walletAddress, publicKey]
+    WalletKeyInput:
+      type: object
+      properties:
+        publicKey:
+          type: string
+          maxLength: 2048
+      required: [publicKey]
+    ConversationKey:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        publicKey:
+          type: ["string", "null"]
+      required: [walletAddress, publicKey]
     Conversation:
       type: object
       properties:

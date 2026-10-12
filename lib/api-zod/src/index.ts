@@ -16,3 +16,6 @@ export * from "./generated/types/walletSession";
 export * from "./generated/types/walletSessionStatus";
 export * from "./generated/types/walletSessionStatusStatus";
 export * from "./generated/types/currentWallet";
+export * from "./generated/types/conversationKey";
+export * from "./generated/types/walletKey";
+export * from "./generated/types/walletKeyInput";

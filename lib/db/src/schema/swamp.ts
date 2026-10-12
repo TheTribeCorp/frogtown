@@ -46,12 +46,20 @@ export const groupMembersTable = pgTable("swamp_group_members", {
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const walletKeysTable = pgTable("swamp_wallet_keys", {
+  walletAddress: text("wallet_address").primaryKey(),
+  publicKey: text("public_key").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const insertConversationSchema = createInsertSchema(conversationsTable);
 export const insertMessageSchema = createInsertSchema(messagesTable);
 export const insertGroupSchema = createInsertSchema(groupsTable);
 export const insertGroupMemberSchema = createInsertSchema(groupMembersTable);
 export const insertConversationMemberSchema = createInsertSchema(conversationMembersTable);
+export const insertWalletKeySchema = createInsertSchema(walletKeysTable);
 
 export type Conversation = z.infer<typeof insertConversationSchema>;
 export type Message = z.infer<typeof insertMessageSchema>;
 export type Group = z.infer<typeof insertGroupSchema>;
+export type WalletKey = z.infer<typeof insertWalletKeySchema>;
