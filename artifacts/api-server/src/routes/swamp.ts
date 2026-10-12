@@ -667,7 +667,11 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
     if (outcome.created) {
       await publishMessageCreated(
         memberships.map((member) => member.walletAddress),
-        { conversationId, messageId: outcome.message.id },
+        {
+          conversationId,
+          messageId: outcome.message.id,
+          senderAddress: outcome.message.senderAddress,
+        },
       );
     }
     const readState = await db

@@ -7,7 +7,7 @@ const EVENT_CHANNEL = "swamp_message_created";
 const INSTANCE_ID = randomUUID();
 
 export type WalletEvent =
-  | { type: "message.created"; conversationId: string; messageId: string }
+  | { type: "message.created"; conversationId: string; messageId: string; senderAddress: string }
   | { type: "message.read"; conversationId: string };
 
 type WalletListener = (event: WalletEvent) => void;

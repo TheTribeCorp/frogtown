@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -42,6 +42,51 @@ async function request(pathname, { method = "GET", cookie, body, origin } = {}) 
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+}
+
+async function openMessageEvents(walletAddress) {
+  const controller = new AbortController();
+  const response = await fetch(`${baseUrl}/api/events`, {
+    headers: { cookie: sessionCookie(walletAddress) },
+    signal: controller.signal,
+  });
+  assert.equal(response.status, 200);
+  assert.ok(response.body, "authenticated event stream should have a response body");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  return {
+    async nextEvent() {
+      const timeout = setTimeout(() => controller.abort(), 5_000);
+      try {
+        while (true) {
+          const start = buffer.indexOf("data: ");
+          if (start >= 0) {
+            const end = buffer.indexOf("\n", start);
+            if (end >= 0) {
+              const data = buffer.slice(start + 6, end).trim();
+              buffer = buffer.slice(end + 1);
+              const event = JSON.parse(data);
+              if (event.type !== "ready") return event;
+              continue;
+            }
+          }
+          const { value, done } = await reader.read();
+          if (done) throw new Error("Event stream closed before the message notification arrived.");
+          buffer += decoder.decode(value, { stream: true });
+        }
+      } catch (error) {
+        if (controller.signal.aborted) throw new Error("Timed out waiting for a message notification.");
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+    close() {
+      controller.abort();
+    },
+  };
 }
 
 before(async () => {
@@ -164,6 +209,61 @@ test("authenticated non-members cannot fetch, decrypt, send, or mark another con
   for (const [pathname, method, body] of requests) {
     const response = await request(pathname, { method, cookie, body });
     assert.equal(response.status, 403, `${method} ${pathname} should require conversation membership`);
+  }
+});
+
+test("message events reach private-chat and group recipients with sender metadata", async () => {
+  const directResponse = await request("/api/conversations", {
+    method: "POST",
+    cookie: sessionCookie(walletA),
+    body: { walletAddress: walletB, fromWalletAddress: walletA },
+  });
+  assert.equal(directResponse.status, 201);
+  const directConversation = await directResponse.json();
+
+  const stream = await openMessageEvents(walletB);
+  try {
+    const directMessageId = randomUUID();
+    const directMessageResponse = await request(`/api/conversations/${directConversation.id}/messages`, {
+      method: "POST",
+      cookie: sessionCookie(walletA),
+      body: { senderAddress: walletA, messageId: directMessageId, body: "e2ee:v1:private-test" },
+    });
+    assert.equal(directMessageResponse.status, 201);
+    const directEvent = await stream.nextEvent();
+    assert.equal(directEvent.type, "message.created");
+    assert.equal(directEvent.conversationId, directConversation.id);
+    assert.equal(directEvent.messageId, directMessageId);
+    assert.equal(directEvent.senderAddress, walletA);
+
+    const groupResponse = await request("/api/groups", {
+      method: "POST",
+      cookie: sessionCookie(walletA),
+      body: { name: `Notification test ${randomUUID()}`, description: "", creatorAddress: walletA },
+    });
+    assert.equal(groupResponse.status, 201);
+    const group = await groupResponse.json();
+    const joinResponse = await request(`/api/groups/${group.id}/join`, {
+      method: "POST",
+      cookie: sessionCookie(walletB),
+      body: { walletAddress: walletB },
+    });
+    assert.equal(joinResponse.status, 200);
+
+    const groupMessageId = randomUUID();
+    const groupMessageResponse = await request(`/api/conversations/${group.conversationId}/messages`, {
+      method: "POST",
+      cookie: sessionCookie(walletA),
+      body: { senderAddress: walletA, messageId: groupMessageId, body: "e2ee:v1:group-test" },
+    });
+    assert.equal(groupMessageResponse.status, 201);
+    const groupEvent = await stream.nextEvent();
+    assert.equal(groupEvent.type, "message.created");
+    assert.equal(groupEvent.conversationId, group.conversationId);
+    assert.equal(groupEvent.messageId, groupMessageId);
+    assert.equal(groupEvent.senderAddress, walletA);
+  } finally {
+    stream.close();
   }
 });
 

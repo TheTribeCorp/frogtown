@@ -60,8 +60,10 @@ import {
   useSendMessage,
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { BrowserNotificationSettings } from '@/components/browser-notification-settings';
 import { EncryptionRecoveryPanel } from '@/components/encryption-recovery';
 import { TimelinePage } from '@/components/timeline-page';
+import { notifyIncomingMessage } from '@/lib/browser-notifications';
 import {
   conversationSafetyCode,
   decryptForConversation,
@@ -93,6 +95,7 @@ function useWallet() {
 function RealtimeBridge({ children }: { children: ReactNode }) {
   const { walletAddress } = useWallet();
   const client = useQueryClient();
+  const [, setLocation] = useLocation();
   const [status, setStatus] = useState<RealtimeStatus>('reconnecting');
 
   useEffect(() => {
@@ -120,7 +123,12 @@ function RealtimeBridge({ children }: { children: ReactNode }) {
     };
     source.onmessage = (event) => {
       try {
-        const payload = JSON.parse(event.data) as { type?: string; conversationId?: string; messageId?: string };
+        const payload = JSON.parse(event.data) as {
+          type?: string;
+          conversationId?: string;
+          messageId?: string;
+          senderAddress?: string;
+        };
         if (!payload.conversationId) return;
         if (payload.type === 'message.created') {
           void client.invalidateQueries({ queryKey: getListConversationsQueryKey({ walletAddress }) });
@@ -128,6 +136,19 @@ function RealtimeBridge({ children }: { children: ReactNode }) {
             queryKey: getListConversationMessagesQueryKey(payload.conversationId, { walletAddress }),
           });
           window.dispatchEvent(new CustomEvent('swamp-message-created', { detail: payload }));
+          if (payload.senderAddress && payload.senderAddress !== walletAddress && payload.messageId) {
+            notifyIncomingMessage(walletAddress, {
+              conversationId: payload.conversationId,
+              messageId: payload.messageId,
+            }, () => {
+              window.focus();
+              window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, payload.conversationId!);
+              setLocation('/');
+              window.setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: payload.conversationId }));
+              }, 0);
+            });
+          }
           return;
         }
         if (payload.type === 'message.read') {
@@ -152,7 +173,7 @@ function RealtimeBridge({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', recoverWhenVisible);
       window.removeEventListener('online', recoverWhenVisible);
     };
-  }, [walletAddress, client]);
+  }, [walletAddress, client, setLocation]);
 
   return <RealtimeContext.Provider value={status}>{children}</RealtimeContext.Provider>;
 }
@@ -689,7 +710,7 @@ function SettingsPage() {
   const [copied, setCopied] = useState(false);
   const [privateMode, setPrivateMode] = useState(true);
   const copy = () => { navigator.clipboard?.writeText(walletAddress); setCopied(true); window.setTimeout(() => setCopied(false), 1600); };
-  return <AppShell title="Settings" eyebrow="your identity / your rules"><div className="mx-auto max-w-[900px] p-5 md:p-8 lg:p-10"><div className="appear"><p className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">wallet identity</p><h2 className="mt-3 text-4xl font-semibold tracking-[-.07em] md:text-5xl">Keep it yours.</h2><p className="mt-4 max-w-lg text-sm leading-6 text-[hsl(var(--muted-foreground))]">Frogtown does not create a separate profile for you. Your XRPL wallet address is your name here.</p></div><div className="mt-10 grid gap-5 md:grid-cols-[1.2fr_.8fr]"><section className="rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">connected wallet</p><div className="mt-4 flex items-center gap-3"><div className="flex size-11 items-center justify-center rounded-2xl bg-[hsl(var(--secondary)/.45)]"><WalletCards className="size-5" /></div><div><p className="font-semibold" data-testid="text-settings-username">{shortAddress(walletAddress)}</p><p className="mono mt-1 text-[10px] text-[hsl(var(--muted-foreground))]">XRPL mainnet</p></div></div></div><span className="flex items-center gap-1.5 rounded-full bg-[hsl(var(--primary)/.1)] px-2.5 py-1.5 text-[10px] font-medium text-[hsl(var(--primary))]" data-testid="status-wallet-connected"><span className="size-1.5 rounded-full bg-[hsl(var(--primary))]" /> Connected</span></div><div className="mt-7 flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background)/.55)] p-3"><p className="mono min-w-0 flex-1 truncate text-xs text-[hsl(var(--muted-foreground))]" data-testid="text-full-wallet-address">{walletAddress}</p><button onClick={copy} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]" aria-label="Copy wallet address" data-testid="button-copy-address">{copied ? <Check className="size-4 text-[hsl(var(--primary))]" /> : <Copy className="size-4" />}</button></div><button onClick={disconnect} className="mt-6 flex items-center gap-2 text-xs text-[hsl(var(--destructive))] hover:underline" data-testid="button-settings-disconnect"><LogOut className="size-3.5" /> Disconnect this wallet</button></section><section className="rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6"><p className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">connection health</p><div className="mt-5 flex items-center gap-3"><div className={`flex size-10 items-center justify-center rounded-xl ${health.isError ? 'bg-[hsl(var(--destructive)/.1)] text-[hsl(var(--destructive))]' : 'bg-[hsl(var(--primary)/.12)] text-[hsl(var(--primary))]'}`}><Wifi className="size-4" /></div><div><p className="text-sm font-medium">{health.isLoading ? 'Checking signal…' : health.isError ? 'Signal interrupted' : 'All systems listening'}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]" data-testid="status-api-health">{health.isError ? 'The server did not answer.' : health.data?.status ?? 'XRPL relay ready'}</p></div></div><div className="mt-5 h-px bg-[hsl(var(--border))]" /><div className="mt-5 flex items-start gap-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-[hsl(var(--primary))]" /><p>Wallet sessions expire quickly. Messages remain address-to-address.</p></div></section></div><section className="mt-5 rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6"><div className="flex items-start gap-4"><div className="flex size-10 items-center justify-center rounded-xl bg-[hsl(var(--accent)/.13)] text-[hsl(var(--accent))]"><Bell className="size-4" /></div><div className="flex-1"><h3 className="font-semibold">Privacy controls</h3><p className="mt-1 max-w-xl text-sm leading-5 text-[hsl(var(--muted-foreground))]">Keep your presence quiet until you choose to speak. We never infer a public profile from your address.</p><div className="mt-5 flex items-center justify-between border-t border-[hsl(var(--border))] pt-4"><div><p className="text-sm font-medium">Private by default</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Only your messages reveal you are here.</p></div><button onClick={() => setPrivateMode((value) => !value)} className={`relative h-7 w-12 rounded-full transition ${privateMode ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--muted-foreground)/.28)]'}`} role="switch" aria-checked={privateMode} aria-label="Toggle private by default" data-testid="switch-private-mode"><span className={`absolute top-1 size-5 rounded-full bg-[hsl(var(--card))] shadow-sm transition-transform ${privateMode ? 'translate-x-6' : 'translate-x-1'}`} /></button></div></div></div></section><div className="mt-8 flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]"><KeyRound className="size-3.5 text-[hsl(var(--secondary-foreground))]" /> Frogtown uses your wallet as your handle. Nothing else is required.</div></div></AppShell>;
+  return <AppShell title="Settings" eyebrow="your identity / your rules"><div className="mx-auto max-w-[900px] p-5 md:p-8 lg:p-10"><div className="appear"><p className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">wallet identity</p><h2 className="mt-3 text-4xl font-semibold tracking-[-.07em] md:text-5xl">Keep it yours.</h2><p className="mt-4 max-w-lg text-sm leading-6 text-[hsl(var(--muted-foreground))]">Frogtown does not create a separate profile for you. Your XRPL wallet address is your name here.</p></div><div className="mt-10 grid gap-5 md:grid-cols-[1.2fr_.8fr]"><section className="rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">connected wallet</p><div className="mt-4 flex items-center gap-3"><div className="flex size-11 items-center justify-center rounded-2xl bg-[hsl(var(--secondary)/.45)]"><WalletCards className="size-5" /></div><div><p className="font-semibold" data-testid="text-settings-username">{shortAddress(walletAddress)}</p><p className="mono mt-1 text-[10px] text-[hsl(var(--muted-foreground))]">XRPL mainnet</p></div></div></div><span className="flex items-center gap-1.5 rounded-full bg-[hsl(var(--primary)/.1)] px-2.5 py-1.5 text-[10px] font-medium text-[hsl(var(--primary))]" data-testid="status-wallet-connected"><span className="size-1.5 rounded-full bg-[hsl(var(--primary))]" /> Connected</span></div><div className="mt-7 flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background)/.55)] p-3"><p className="mono min-w-0 flex-1 truncate text-xs text-[hsl(var(--muted-foreground))]" data-testid="text-full-wallet-address">{walletAddress}</p><button onClick={copy} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]" aria-label="Copy wallet address" data-testid="button-copy-address">{copied ? <Check className="size-4 text-[hsl(var(--primary))]" /> : <Copy className="size-4" />}</button></div><button onClick={disconnect} className="mt-6 flex items-center gap-2 text-xs text-[hsl(var(--destructive))] hover:underline" data-testid="button-settings-disconnect"><LogOut className="size-3.5" /> Disconnect this wallet</button></section><section className="rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6"><p className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">connection health</p><div className="mt-5 flex items-center gap-3"><div className={`flex size-10 items-center justify-center rounded-xl ${health.isError ? 'bg-[hsl(var(--destructive)/.1)] text-[hsl(var(--destructive))]' : 'bg-[hsl(var(--primary)/.12)] text-[hsl(var(--primary))]'}`}><Wifi className="size-4" /></div><div><p className="text-sm font-medium">{health.isLoading ? 'Checking signal…' : health.isError ? 'Signal interrupted' : 'All systems listening'}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]" data-testid="status-api-health">{health.isError ? 'The server did not answer.' : health.data?.status ?? 'XRPL relay ready'}</p></div></div><div className="mt-5 h-px bg-[hsl(var(--border))]" /><div className="mt-5 flex items-start gap-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-[hsl(var(--primary))]" /><p>Wallet sessions expire quickly. Messages remain address-to-address.</p></div></section></div><section className="mt-5 rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6"><div className="flex items-start gap-4"><div className="flex size-10 items-center justify-center rounded-xl bg-[hsl(var(--accent)/.13)] text-[hsl(var(--accent))]"><Bell className="size-4" /></div><div className="flex-1"><h3 className="font-semibold">Privacy controls</h3><p className="mt-1 max-w-xl text-sm leading-5 text-[hsl(var(--muted-foreground))]">Keep your presence quiet until you choose to speak. We never infer a public profile from your address.</p><div className="mt-5 flex items-center justify-between border-t border-[hsl(var(--border))] pt-4"><div><p className="text-sm font-medium">Private by default</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Only your messages reveal you are here.</p></div><button onClick={() => setPrivateMode((value) => !value)} className={`relative h-7 w-12 rounded-full transition ${privateMode ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--muted-foreground)/.28)]'}`} role="switch" aria-checked={privateMode} aria-label="Toggle private by default" data-testid="switch-private-mode"><span className={`absolute top-1 size-5 rounded-full bg-[hsl(var(--card))] shadow-sm transition-transform ${privateMode ? 'translate-x-6' : 'translate-x-1'}`} /></button></div></div></div></section><BrowserNotificationSettings walletAddress={walletAddress} /><div className="mt-8 flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]"><KeyRound className="size-3.5 text-[hsl(var(--secondary-foreground))]" /> Frogtown uses your wallet as your handle. Nothing else is required.</div></div></AppShell>;
 }
 
 function LockedPage({ title }: { title: string }) {
