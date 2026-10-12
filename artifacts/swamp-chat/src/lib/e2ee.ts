@@ -164,7 +164,7 @@ export async function encryptForConversation(
   members: ConversationPublicKey[],
 ): Promise<string> {
   if (members.some((member) => !member.publicKey)) {
-    throw new Error('Every member must connect SWAMP on a device with an encryption key before this room can receive encrypted messages.');
+    throw new Error('Every member must connect Frogtown on a device with an encryption key before this room can receive encrypted messages.');
   }
   const entries: Record<string, CipherEntry> = {};
   for (const member of members) {

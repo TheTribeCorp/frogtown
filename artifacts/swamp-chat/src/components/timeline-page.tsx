@@ -225,8 +225,8 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
         <main className="min-w-0">
           <div className="appear mb-6 flex items-end justify-between gap-4">
             <div>
-              <p className="mono flex items-center gap-2 text-[10px] uppercase tracking-[.2em] text-[hsl(var(--primary))]" data-testid="text-timeline-eyebrow"><span className="size-1.5 rounded-full bg-[hsl(var(--primary))] pulse-dot" /> open channel / xrpl</p>
-              <h1 className="mt-2 text-[2.15rem] font-semibold leading-none tracking-[-.07em] sm:text-4xl" data-testid="text-timeline-title">The current.</h1>
+              <p className="mono flex items-center gap-2 text-[10px] uppercase tracking-[.2em] text-[hsl(var(--primary))]" data-testid="text-timeline-eyebrow"><span className="size-1.5 rounded-full bg-[hsl(var(--primary))] pulse-dot" /> $HERMIT community / xrpl</p>
+              <h1 className="mt-2 text-[2.15rem] font-semibold leading-none tracking-[-.07em] sm:text-4xl" data-testid="text-timeline-title">Frogtown feed.</h1>
             </div>
             <div className="mono hidden items-center gap-2 pb-1 text-[9px] uppercase tracking-[.15em] text-[hsl(var(--muted-foreground))] sm:flex" data-testid="status-feed-public"><Radio className="size-3.5 text-[hsl(var(--accent))]" /> Public feed</div>
           </div>
@@ -241,7 +241,7 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
                   value={body}
                   maxLength={POST_LIMIT}
                   onChange={(event) => { setBody(event.target.value); setComposerError(''); }}
-                  placeholder="What’s moving through your corner of the ledger?"
+                  placeholder="What’s happening in Frogtown?"
                   rows={4}
                   className="min-h-[112px] w-full resize-y bg-transparent py-1 text-[15px] leading-6 outline-none placeholder:text-[hsl(var(--muted-foreground)/.68)] sm:text-base"
                   data-testid="input-create-post"
@@ -302,7 +302,7 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
               <div className="absolute right-2 top-3 size-16 rounded-full border border-[hsl(var(--primary)/.3)]" />
               <p className="mono relative text-[9px] uppercase tracking-[.18em] text-[hsl(var(--secondary))]">one ledger / many voices</p>
               <h2 className="relative mt-5 text-2xl font-semibold leading-[1.03] tracking-[-.06em]">Talk in<br />the open.</h2>
-              <p className="relative mt-3 text-xs leading-5 text-[hsl(var(--sidebar-foreground)/.65)]">A public text feed for the wallets in the swamp. Private chats stay private; this current is for everyone.</p>
+              <p className="relative mt-3 text-xs leading-5 text-[hsl(var(--sidebar-foreground)/.65)]">A shared feed for the $HERMIT community. Private chats stay encrypted; here, members can post, like, and reply together.</p>
               <div className="relative mt-5 flex items-center gap-2 border-t border-[hsl(var(--sidebar-foreground)/.12)] pt-4">
                 <span className="flex size-7 items-center justify-center rounded-lg bg-[hsl(var(--secondary)/.16)] text-[hsl(var(--secondary))]"><Radio className="size-3.5" /></span>
                  <span className="mono text-[9px] uppercase tracking-[.12em] text-[hsl(var(--sidebar-foreground)/.7)]">wallet-native feed</span>
