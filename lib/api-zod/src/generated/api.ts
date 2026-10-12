@@ -166,9 +166,27 @@ export const ListConversationMessagesResponseItem = zod.object({
   "body": zod.string(),
   "sentAt": zod.coerce.date(),
   "isMine": zod.boolean(),
-  "encrypted": zod.boolean()
+  "encrypted": zod.boolean(),
+  "isRead": zod.boolean()
 })
 export const ListConversationMessagesResponse = zod.array(ListConversationMessagesResponseItem)
+
+
+/**
+ * @summary Mark visible messages through a specific message as read
+ */
+export const MarkConversationReadParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const MarkConversationReadBody = zod.object({
+  "messageId": zod.string()
+})
+
+export const MarkConversationReadResponse = zod.object({
+  "conversationId": zod.string(),
+  "lastReadAt": zod.coerce.date()
+})
 
 
 /**
@@ -210,7 +228,8 @@ export const SendMessageResponse = zod.object({
   "body": zod.string(),
   "sentAt": zod.coerce.date(),
   "isMine": zod.boolean(),
-  "encrypted": zod.boolean()
+  "encrypted": zod.boolean(),
+  "isRead": zod.boolean()
 })
 
 
@@ -286,6 +305,112 @@ export const JoinGroupResponse = zod.object({
   "onlineCount": zod.number().int(),
   "isJoined": zod.boolean(),
   "conversationId": zod.string()
+})
+
+
+/**
+ * @summary List recent public timeline posts for signed-in members
+ */
+export const ListTimelinePostsResponseItem = zod.object({
+  "id": zod.string(),
+  "authorAddress": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "likeCount": zod.number().int(),
+  "commentCount": zod.number().int(),
+  "likedByMe": zod.boolean()
+})
+export const ListTimelinePostsResponse = zod.array(ListTimelinePostsResponseItem)
+
+
+/**
+ * @summary Publish a text post as the authenticated wallet
+ */
+export const createTimelinePostBodyBodyMax = 5000;
+
+
+
+export const CreateTimelinePostBody = zod.object({
+  "body": zod.string().min(1).max(createTimelinePostBodyBodyMax)
+})
+
+export const CreateTimelinePostResponse = zod.object({
+  "id": zod.string(),
+  "authorAddress": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "likeCount": zod.number().int(),
+  "commentCount": zod.number().int(),
+  "likedByMe": zod.boolean()
+})
+
+
+/**
+ * @summary Like a timeline post as the authenticated wallet
+ */
+export const LikeTimelinePostParams = zod.object({
+  "postId": zod.coerce.string()
+})
+
+export const LikeTimelinePostResponse = zod.object({
+  "postId": zod.string(),
+  "likeCount": zod.number().int(),
+  "likedByMe": zod.boolean()
+})
+
+
+/**
+ * @summary Remove the authenticated wallet's like from a timeline post
+ */
+export const UnlikeTimelinePostParams = zod.object({
+  "postId": zod.coerce.string()
+})
+
+export const UnlikeTimelinePostResponse = zod.object({
+  "postId": zod.string(),
+  "likeCount": zod.number().int(),
+  "likedByMe": zod.boolean()
+})
+
+
+/**
+ * @summary List comments on a timeline post
+ */
+export const ListTimelineCommentsParams = zod.object({
+  "postId": zod.coerce.string()
+})
+
+export const ListTimelineCommentsResponseItem = zod.object({
+  "id": zod.string(),
+  "postId": zod.string(),
+  "authorAddress": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListTimelineCommentsResponse = zod.array(ListTimelineCommentsResponseItem)
+
+
+/**
+ * @summary Comment on a timeline post as the authenticated wallet
+ */
+export const CreateTimelineCommentParams = zod.object({
+  "postId": zod.coerce.string()
+})
+
+export const createTimelineCommentBodyBodyMax = 2000;
+
+
+
+export const CreateTimelineCommentBody = zod.object({
+  "body": zod.string().min(1).max(createTimelineCommentBodyBodyMax)
+})
+
+export const CreateTimelineCommentResponse = zod.object({
+  "id": zod.string(),
+  "postId": zod.string(),
+  "authorAddress": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date()
 })
 
 

@@ -34,6 +34,13 @@ import type {
   ListGroupsParams,
   Message,
   MessageInput,
+  ReadReceipt,
+  ReadReceiptInput,
+  TimelineComment,
+  TimelineCommentInput,
+  TimelinePost,
+  TimelinePostInput,
+  TimelinePostReaction,
   WalletKey,
   WalletKeyInput,
   WalletSession,
@@ -873,6 +880,95 @@ export function useListConversationMessages<TData = Awaited<ReturnType<typeof li
 
 
 
+export const getMarkConversationReadUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/read`
+}
+
+/**
+ * @summary Mark visible messages through a specific message as read
+ */
+export const markConversationRead = async (conversationId: string,
+    readReceiptInput: ReadReceiptInput, options?: Parameters<typeof customFetch>[1]): Promise<ReadReceipt> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ReadReceipt>(getMarkConversationReadUrl(conversationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(readReceiptInput)
+  }
+);}
+
+
+
+
+
+export const getMarkConversationReadMutationKey = () => ['markConversationRead'] as const;
+
+export const getMarkConversationReadMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markConversationRead>>, TError,MarkConversationReadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markConversationRead>>, TError,MarkConversationReadMutationVariables, TContext> => {
+
+const mutationKey = getMarkConversationReadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markConversationRead>>, MarkConversationReadMutationVariables> = (props) => {
+          const {conversationId,data} = props ?? {};
+
+          return  markConversationRead(conversationId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkConversationReadMutationResult = NonNullable<Awaited<ReturnType<typeof markConversationRead>>>
+    export type MarkConversationReadMutationBody = BodyType<ReadReceiptInput>
+    export type MarkConversationReadMutationError = ErrorType<ErrorResponse>
+    export type MarkConversationReadMutationVariables = {conversationId: string;data: BodyType<ReadReceiptInput>}
+
+    /**
+ * @summary Mark visible messages through a specific message as read
+ */
+export const useMarkConversationRead = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markConversationRead>>, TError,MarkConversationReadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markConversationRead>>,
+        TError,
+        MarkConversationReadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getMarkConversationReadMutationOptions(options));
+    }
+
 export const getGetConversationEncryptionKeysUrl = (conversationId: string,) => {
 
 
@@ -1298,5 +1394,484 @@ export const useJoinGroup = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getJoinGroupMutationOptions(options));
+    }
+
+export const getListTimelinePostsUrl = () => {
+
+
+
+
+  return `/api/timeline/posts`
+}
+
+/**
+ * @summary List recent public timeline posts for signed-in members
+ */
+export const listTimelinePosts = async ( options?: Parameters<typeof customFetch>[1]): Promise<TimelinePost[]> => {
+
+  return customFetch<TimelinePost[]>(getListTimelinePostsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTimelinePostsQueryKey = () => {
+    return [
+    `/api/timeline/posts`
+    ] as const;
+    }
+
+
+export const getListTimelinePostsQueryOptions = <TData = Awaited<ReturnType<typeof listTimelinePosts>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelinePosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTimelinePostsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTimelinePosts>>> = ({ signal }) => listTimelinePosts({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTimelinePosts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTimelinePostsQueryResult = NonNullable<Awaited<ReturnType<typeof listTimelinePosts>>>
+export type ListTimelinePostsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List recent public timeline posts for signed-in members
+ */
+
+export function useListTimelinePosts<TData = Awaited<ReturnType<typeof listTimelinePosts>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelinePosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTimelinePostsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateTimelinePostUrl = () => {
+
+
+
+
+  return `/api/timeline/posts`
+}
+
+/**
+ * @summary Publish a text post as the authenticated wallet
+ */
+export const createTimelinePost = async (timelinePostInput: TimelinePostInput, options?: Parameters<typeof customFetch>[1]): Promise<TimelinePost> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TimelinePost>(getCreateTimelinePostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(timelinePostInput)
+  }
+);}
+
+
+
+
+
+export const getCreateTimelinePostMutationKey = () => ['createTimelinePost'] as const;
+
+export const getCreateTimelinePostMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTimelinePost>>, TError,CreateTimelinePostMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTimelinePost>>, TError,CreateTimelinePostMutationVariables, TContext> => {
+
+const mutationKey = getCreateTimelinePostMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTimelinePost>>, CreateTimelinePostMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTimelinePost(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTimelinePostMutationResult = NonNullable<Awaited<ReturnType<typeof createTimelinePost>>>
+    export type CreateTimelinePostMutationBody = BodyType<TimelinePostInput>
+    export type CreateTimelinePostMutationError = ErrorType<ErrorResponse>
+    export type CreateTimelinePostMutationVariables = {data: BodyType<TimelinePostInput>}
+
+    /**
+ * @summary Publish a text post as the authenticated wallet
+ */
+export const useCreateTimelinePost = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTimelinePost>>, TError,CreateTimelinePostMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTimelinePost>>,
+        TError,
+        CreateTimelinePostMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateTimelinePostMutationOptions(options));
+    }
+
+export const getLikeTimelinePostUrl = (postId: string,) => {
+
+
+
+
+  return `/api/timeline/posts/${postId}/likes`
+}
+
+/**
+ * @summary Like a timeline post as the authenticated wallet
+ */
+export const likeTimelinePost = async (postId: string, options?: Parameters<typeof customFetch>[1]): Promise<TimelinePostReaction> => {
+
+  return customFetch<TimelinePostReaction>(getLikeTimelinePostUrl(postId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getLikeTimelinePostMutationKey = () => ['likeTimelinePost'] as const;
+
+export const getLikeTimelinePostMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof likeTimelinePost>>, TError,LikeTimelinePostMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof likeTimelinePost>>, TError,LikeTimelinePostMutationVariables, TContext> => {
+
+const mutationKey = getLikeTimelinePostMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof likeTimelinePost>>, LikeTimelinePostMutationVariables> = (props) => {
+          const {postId} = props ?? {};
+
+          return  likeTimelinePost(postId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LikeTimelinePostMutationResult = NonNullable<Awaited<ReturnType<typeof likeTimelinePost>>>
+
+    export type LikeTimelinePostMutationError = ErrorType<ErrorResponse>
+    export type LikeTimelinePostMutationVariables = {postId: string}
+
+    /**
+ * @summary Like a timeline post as the authenticated wallet
+ */
+export const useLikeTimelinePost = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof likeTimelinePost>>, TError,LikeTimelinePostMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof likeTimelinePost>>,
+        TError,
+        LikeTimelinePostMutationVariables,
+        TContext
+      > => {
+      return useMutation(getLikeTimelinePostMutationOptions(options));
+    }
+
+export const getUnlikeTimelinePostUrl = (postId: string,) => {
+
+
+
+
+  return `/api/timeline/posts/${postId}/likes`
+}
+
+/**
+ * @summary Remove the authenticated wallet's like from a timeline post
+ */
+export const unlikeTimelinePost = async (postId: string, options?: Parameters<typeof customFetch>[1]): Promise<TimelinePostReaction> => {
+
+  return customFetch<TimelinePostReaction>(getUnlikeTimelinePostUrl(postId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getUnlikeTimelinePostMutationKey = () => ['unlikeTimelinePost'] as const;
+
+export const getUnlikeTimelinePostMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlikeTimelinePost>>, TError,UnlikeTimelinePostMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unlikeTimelinePost>>, TError,UnlikeTimelinePostMutationVariables, TContext> => {
+
+const mutationKey = getUnlikeTimelinePostMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unlikeTimelinePost>>, UnlikeTimelinePostMutationVariables> = (props) => {
+          const {postId} = props ?? {};
+
+          return  unlikeTimelinePost(postId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnlikeTimelinePostMutationResult = NonNullable<Awaited<ReturnType<typeof unlikeTimelinePost>>>
+
+    export type UnlikeTimelinePostMutationError = ErrorType<ErrorResponse>
+    export type UnlikeTimelinePostMutationVariables = {postId: string}
+
+    /**
+ * @summary Remove the authenticated wallet's like from a timeline post
+ */
+export const useUnlikeTimelinePost = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlikeTimelinePost>>, TError,UnlikeTimelinePostMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unlikeTimelinePost>>,
+        TError,
+        UnlikeTimelinePostMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUnlikeTimelinePostMutationOptions(options));
+    }
+
+export const getListTimelineCommentsUrl = (postId: string,) => {
+
+
+
+
+  return `/api/timeline/posts/${postId}/comments`
+}
+
+/**
+ * @summary List comments on a timeline post
+ */
+export const listTimelineComments = async (postId: string, options?: Parameters<typeof customFetch>[1]): Promise<TimelineComment[]> => {
+
+  return customFetch<TimelineComment[]>(getListTimelineCommentsUrl(postId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTimelineCommentsQueryKey = (postId: string,) => {
+    return [
+    `/api/timeline/posts/${postId}/comments`
+    ] as const;
+    }
+
+
+export const getListTimelineCommentsQueryOptions = <TData = Awaited<ReturnType<typeof listTimelineComments>>, TError = ErrorType<ErrorResponse>>(postId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelineComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTimelineCommentsQueryKey(postId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTimelineComments>>> = ({ signal }) => listTimelineComments(postId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: postId !== null && postId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTimelineComments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTimelineCommentsQueryResult = NonNullable<Awaited<ReturnType<typeof listTimelineComments>>>
+export type ListTimelineCommentsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List comments on a timeline post
+ */
+
+export function useListTimelineComments<TData = Awaited<ReturnType<typeof listTimelineComments>>, TError = ErrorType<ErrorResponse>>(
+ postId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTimelineComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTimelineCommentsQueryOptions(postId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateTimelineCommentUrl = (postId: string,) => {
+
+
+
+
+  return `/api/timeline/posts/${postId}/comments`
+}
+
+/**
+ * @summary Comment on a timeline post as the authenticated wallet
+ */
+export const createTimelineComment = async (postId: string,
+    timelineCommentInput: TimelineCommentInput, options?: Parameters<typeof customFetch>[1]): Promise<TimelineComment> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TimelineComment>(getCreateTimelineCommentUrl(postId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(timelineCommentInput)
+  }
+);}
+
+
+
+
+
+export const getCreateTimelineCommentMutationKey = () => ['createTimelineComment'] as const;
+
+export const getCreateTimelineCommentMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTimelineComment>>, TError,CreateTimelineCommentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTimelineComment>>, TError,CreateTimelineCommentMutationVariables, TContext> => {
+
+const mutationKey = getCreateTimelineCommentMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTimelineComment>>, CreateTimelineCommentMutationVariables> = (props) => {
+          const {postId,data} = props ?? {};
+
+          return  createTimelineComment(postId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTimelineCommentMutationResult = NonNullable<Awaited<ReturnType<typeof createTimelineComment>>>
+    export type CreateTimelineCommentMutationBody = BodyType<TimelineCommentInput>
+    export type CreateTimelineCommentMutationError = ErrorType<ErrorResponse>
+    export type CreateTimelineCommentMutationVariables = {postId: string;data: BodyType<TimelineCommentInput>}
+
+    /**
+ * @summary Comment on a timeline post as the authenticated wallet
+ */
+export const useCreateTimelineComment = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTimelineComment>>, TError,CreateTimelineCommentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTimelineComment>>,
+        TError,
+        CreateTimelineCommentMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateTimelineCommentMutationOptions(options));
     }
 

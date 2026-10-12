@@ -16,6 +16,8 @@ tags:
     description: Direct and group chat operations
   - name: groups
     description: Group discovery and membership operations
+  - name: timeline
+    description: Public member timeline posts, likes, and comments
 paths:
   /healthz:
     get:
@@ -194,6 +196,44 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Message"
+  /conversations/{conversationId}/read:
+    post:
+      operationId: markConversationRead
+      tags: [conversations]
+      summary: Mark visible messages through a specific message as read
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReadReceiptInput"
+      responses:
+        "200":
+          description: Read position recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadReceipt"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not a conversation member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Message not found in this conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /conversations/{conversationId}/keys:
     get:
       operationId: getConversationEncryptionKeys
@@ -292,6 +332,153 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Group"
+  /timeline/posts:
+    get:
+      operationId: listTimelinePosts
+      tags: [timeline]
+      summary: List recent public timeline posts for signed-in members
+      responses:
+        "200":
+          description: Recent timeline posts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimelinePost"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createTimelinePost
+      tags: [timeline]
+      summary: Publish a text post as the authenticated wallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimelinePostInput"
+      responses:
+        "201":
+          description: Published post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelinePost"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /timeline/posts/{postId}/likes:
+    post:
+      operationId: likeTimelinePost
+      tags: [timeline]
+      summary: Like a timeline post as the authenticated wallet
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Like state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelinePostReaction"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Post not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: unlikeTimelinePost
+      tags: [timeline]
+      summary: Remove the authenticated wallet's like from a timeline post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Like state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelinePostReaction"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Post not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /timeline/posts/{postId}/comments:
+    get:
+      operationId: listTimelineComments
+      tags: [timeline]
+      summary: List comments on a timeline post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Comments for the post
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimelineComment"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createTimelineComment
+      tags: [timeline]
+      summary: Comment on a timeline post as the authenticated wallet
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimelineCommentInput"
+      responses:
+        "201":
+          description: Published comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineComment"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Post not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   parameters:
     SessionId:
@@ -302,6 +489,12 @@ components:
         type: string
     ConversationId:
       name: conversationId
+      in: path
+      required: true
+      schema:
+        type: string
+    PostId:
+      name: postId
       in: path
       required: true
       schema:
@@ -443,7 +636,25 @@ components:
           type: boolean
         encrypted:
           type: boolean
-      required: [id, conversationId, senderAddress, body, sentAt, isMine, encrypted]
+        isRead:
+          type: boolean
+      # Read state is derived per recipient and returned for every message.
+      required: [id, conversationId, senderAddress, body, sentAt, isMine, encrypted, isRead]
+    ReadReceiptInput:
+      type: object
+      properties:
+        messageId:
+          type: string
+      required: [messageId]
+    ReadReceipt:
+      type: object
+      properties:
+        conversationId:
+          type: string
+        lastReadAt:
+          type: string
+          format: date-time
+      required: [conversationId, lastReadAt]
     MessageInput:
       type: object
       properties:
@@ -494,4 +705,64 @@ components:
           type: string
           minLength: 25
       required: [walletAddress]
+    TimelinePost:
+      type: object
+      properties:
+        id:
+          type: string
+        authorAddress:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        likeCount:
+          type: integer
+        commentCount:
+          type: integer
+        likedByMe:
+          type: boolean
+      required: [id, authorAddress, body, createdAt, likeCount, commentCount, likedByMe]
+    TimelinePostInput:
+      type: object
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+      required: [body]
+    TimelinePostReaction:
+      type: object
+      properties:
+        postId:
+          type: string
+        likeCount:
+          type: integer
+        likedByMe:
+          type: boolean
+      required: [postId, likeCount, likedByMe]
+    TimelineComment:
+      type: object
+      properties:
+        id:
+          type: string
+        postId:
+          type: string
+        authorAddress:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, postId, authorAddress, body, createdAt]
+    TimelineCommentInput:
+      type: object
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      required: [body]
 

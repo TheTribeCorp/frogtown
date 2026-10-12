@@ -95,6 +95,16 @@ export interface Message {
   sentAt: string;
   isMine: boolean;
   encrypted: boolean;
+  isRead: boolean;
+}
+
+export interface ReadReceiptInput {
+  messageId: string;
+}
+
+export interface ReadReceipt {
+  conversationId: string;
+  lastReadAt: string;
 }
 
 export interface MessageInput {
@@ -126,6 +136,46 @@ export interface GroupInput {
 export interface JoinGroupInput {
   /** @minLength 25 */
   walletAddress: string;
+}
+
+export interface TimelinePost {
+  id: string;
+  authorAddress: string;
+  body: string;
+  createdAt: string;
+  likeCount: number;
+  commentCount: number;
+  likedByMe: boolean;
+}
+
+export interface TimelinePostInput {
+  /**
+     * @minLength 1
+     * @maxLength 5000
+     */
+  body: string;
+}
+
+export interface TimelinePostReaction {
+  postId: string;
+  likeCount: number;
+  likedByMe: boolean;
+}
+
+export interface TimelineComment {
+  id: string;
+  postId: string;
+  authorAddress: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface TimelineCommentInput {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  body: string;
 }
 
 export type WalletAddressParameter = string;

@@ -16,7 +16,9 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-startMessageEventListener();
+if (process.env.NODE_ENV !== "test") {
+  startMessageEventListener();
+}
 
 app.listen(port, (err) => {
   if (err) {

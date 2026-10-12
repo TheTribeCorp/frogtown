@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   CreateDirectConversationBody,
@@ -9,6 +9,8 @@ import {
   GetWalletSessionParams,
   JoinGroupBody,
   JoinGroupParams,
+  MarkConversationReadBody,
+  MarkConversationReadParams,
   ListConversationMessagesParams,
   ListConversationMessagesQueryParams,
   ListConversationsQueryParams,
@@ -18,7 +20,7 @@ import {
   SendMessageParams,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
-import { publishMessageCreated, subscribeToWalletMessages } from "../lib/message-events";
+import { publishMessageCreated, publishMessageRead, subscribeToWalletMessages } from "../lib/message-events";
 import {
   conversationMembersTable,
   conversationsTable,
@@ -150,7 +152,7 @@ function setAuthCookie(res: Response, walletAddress: string) {
   });
 }
 
-function requireAuth(req: Request, res: Response) {
+export function requireAuth(req: Request, res: Response) {
   const walletAddress = getAuthenticatedWallet(req);
   if (!walletAddress) {
     res.status(401).json({ error: "Your wallet session has expired. Connect with Xaman again." });
@@ -288,7 +290,7 @@ router.get("/events", (req, res): void => {
 
   const unsubscribe = subscribeToWalletMessages(walletAddress, (event) => {
     if (!res.writableEnded && !res.destroyed) {
-      res.write(`data: ${JSON.stringify({ type: "message.created", ...event })}\n\n`);
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
   });
   const heartbeat = setInterval(() => {
@@ -406,7 +408,30 @@ router.get("/conversations", async (req, res) => {
       .from(conversationsTable)
       .where(inArray(conversationsTable.id, memberships.map((row) => row.conversationId)))
       .orderBy(desc(conversationsTable.lastMessageAt), desc(conversationsTable.createdAt));
-    res.json(rows.map(serializeConversation));
+    const unreadRows = await db
+      .select({
+        conversationId: messagesTable.conversationId,
+        unreadCount: sql<number>`count(distinct ${messagesTable.id})::int`,
+      })
+      .from(messagesTable)
+      .innerJoin(
+        conversationMembersTable,
+        eq(messagesTable.conversationId, conversationMembersTable.conversationId),
+      )
+      .where(and(
+        eq(conversationMembersTable.walletAddress, walletAddress),
+        ne(messagesTable.senderAddress, walletAddress),
+        or(
+          isNull(conversationMembersTable.lastReadAt),
+          gt(messagesTable.sentAt, conversationMembersTable.lastReadAt),
+        ),
+      ))
+      .groupBy(messagesTable.conversationId);
+    const unreadCounts = new Map(unreadRows.map((row) => [row.conversationId, row.unreadCount]));
+    res.json(rows.map((row) => ({
+      ...serializeConversation(row),
+      unreadCount: unreadCounts.get(row.id) ?? 0,
+    })));
   } catch {
     res.status(400).json({ error: "Invalid wallet address." });
   }
@@ -484,12 +509,14 @@ router.get("/conversations/:conversationId/messages", async (req, res) => {
     const { walletAddress } = ListConversationMessagesQueryParams.parse(req.query);
     requireAddress(walletAddress);
     if (!requireMatchingWallet(sessionWallet, walletAddress, res)) return;
-    const membership = await db
-      .select({ conversationId: conversationMembersTable.conversationId })
+    const memberships = await db
+      .select({
+        walletAddress: conversationMembersTable.walletAddress,
+        lastReadAt: conversationMembersTable.lastReadAt,
+      })
       .from(conversationMembersTable)
-      .where(and(eq(conversationMembersTable.conversationId, conversationId), eq(conversationMembersTable.walletAddress, sessionWallet)))
-      .limit(1);
-    if (!membership[0]) {
+      .where(eq(conversationMembersTable.conversationId, conversationId));
+    if (!memberships.some((member) => member.walletAddress === sessionWallet)) {
       res.status(403).json({ error: "You are not a member of this conversation." });
       return;
     }
@@ -498,9 +525,82 @@ router.get("/conversations/:conversationId/messages", async (req, res) => {
       .from(messagesTable)
       .where(eq(messagesTable.conversationId, conversationId))
       .orderBy(asc(messagesTable.sentAt));
-    res.json(rows.map((row) => ({ ...row, isMine: row.senderAddress === walletAddress })));
+    res.json(rows.map((row) => {
+      const recipients = memberships.filter((member) => member.walletAddress !== row.senderAddress);
+      const isRead = recipients.length > 0
+        && recipients.every((member) => member.lastReadAt !== null && member.lastReadAt >= row.sentAt);
+      return { ...row, isMine: row.senderAddress === walletAddress, isRead };
+    }));
   } catch {
     res.status(400).json({ error: "Unable to load this conversation." });
+  }
+});
+
+router.post("/conversations/:conversationId/read", async (req, res) => {
+  try {
+    const sessionWallet = requireAuth(req, res);
+    if (!sessionWallet) return;
+    const { conversationId } = MarkConversationReadParams.parse(req.params);
+    const input = MarkConversationReadBody.parse(req.body);
+    const membership = await db
+      .select({ walletAddress: conversationMembersTable.walletAddress })
+      .from(conversationMembersTable)
+      .where(and(
+        eq(conversationMembersTable.conversationId, conversationId),
+        eq(conversationMembersTable.walletAddress, sessionWallet),
+      ))
+      .limit(1);
+    if (!membership[0]) {
+      res.status(403).json({ error: "You are not a member of this conversation." });
+      return;
+    }
+    const message = await db
+      .select({ sentAt: messagesTable.sentAt })
+      .from(messagesTable)
+      .where(and(
+        eq(messagesTable.id, input.messageId),
+        eq(messagesTable.conversationId, conversationId),
+      ))
+      .limit(1);
+    if (!message[0]) {
+      res.status(404).json({ error: "Message not found in this conversation." });
+      return;
+    }
+
+    const updated = await db
+      .update(conversationMembersTable)
+      .set({ lastReadAt: message[0].sentAt })
+      .where(and(
+        eq(conversationMembersTable.conversationId, conversationId),
+        eq(conversationMembersTable.walletAddress, sessionWallet),
+        or(
+          isNull(conversationMembersTable.lastReadAt),
+          lt(conversationMembersTable.lastReadAt, message[0].sentAt),
+        ),
+      ))
+      .returning({ lastReadAt: conversationMembersTable.lastReadAt });
+    const persistedReadAt = updated[0]?.lastReadAt ?? (await db
+      .select({ lastReadAt: conversationMembersTable.lastReadAt })
+      .from(conversationMembersTable)
+      .where(and(
+        eq(conversationMembersTable.conversationId, conversationId),
+        eq(conversationMembersTable.walletAddress, sessionWallet),
+      ))
+      .limit(1))[0]?.lastReadAt ?? message[0].sentAt;
+    const otherMembers = await db
+      .select({ walletAddress: conversationMembersTable.walletAddress })
+      .from(conversationMembersTable)
+      .where(and(
+        eq(conversationMembersTable.conversationId, conversationId),
+        ne(conversationMembersTable.walletAddress, sessionWallet),
+      ));
+    await publishMessageRead(
+      otherMembers.map((member) => member.walletAddress),
+      { conversationId },
+    );
+    res.json({ conversationId, lastReadAt: persistedReadAt });
+  } catch {
+    res.status(400).json({ error: "Unable to mark these messages as read." });
   }
 });
 
@@ -570,7 +670,17 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
         { conversationId, messageId: outcome.message.id },
       );
     }
-    res.status(outcome.created ? 201 : 200).json({ ...outcome.message, isMine: true });
+    const readState = await db
+      .select({
+        walletAddress: conversationMembersTable.walletAddress,
+        lastReadAt: conversationMembersTable.lastReadAt,
+      })
+      .from(conversationMembersTable)
+      .where(eq(conversationMembersTable.conversationId, conversationId));
+    const recipients = readState.filter((member) => member.walletAddress !== outcome.message.senderAddress);
+    const isRead = recipients.length > 0
+      && recipients.every((member) => member.lastReadAt !== null && member.lastReadAt >= outcome.message.sentAt);
+    res.status(outcome.created ? 201 : 200).json({ ...outcome.message, isMine: true, isRead });
   } catch {
     res.status(400).json({ error: "Message could not be sent." });
   }
@@ -580,10 +690,10 @@ router.get("/groups", async (req, res) => {
   try {
     const sessionWallet = requireAuth(req, res);
     if (!sessionWallet) return;
-    await ensureSeedGroups();
     const { walletAddress } = ListGroupsQueryParams.parse(req.query);
     requireAddress(walletAddress);
     if (!requireMatchingWallet(sessionWallet, walletAddress, res)) return;
+    await ensureSeedGroups();
     const groups = await db.select().from(groupsTable);
     const memberships = await db
       .select()

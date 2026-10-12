@@ -14,4 +14,5 @@ export interface Message {
   sentAt: Date;
   isMine: boolean;
   encrypted: boolean;
+  isRead: boolean;
 }

@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { pgTable, text, timestamp, integer, boolean } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const conversationsTable = pgTable("swamp_conversations", {
@@ -19,7 +19,13 @@ export const conversationMembersTable = pgTable("swamp_conversation_members", {
   conversationId: text("conversation_id").notNull(),
   walletAddress: text("wallet_address").notNull(),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
-});
+  lastReadAt: timestamp("last_read_at", { withTimezone: true }),
+}, (table) => [
+  index("swamp_conversation_members_wallet_conversation_read_idx")
+    .on(table.walletAddress, table.conversationId, table.lastReadAt),
+  index("swamp_conversation_members_conversation_wallet_read_idx")
+    .on(table.conversationId, table.walletAddress, table.lastReadAt),
+]);
 
 export const messagesTable = pgTable("swamp_messages", {
   id: text("id").primaryKey(),
@@ -28,7 +34,9 @@ export const messagesTable = pgTable("swamp_messages", {
   body: text("body").notNull(),
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   encrypted: boolean("encrypted").notNull().default(true),
-});
+}, (table) => [
+  index("swamp_messages_conversation_sent_idx").on(table.conversationId, table.sentAt),
+]);
 
 export const groupsTable = pgTable("swamp_groups", {
   id: text("id").primaryKey(),

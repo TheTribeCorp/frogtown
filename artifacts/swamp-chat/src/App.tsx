@@ -8,6 +8,7 @@ import {
   BadgeCheck,
   Bell,
   Check,
+  CheckCheck,
   ChevronRight,
   CircleAlert,
   Copy,
@@ -23,6 +24,7 @@ import {
   Plus,
   QrCode,
   RefreshCw,
+  Rss,
   Search,
   Send,
   Settings2,
@@ -53,10 +55,12 @@ import {
   useListConversationMessages,
   useListConversations,
   useListGroups,
+  useMarkConversationRead,
   useLogoutWallet,
   useSendMessage,
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { TimelinePage } from '@/components/timeline-page';
 import {
   conversationSafetyCode,
   decryptForConversation,
@@ -116,12 +120,20 @@ function RealtimeBridge({ children }: { children: ReactNode }) {
     source.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as { type?: string; conversationId?: string; messageId?: string };
-        if (payload.type !== 'message.created' || !payload.conversationId) return;
-        void client.invalidateQueries({ queryKey: getListConversationsQueryKey({ walletAddress }) });
-        void client.invalidateQueries({
-          queryKey: getListConversationMessagesQueryKey(payload.conversationId, { walletAddress }),
-        });
-        window.dispatchEvent(new CustomEvent('swamp-message-created', { detail: payload }));
+        if (!payload.conversationId) return;
+        if (payload.type === 'message.created') {
+          void client.invalidateQueries({ queryKey: getListConversationsQueryKey({ walletAddress }) });
+          void client.invalidateQueries({
+            queryKey: getListConversationMessagesQueryKey(payload.conversationId, { walletAddress }),
+          });
+          window.dispatchEvent(new CustomEvent('swamp-message-created', { detail: payload }));
+          return;
+        }
+        if (payload.type === 'message.read') {
+          void client.invalidateQueries({
+            queryKey: getListConversationMessagesQueryKey(payload.conversationId, { walletAddress }),
+          });
+        }
       } catch {
         // Ignore malformed notifications; persisted message history remains authoritative.
       }
@@ -234,6 +246,7 @@ function Sidebar({ mobileOpen, onClose, onNewChat }: { mobileOpen: boolean; onCl
         <nav className="mt-3 space-y-1" aria-label="Primary navigation">
           <Link href="/" onClick={onClose} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${location === '/' ? 'bg-[hsl(var(--sidebar-foreground)/.1)] text-[hsl(var(--sidebar-foreground))]' : 'text-[hsl(var(--sidebar-foreground)/.62)] hover:bg-[hsl(var(--sidebar-foreground)/.06)] hover:text-[hsl(var(--sidebar-foreground))]'}`} data-testid="link-chat"><MessageCircle className="size-[17px]" /><span>Chats</span><span className="mono ml-auto text-[10px] text-[hsl(var(--sidebar-foreground)/.35)]">01</span></Link>
           <Link href="/groups" onClick={onClose} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${location === '/groups' ? 'bg-[hsl(var(--sidebar-foreground)/.1)] text-[hsl(var(--sidebar-foreground))]' : 'text-[hsl(var(--sidebar-foreground)/.62)] hover:bg-[hsl(var(--sidebar-foreground)/.06)] hover:text-[hsl(var(--sidebar-foreground))]'}`} data-testid="link-groups"><Users className="size-[17px]" /><span>Swamp groups</span><ArrowUpRight className="ml-auto size-3.5 opacity-35" /></Link>
+          <Link href="/timeline" onClick={onClose} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${location === '/timeline' ? 'bg-[hsl(var(--sidebar-foreground)/.1)] text-[hsl(var(--sidebar-foreground))]' : 'text-[hsl(var(--sidebar-foreground)/.62)] hover:bg-[hsl(var(--sidebar-foreground)/.06)] hover:text-[hsl(var(--sidebar-foreground))]'}`} data-testid="link-timeline"><Rss className="size-[17px]" /><span>Timeline</span><ArrowUpRight className="ml-auto size-3.5 opacity-35" /></Link>
         </nav>
       </div>
       <div className="mt-8">
@@ -425,7 +438,7 @@ function ChatList({ conversations, selectedId, onSelect, onNewChat, loading, err
   </section>;
 }
 
-function MessagePane({ conversation, onBack }: { conversation: { id: string; title: string; participantLabel: string; encrypted: boolean; memberCount: number; type: string } | undefined; onBack: () => void }) {
+function MessagePane({ conversation, onBack, isActive }: { conversation: { id: string; title: string; participantLabel: string; encrypted: boolean; memberCount: number; type: string } | undefined; onBack: () => void; isActive: boolean }) {
   const { walletAddress } = useWallet();
   const realtimeStatus = useContext(RealtimeContext);
   const client = useQueryClient();
@@ -435,11 +448,15 @@ function MessagePane({ conversation, onBack }: { conversation: { id: string; tit
   const messageAttempt = useRef<{ conversationId: string; body: string; messageId: string } | null>(null);
   const [showSafetyCode, setShowSafetyCode] = useState(false);
   const [safetyCode, setSafetyCode] = useState('');
-  const [decryptedMessages, setDecryptedMessages] = useState<Array<{ id: string; conversationId: string; senderAddress: string; body: string; sentAt: string; isMine: boolean; encrypted: boolean }>>([]);
+  const [decryptedMessages, setDecryptedMessages] = useState<Array<{ id: string; conversationId: string; senderAddress: string; body: string; sentAt: string; isMine: boolean; encrypted: boolean; isRead: boolean; decryptionFailed: boolean }>>([]);
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible');
+  const lastMarkedMessageId = useRef<string | null>(null);
+  const pendingReadMessageId = useRef<string | null>(null);
   const params = useMemo(() => ({ walletAddress }), [walletAddress]);
   const messagesQuery = useListConversationMessages(conversation?.id ?? '', params, { query: { enabled: Boolean(conversation?.id), queryKey: getListConversationMessagesQueryKey(conversation?.id ?? '', params), refetchInterval: 30000 } });
   const keysQuery = useGetConversationEncryptionKeys(conversation?.id ?? '', { query: { enabled: Boolean(conversation?.id), queryKey: ['/api/conversations', conversation?.id, 'keys'], refetchInterval: 15000 } });
   const sendMessage = useSendMessage();
+  const markConversationRead = useMarkConversationRead();
   const members: ConversationPublicKey[] = keysQuery.data ?? [];
   const missingMembers = members.filter((member) => !member.publicKey);
 
@@ -447,7 +464,15 @@ function MessagePane({ conversation, onBack }: { conversation: { id: string; tit
     setDraft('');
     setSendError('');
     messageAttempt.current = null;
+    lastMarkedMessageId.current = null;
+    pendingReadMessageId.current = null;
   }, [conversation?.id]);
+
+  useEffect(() => {
+    const updateVisibility = () => setPageVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', updateVisibility);
+    return () => document.removeEventListener('visibilitychange', updateVisibility);
+  }, []);
 
   useEffect(() => {
     const handleMessageCreated = (event: Event) => {
@@ -485,9 +510,9 @@ function MessagePane({ conversation, onBack }: { conversation: { id: string; tit
               identity,
               keysQuery.data ?? [],
             );
-            return { ...message, body };
+            return { ...message, body, decryptionFailed: false };
           } catch {
-            return { ...message, body: 'Unable to decrypt this message with the available wallet key.' };
+            return { ...message, body: 'Unable to decrypt this message with the available wallet key.', decryptionFailed: true };
           }
         }));
         if (!cancelled) setDecryptedMessages(visible);
@@ -498,6 +523,43 @@ function MessagePane({ conversation, onBack }: { conversation: { id: string; tit
     void decryptMessages();
     return () => { cancelled = true; };
   }, [conversation?.id, messagesQuery.data, keysQuery.data, walletAddress]);
+
+  useEffect(() => {
+    if (!conversation || !isActive || !pageVisible || messagesQuery.isLoading || messagesQuery.isError || keysQuery.isLoading || keysQuery.isError) return;
+    const firstUnreadableIndex = decryptedMessages.findIndex((message) => message.decryptionFailed);
+    const readableIndex = firstUnreadableIndex < 0 ? decryptedMessages.length - 1 : firstUnreadableIndex - 1;
+    const readableMessage = readableIndex >= 0 ? decryptedMessages[readableIndex] : undefined;
+    const latestLoadedMessage = messagesQuery.data?.[messagesQuery.data.length - 1];
+    if (!readableMessage || readableMessage.id !== latestLoadedMessage?.id
+      || lastMarkedMessageId.current === readableMessage.id
+      || pendingReadMessageId.current === readableMessage.id) return;
+
+    pendingReadMessageId.current = readableMessage.id;
+    markConversationRead.mutate(
+      { conversationId: conversation.id, data: { messageId: readableMessage.id } },
+      {
+        onSuccess: () => {
+          lastMarkedMessageId.current = readableMessage.id;
+          pendingReadMessageId.current = null;
+          void client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
+        },
+        onError: () => { pendingReadMessageId.current = null; },
+      },
+    );
+  }, [
+    conversation?.id,
+    isActive,
+    pageVisible,
+    messagesQuery.data,
+    messagesQuery.isLoading,
+    messagesQuery.isError,
+    keysQuery.isLoading,
+    keysQuery.isError,
+    decryptedMessages,
+    markConversationRead.mutate,
+    client,
+    params,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -547,7 +609,7 @@ function MessagePane({ conversation, onBack }: { conversation: { id: string; tit
   return <section className="flex min-h-[520px] min-w-0 flex-1 flex-col bg-[hsl(var(--background)/.42)]" data-testid="message-pane">
      <div className="flex justify-end px-4 pt-2 md:px-7"><span className={`inline-flex items-center gap-1.5 text-[10px] ${realtimeStatus === 'live' ? 'text-[hsl(var(--primary))]' : 'text-[hsl(var(--muted-foreground))]'}`} role="status" data-testid="status-realtime"><span className={`size-1.5 rounded-full ${realtimeStatus === 'live' ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--muted-foreground))]'}`} />{realtimeStatus === 'live' ? 'Live updates connected' : 'Reconnecting to live updates'}</span></div>
      <div className="flex items-center gap-3 border-b border-[hsl(var(--border))] px-4 py-4 md:px-7"><button onClick={onBack} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] md:hidden" aria-label="Back to conversations" data-testid="button-back-conversations"><ArrowLeft className="size-4" /></button><div className="flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]">{conversation.type === 'group' ? <Hash className="size-4" /> : <AtSign className="size-4" />}</div><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{conversation.title}</h2><button onClick={() => setShowSafetyCode(true)} className="flex items-center gap-1 text-[10px] text-[hsl(var(--primary))] hover:underline" data-testid="button-show-safety-code"><LockKeyhole className="size-3" /> end-to-end</button></div><p className="mono mt-0.5 truncate text-[10px] text-[hsl(var(--muted-foreground))]">{conversation.participantLabel} {conversation.memberCount > 1 ? `· ${conversation.memberCount} members` : ''}</p></div><button className="ml-auto rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]" aria-label="Conversation options" data-testid="button-conversation-options"><MoreHorizontal className="size-5" /></button></div>
-     <div className="soft-scrollbar flex flex-1 flex-col gap-4 overflow-auto px-4 py-6 md:px-10">{(messagesQuery.isLoading || keysQuery.isLoading) && [1, 2, 3].map((item) => <div key={item} className={`flex animate-pulse ${item % 2 ? 'justify-start' : 'justify-end'}`}><div className="h-14 w-44 rounded-2xl bg-[hsl(var(--muted))]" /></div>)}{(messagesQuery.isError || keysQuery.isError) && <div className="m-auto max-w-sm text-center text-sm text-[hsl(var(--muted-foreground))]" data-testid="status-messages-error"><CircleAlert className="mx-auto mb-3 size-5 text-[hsl(var(--destructive))]" />Messages or encryption keys could not be loaded. Refresh to try again.</div>}{!messagesQuery.isLoading && !messagesQuery.isError && messagesQuery.data?.length === 0 && <div className="m-auto max-w-sm text-center"><div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"><LockKeyhole className="size-5" /></div><p className="mt-4 text-sm font-medium">This line is quiet.</p><p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send the first end-to-end encrypted message.</p></div>}{decryptedMessages.map((message) => <div key={message.id} className={`flex ${message.isMine ? 'justify-end' : 'justify-start'}`} data-testid={`message-${message.id}`}><div className={`max-w-[min(75%,520px)] ${message.isMine ? 'items-end' : 'items-start'} flex flex-col`}><div className={`rounded-2xl px-4 py-3 text-sm leading-6 ${message.isMine ? 'rounded-br-md bg-[hsl(var(--foreground))] text-[hsl(var(--card))]' : 'rounded-bl-md border border-[hsl(var(--border))] bg-[hsl(var(--card))]'}`}><p>{message.body}</p></div><div className="mono mt-1.5 flex items-center gap-2 px-1 text-[9px] text-[hsl(var(--muted-foreground))]"><span>{message.isMine ? 'you' : shortAddress(message.senderAddress)}</span><span>{formatClock(message.sentAt)}</span>{message.encrypted && <LockKeyhole className="size-2.5" />}</div></div></div>)}</div>
+      <div className="soft-scrollbar flex flex-1 flex-col gap-4 overflow-auto px-4 py-6 md:px-10">{(messagesQuery.isLoading || keysQuery.isLoading) && [1, 2, 3].map((item) => <div key={item} className={`flex animate-pulse ${item % 2 ? 'justify-start' : 'justify-end'}`}><div className="h-14 w-44 rounded-2xl bg-[hsl(var(--muted))]" /></div>)}{(messagesQuery.isError || keysQuery.isError) && <div className="m-auto max-w-sm text-center text-sm text-[hsl(var(--muted-foreground))]" data-testid="status-messages-error"><CircleAlert className="mx-auto mb-3 size-5 text-[hsl(var(--destructive))]" />Messages or encryption keys could not be loaded. Refresh to try again.</div>}{!messagesQuery.isLoading && !messagesQuery.isError && messagesQuery.data?.length === 0 && <div className="m-auto max-w-sm text-center"><div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"><LockKeyhole className="size-5" /></div><p className="mt-4 text-sm font-medium">This line is quiet.</p><p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send the first end-to-end encrypted message.</p></div>}{decryptedMessages.map((message) => <div key={message.id} className={`flex ${message.isMine ? 'justify-end' : 'justify-start'}`} data-testid={`message-${message.id}`}><div className={`max-w-[min(75%,520px)] ${message.isMine ? 'items-end' : 'items-start'} flex flex-col`}><div className={`rounded-2xl px-4 py-3 text-sm leading-6 ${message.isMine ? 'rounded-br-md bg-[hsl(var(--foreground))] text-[hsl(var(--card))]' : 'rounded-bl-md border border-[hsl(var(--border))] bg-[hsl(var(--card))]'}`}><p>{message.body}</p></div><div className="mono mt-1.5 flex items-center gap-2 px-1 text-[9px] text-[hsl(var(--muted-foreground))]"><span>{message.isMine ? 'you' : shortAddress(message.senderAddress)}</span><span>{formatClock(message.sentAt)}</span>{message.encrypted && <LockKeyhole className="size-2.5" />}{message.isMine && <span title={message.isRead ? 'Read' : 'Sent'} aria-label={message.isRead ? 'Read' : 'Sent'} data-testid={`message-delivery-status-${message.id}`}>{message.isRead ? <CheckCheck className="size-3 text-[hsl(var(--primary))]" /> : <Check className="size-3" />}</span>}</div></div></div>)}</div>
      <div className="border-t border-[hsl(var(--border))] bg-[hsl(var(--card)/.45)] p-4 md:px-7">{missingMembers.length > 0 && <p className="mb-3 rounded-lg border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] px-3 py-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="status-missing-member-keys">Encrypted sending is paused until every room member registers a device key. Missing: {missingMembers.map((member) => shortAddress(member.walletAddress)).join(', ')}.</p>}<form onSubmit={submit} className="relative"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(event as unknown as FormEvent); } }} rows={1} disabled={!keysQuery.data || missingMembers.length > 0 || sendMessage.isPending || encrypting} placeholder={missingMembers.length > 0 ? 'Waiting for room members to enable encryption…' : 'Write something unbothered…'} className="soft-scrollbar min-h-[52px] w-full resize-none rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] py-4 pl-4 pr-14 text-sm outline-none transition placeholder:text-[hsl(var(--muted-foreground)/.7)] focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary)/.13)] disabled:opacity-60" data-testid="input-message" /><button type="submit" disabled={!draft.trim() || sendMessage.isPending || encrypting || !keysQuery.data || missingMembers.length > 0} className="absolute bottom-2.5 right-2.5 flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] transition hover:bg-[hsl(var(--foreground))] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Send encrypted message" data-testid="button-send-message">{sendMessage.isPending || encrypting ? <RefreshCw className="size-4 animate-spin" /> : <Send className="size-4" />}</button></form>{sendError && <p className="mt-2 flex items-center gap-1 text-xs text-[hsl(var(--destructive))]" data-testid="text-send-error"><CircleAlert className="size-3" />{sendError}</p>}<p className="mt-2 flex items-center gap-1.5 px-1 text-[10px] text-[hsl(var(--muted-foreground))]"><ShieldCheck className="size-3 text-[hsl(var(--primary))]" /> Message content is encrypted on your device; verify the safety code with members.</p></div>
      {showSafetyCode && <Modal title="Encryption safety code" eyebrow="verify / out of band" onClose={() => setShowSafetyCode(false)}><p className="text-sm leading-6 text-[hsl(var(--muted-foreground))]">Compare this code with the other member using a separate trusted channel. Matching codes help detect a substituted public key. Until verified, a malicious server could replace keys.</p><div className="mt-5 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4 text-center"><p className="mono break-all text-lg font-semibold tracking-[.08em]" data-testid="text-encryption-safety-code">{safetyCode || 'Loading…'}</p></div><p className="mt-4 text-xs text-[hsl(var(--muted-foreground))]">Keep this device’s browser data. Key backup and multi-device transfer are not available yet.</p></Modal>}
   </section>;
@@ -558,28 +620,34 @@ function ChatWorkspace({ onNewChat }: { onNewChat: () => void }) {
   const params = useMemo(() => ({ walletAddress }), [walletAddress]);
   const query = useListConversations(params, { query: { enabled: Boolean(walletAddress), queryKey: getListConversationsQueryKey(params), refetchInterval: 30000 } });
   const conversations = query.data ?? [];
-  const [selectedId, setSelectedId] = useState(() => window.sessionStorage.getItem('swamp-selected-conversation') ?? '');
+  const [selectedId, setSelectedId] = useState(() => window.sessionStorage.getItem(`swamp-selected-conversation:${walletAddress}`) ?? '');
   const [mobileList, setMobileList] = useState(true);
-  const ids = useMemo(() => conversations.map((conversation) => conversation.id).join(','), [conversations]);
-  useEffect(() => { if (!selectedId && conversations[0]) setSelectedId(conversations[0].id); }, [ids, selectedId, conversations]);
+  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 768px)').matches);
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 768px)');
+    const updateLayout = () => setIsDesktop(media.matches);
+    updateLayout();
+    media.addEventListener('change', updateLayout);
+    return () => media.removeEventListener('change', updateLayout);
+  }, []);
   useEffect(() => {
     const handleSelect = (event: Event) => {
       const customEvent = event as CustomEvent<string>;
       if (customEvent.detail) {
         setSelectedId(customEvent.detail);
         setMobileList(false);
-        window.sessionStorage.setItem('swamp-selected-conversation', customEvent.detail);
+        window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, customEvent.detail);
       }
     };
     window.addEventListener('swamp-select-conversation', handleSelect);
     return () => window.removeEventListener('swamp-select-conversation', handleSelect);
-  }, []);
+  }, [walletAddress]);
   useEffect(() => {
-    if (selectedId) window.sessionStorage.setItem('swamp-selected-conversation', selectedId);
-  }, [selectedId]);
+    if (selectedId) window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, selectedId);
+  }, [selectedId, walletAddress]);
   const selected = conversations.find((conversation) => conversation.id === selectedId);
   const select = (id: string) => { setSelectedId(id); setMobileList(false); };
-  return <div className="flex h-full min-h-0 flex-col md:flex-row">{(mobileList || !selectedId) && <ChatList conversations={conversations} selectedId={selectedId} onSelect={select} onNewChat={onNewChat} loading={query.isLoading} error={query.error} />}<MessagePane conversation={selected} onBack={() => setMobileList(true)} /></div>;
+  return <div className="flex h-full min-h-0 flex-col md:flex-row">{(mobileList || !selectedId) && <ChatList conversations={conversations} selectedId={selectedId} onSelect={select} onNewChat={onNewChat} loading={query.isLoading} error={query.error} />}<MessagePane conversation={selected} isActive={isDesktop || !mobileList} onBack={() => setMobileList(true)} /></div>;
 }
 
 function GroupsPage({ onOpenGroup }: { onOpenGroup: (conversationId: string) => void }) {
@@ -630,8 +698,13 @@ function HomePage() {
 function RouterView() {
   const { walletAddress } = useWallet();
   const [location, setLocation] = useLocation();
-  if (!walletAddress && location !== '/') return <LockedPage title={location === '/groups' ? 'Group discovery' : 'Settings'} />;
-  return <Switch><Route path="/" component={() => <HomePage />} /><Route path="/groups" component={() => <GroupsPage onOpenGroup={(id) => { window.sessionStorage.setItem('swamp-selected-conversation', id); setLocation('/'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: id })), 0); }} />} /><Route path="/settings" component={SettingsPage} /><Route component={() => <HomePage />} /></Switch>;
+  if (!walletAddress && location !== '/') return <LockedPage title={location === '/groups' ? 'Group discovery' : location === '/timeline' ? 'Community timeline' : 'Settings'} />;
+  return <Switch><Route path="/" component={() => <HomePage />} /><Route path="/groups" component={() => <GroupsPage onOpenGroup={(id) => { window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, id); setLocation('/'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: id })), 0); }} />} /><Route path="/timeline" component={() => <TimelineRoute />} /><Route path="/settings" component={SettingsPage} /><Route component={() => <HomePage />} /></Switch>;
+}
+
+function TimelineRoute() {
+  const { walletAddress } = useWallet();
+  return <AppShell title="Timeline" eyebrow="public / community"><TimelinePage walletAddress={walletAddress} /></AppShell>;
 }
 
 function KeyBootstrapGate({ children }: { children: ReactNode }) {

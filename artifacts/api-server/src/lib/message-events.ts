@@ -6,12 +6,11 @@ import { logger } from "./logger";
 const EVENT_CHANNEL = "swamp_message_created";
 const INSTANCE_ID = randomUUID();
 
-export type MessageCreatedEvent = {
-  conversationId: string;
-  messageId: string;
-};
+export type WalletEvent =
+  | { type: "message.created"; conversationId: string; messageId: string }
+  | { type: "message.read"; conversationId: string };
 
-type WalletListener = (event: MessageCreatedEvent) => void;
+type WalletListener = (event: WalletEvent) => void;
 
 const listenersByWallet = new Map<string, Set<WalletListener>>();
 let listenerClient: object | null = null;
@@ -33,7 +32,7 @@ export function subscribeToWalletMessages(walletAddress: string, listener: Walle
   };
 }
 
-function publishLocally(walletAddresses: string[], event: MessageCreatedEvent): void {
+function publishLocally(walletAddresses: string[], event: WalletEvent): void {
   for (const walletAddress of new Set(walletAddresses)) {
     for (const listener of listenersByWallet.get(walletAddress) ?? []) {
       try {
@@ -47,10 +46,10 @@ function publishLocally(walletAddresses: string[], event: MessageCreatedEvent): 
 
 async function relayNotification(payload: string): Promise<void> {
   try {
-    const data = JSON.parse(payload) as MessageCreatedEvent & { origin?: string };
-    if (data.origin === INSTANCE_ID
-      || typeof data.conversationId !== "string"
-      || typeof data.messageId !== "string") return;
+    const data = JSON.parse(payload) as WalletEvent & { origin?: string };
+    if (data.origin === INSTANCE_ID || typeof data.conversationId !== "string") return;
+    if (data.type !== "message.created" && data.type !== "message.read") return;
+    if (data.type === "message.created" && typeof data.messageId !== "string") return;
 
     const members = await db
       .select({ walletAddress: conversationMembersTable.walletAddress })
@@ -111,7 +110,7 @@ export function startMessageEventListener(): void {
   void connectListener();
 }
 
-export async function publishMessageCreated(walletAddresses: string[], event: MessageCreatedEvent): Promise<void> {
+async function publishWalletEvent(walletAddresses: string[], event: WalletEvent): Promise<void> {
   try {
     await pool.query("SELECT pg_notify($1, $2)", [
       EVENT_CHANNEL,
@@ -121,4 +120,18 @@ export async function publishMessageCreated(walletAddresses: string[], event: Me
     logger.error({ err: error }, "Could not publish cross-instance message notification");
   }
   publishLocally(walletAddresses, event);
+}
+
+export function publishMessageCreated(
+  walletAddresses: string[],
+  event: Omit<Extract<WalletEvent, { type: "message.created" }>, "type">,
+): Promise<void> {
+  return publishWalletEvent(walletAddresses, { ...event, type: "message.created" });
+}
+
+export function publishMessageRead(
+  walletAddresses: string[],
+  event: Omit<Extract<WalletEvent, { type: "message.read" }>, "type">,
+): Promise<void> {
+  return publishWalletEvent(walletAddresses, { ...event, type: "message.read" });
 }
