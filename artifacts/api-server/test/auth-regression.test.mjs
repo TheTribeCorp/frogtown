@@ -176,3 +176,16 @@ test("timeline paging rejects invalid cursors and reports require an existing su
   });
   assert.equal(missingSubject.status, 404);
 });
+
+test("group discovery uses persisted counts and does not invent online presence", async () => {
+  const response = await request("/api/groups?walletAddress=" + walletA, {
+    cookie: sessionCookie(walletA),
+  });
+  assert.equal(response.status, 200);
+  const groups = await response.json();
+  assert.ok(Array.isArray(groups));
+  for (const group of groups) {
+    assert.ok(Number.isInteger(group.memberCount) && group.memberCount >= 0);
+    assert.equal(group.onlineCount, 0);
+  }
+});

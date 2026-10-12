@@ -173,6 +173,36 @@ export const ListConversationMessagesResponse = zod.array(ListConversationMessag
 
 
 /**
+ * @summary Send an encrypted chat message
+ */
+export const SendMessageParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const sendMessageBodySenderAddressMin = 25;
+
+
+
+
+export const SendMessageBody = zod.object({
+  "messageId": zod.string().uuid(),
+  "senderAddress": zod.string().min(sendMessageBodySenderAddressMin),
+  "body": zod.string().min(1)
+})
+
+export const SendMessageResponse = zod.object({
+  "id": zod.string(),
+  "conversationId": zod.string(),
+  "senderAddress": zod.string(),
+  "body": zod.string(),
+  "sentAt": zod.coerce.date(),
+  "isMine": zod.boolean(),
+  "encrypted": zod.boolean(),
+  "isRead": zod.boolean()
+})
+
+
+/**
  * @summary Mark visible messages through a specific message as read
  */
 export const MarkConversationReadParams = zod.object({
@@ -201,36 +231,6 @@ export const GetConversationEncryptionKeysResponseItem = zod.object({
   "publicKey": zod.string().nullable()
 })
 export const GetConversationEncryptionKeysResponse = zod.array(GetConversationEncryptionKeysResponseItem)
-
-
-/**
- * @summary Send an encrypted chat message
- */
-export const SendMessageParams = zod.object({
-  "conversationId": zod.coerce.string()
-})
-
-export const sendMessageBodySenderAddressMin = 25;
-
-
-
-
-export const SendMessageBody = zod.object({
-  "messageId": zod.string().uuid(),
-  "senderAddress": zod.string().min(sendMessageBodySenderAddressMin),
-  "body": zod.string().min(1)
-})
-
-export const SendMessageResponse = zod.object({
-  "id": zod.string(),
-  "conversationId": zod.string(),
-  "senderAddress": zod.string(),
-  "body": zod.string(),
-  "sentAt": zod.coerce.date(),
-  "isMine": zod.boolean(),
-  "encrypted": zod.boolean(),
-  "isRead": zod.boolean()
-})
 
 
 /**

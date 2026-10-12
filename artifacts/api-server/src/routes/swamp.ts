@@ -64,8 +64,8 @@ async function ensureSeedGroups() {
           conversationId: `conversation-${randomUUID()}`,
           name: "The Green Room",
           description: "Low-noise XRPL talk, alpha, and swamp lore.",
-          memberCount: 184,
-          onlineCount: 32,
+          memberCount: 0,
+          onlineCount: 0,
           creatorAddress,
         },
         {
@@ -73,8 +73,8 @@ async function ensureSeedGroups() {
           conversationId: `conversation-${randomUUID()}`,
           name: "Trencher Radio",
           description: "Market chatter for people who keep shipping.",
-          memberCount: 96,
-          onlineCount: 18,
+          memberCount: 0,
+          onlineCount: 0,
           creatorAddress,
         },
       ];
@@ -85,7 +85,7 @@ async function ensureSeedGroups() {
           id: group.conversationId,
           type: "group",
           title: group.name,
-          participantLabel: `${group.memberCount} members`,
+          participantLabel: "0 members",
           encrypted: true,
           memberCount: group.memberCount,
         });
@@ -699,8 +699,21 @@ router.get("/groups", async (req, res) => {
       .select()
       .from(groupMembersTable)
       .where(eq(groupMembersTable.walletAddress, walletAddress));
+    const memberCounts = await db
+      .select({
+        groupId: groupMembersTable.groupId,
+        memberCount: sql<number>`count(distinct ${groupMembersTable.walletAddress})::int`,
+      })
+      .from(groupMembersTable)
+      .groupBy(groupMembersTable.groupId);
+    const countsByGroup = new Map(memberCounts.map((row) => [row.groupId, row.memberCount]));
     const joined = new Set(memberships.map((member) => member.groupId));
-    res.json(groups.map((group) => ({ ...group, isJoined: joined.has(group.id) })));
+    res.json(groups.map((group) => ({
+      ...group,
+      memberCount: countsByGroup.get(group.id) ?? 0,
+      onlineCount: 0,
+      isJoined: joined.has(group.id),
+    })));
   } catch {
     res.status(400).json({ error: "Unable to load groups." });
   }
@@ -721,7 +734,7 @@ router.post("/groups", async (req, res) => {
       name: input.name.trim(),
       description: input.description.trim(),
       memberCount: 1,
-      onlineCount: 1,
+      onlineCount: 0,
       creatorAddress: input.creatorAddress,
     };
     await db.insert(groupsTable).values(group);
@@ -777,13 +790,13 @@ router.post("/groups/:groupId/join", async (req, res) => {
       .where(eq(groupMembersTable.groupId, groupId));
     await db
       .update(groupsTable)
-      .set({ memberCount: members.length })
+      .set({ memberCount: members.length, onlineCount: 0 })
       .where(eq(groupsTable.id, groupId));
     await db
       .update(conversationsTable)
       .set({ memberCount: members.length, participantLabel: `${members.length} members` })
       .where(eq(conversationsTable.id, group[0].conversationId));
-    res.json({ ...group[0], memberCount: members.length, isJoined: true });
+    res.json({ ...group[0], memberCount: members.length, onlineCount: 0, isJoined: true });
   } catch {
     res.status(400).json({ error: "Unable to join this group." });
   }

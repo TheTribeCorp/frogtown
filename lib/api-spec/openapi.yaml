@@ -196,6 +196,25 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Message"
+    post:
+      operationId: sendMessage
+      tags: [conversations]
+      summary: Send an encrypted chat message
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "201":
+          description: Sent message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
   /conversations/{conversationId}/read:
     post:
       operationId: markConversationRead
@@ -256,25 +275,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-    post:
-      operationId: sendMessage
-      tags: [conversations]
-      summary: Send an encrypted chat message
-      parameters:
-        - $ref: "#/components/parameters/ConversationId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MessageInput"
-      responses:
-        "201":
-          description: Sent message
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Message"
   /groups:
     get:
       operationId: listGroups
