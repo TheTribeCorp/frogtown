@@ -447,13 +447,16 @@ components:
     MessageInput:
       type: object
       properties:
+        messageId:
+          type: string
+          format: uuid
         senderAddress:
           type: string
           minLength: 25
         body:
           type: string
           minLength: 1
-      required: [senderAddress, body]
+      required: [messageId, senderAddress, body]
     Group:
       type: object
       properties:

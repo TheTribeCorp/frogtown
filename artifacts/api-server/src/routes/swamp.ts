@@ -18,6 +18,7 @@ import {
   SendMessageParams,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
+import { publishMessageCreated, subscribeToWalletMessages } from "../lib/message-events";
 import {
   conversationMembersTable,
   conversationsTable,
@@ -271,6 +272,39 @@ router.post("/wallet/logout", (_req, res) => {
   res.status(204).send();
 });
 
+router.get("/events", (req, res): void => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+
+  res.status(200);
+  res.set({
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.flushHeaders();
+  res.write("retry: 2000\n\n");
+
+  const unsubscribe = subscribeToWalletMessages(walletAddress, (event) => {
+    if (!res.writableEnded && !res.destroyed) {
+      res.write(`data: ${JSON.stringify({ type: "message.created", ...event })}\n\n`);
+    }
+  });
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded && !res.destroyed) res.write(": keepalive\n\n");
+  }, 20_000);
+  let cleanedUp = false;
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    clearInterval(heartbeat);
+    unsubscribe();
+  };
+  res.on("close", cleanup);
+  res.write(`data: ${JSON.stringify({ type: "ready" })}\n\n`);
+});
+
 router.get("/wallet/keys/:walletAddress", async (req, res): Promise<void> => {
   const sessionWallet = requireAuth(req, res);
   if (!sessionWallet) return;
@@ -487,35 +521,56 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
       return;
     }
 
-    const membership = await db
-      .select()
+    const memberships = await db
+      .select({ walletAddress: conversationMembersTable.walletAddress })
       .from(conversationMembersTable)
-      .where(
-        and(
-          eq(conversationMembersTable.conversationId, conversationId),
-          eq(conversationMembersTable.walletAddress, input.senderAddress),
-        ),
-      )
-      .limit(1);
-    if (!membership[0]) {
+      .where(eq(conversationMembersTable.conversationId, conversationId));
+    if (!memberships.some((member) => member.walletAddress === input.senderAddress)) {
       res.status(403).json({ error: "You are not a member of this conversation." });
       return;
     }
 
     const message = {
-      id: `message-${randomUUID()}`,
+      id: input.messageId,
       conversationId,
       senderAddress: input.senderAddress,
       body: input.body,
       sentAt: new Date(),
       encrypted: true,
     };
-    await db.insert(messagesTable).values(message);
-    await db
-      .update(conversationsTable)
-      .set({ lastMessage: "e2ee:v1:", lastMessageAt: message.sentAt })
-      .where(eq(conversationsTable.id, conversationId));
-    res.status(201).json({ ...message, isMine: true });
+    const outcome = await db.transaction(async (transaction) => {
+      const inserted = await transaction
+        .insert(messagesTable)
+        .values(message)
+        .onConflictDoNothing()
+        .returning();
+      if (inserted.length === 0) {
+        const existing = await transaction
+          .select()
+          .from(messagesTable)
+          .where(eq(messagesTable.id, input.messageId))
+          .limit(1);
+        const previous = existing[0];
+        if (!previous
+          || previous.conversationId !== conversationId
+          || previous.senderAddress !== input.senderAddress) {
+          throw new Error("Message ID is already in use.");
+        }
+        return { message: previous, created: false };
+      }
+      await transaction
+        .update(conversationsTable)
+        .set({ lastMessage: "e2ee:v1:", lastMessageAt: message.sentAt })
+        .where(eq(conversationsTable.id, conversationId));
+      return { message, created: true };
+    });
+    if (outcome.created) {
+      await publishMessageCreated(
+        memberships.map((member) => member.walletAddress),
+        { conversationId, messageId: outcome.message.id },
+      );
+    }
+    res.status(outcome.created ? 201 : 200).json({ ...outcome.message, isMine: true });
   } catch {
     res.status(400).json({ error: "Message could not be sent." });
   }

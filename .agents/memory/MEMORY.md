@@ -1,1 +1,2 @@
 - [SWAMP encryption model](swamp-encryption-model.md) — wallet login keys and client encryption keys are separate; verify public keys out of band.
+- [SWAMP message delivery](swamp-message-delivery.md) — treat SSE as a notification hint; recover from persisted history and make sends idempotent.

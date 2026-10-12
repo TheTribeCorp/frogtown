@@ -98,6 +98,7 @@ export interface Message {
 }
 
 export interface MessageInput {
+  messageId: string;
   /** @minLength 25 */
   senderAddress: string;
   /** @minLength 1 */

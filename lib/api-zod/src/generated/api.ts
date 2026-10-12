@@ -198,6 +198,7 @@ export const sendMessageBodySenderAddressMin = 25;
 
 
 export const SendMessageBody = zod.object({
+  "messageId": zod.string().uuid(),
   "senderAddress": zod.string().min(sendMessageBodySenderAddressMin),
   "body": zod.string().min(1)
 })
