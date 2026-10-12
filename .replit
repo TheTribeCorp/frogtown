@@ -18,3 +18,8 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+FROGTOWN_MODERATOR_WALLETS = "rpKRLnCowtD52QzGu5x6i9jn5a2LMbhgsS, rGKV4YcEk2Fw5s7KFmKGHoZcqxK93F6Zz7, "
