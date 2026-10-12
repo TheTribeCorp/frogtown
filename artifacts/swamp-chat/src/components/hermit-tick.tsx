@@ -13,13 +13,27 @@ export function HermitTick({ walletAddress, currentWallet = false, className = '
       enabled: Boolean(walletAddress),
       queryKey: getGetWalletHermitTickQueryKey(walletAddress, params),
       staleTime: currentWallet ? 0 : 5 * 60 * 1000,
+      retry: false,
       ...(currentWallet ? { refetchOnMount: 'always' as const } : {}),
     },
+    request: { credentials: 'same-origin' },
+  });
+  const refreshNeedsFallback = currentWallet
+    && (query.isError || query.data?.checkStatus === 'unavailable');
+  const fallbackQuery = useGetWalletHermitTick(walletAddress, undefined, {
+    query: {
+      enabled: Boolean(walletAddress) && refreshNeedsFallback,
+      queryKey: getGetWalletHermitTickQueryKey(walletAddress),
+      staleTime: 5 * 60 * 1000,
+      retry: false,
+    },
+    request: { credentials: 'same-origin' },
   });
 
-  const tick = !query.isFetching && !query.isError && query.data?.checkStatus === 'checked'
-    ? query.data.tick
-    : null;
+  // Keep an already verified tick visible during refresh. If the forced
+  // self-check fails, retry through the public cached lookup before hiding it.
+  const result = refreshNeedsFallback ? fallbackQuery.data : query.data;
+  const tick = result?.checkStatus === 'checked' ? result.tick : null;
   if (!tick) return null;
 
   const label = tick === 'gold' ? 'Gold $HERMIT holder' : 'Green $HERMIT holder';

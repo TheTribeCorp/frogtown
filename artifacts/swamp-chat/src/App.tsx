@@ -245,7 +245,7 @@ function WalletPill({ address, onClick }: { address: string; onClick?: () => voi
       </span>
       <span className="min-w-0 text-left">
         <span className="block text-[9px] uppercase tracking-[.17em] text-[hsl(var(--sidebar-foreground)/.52)]">wallet identity</span>
-        <span className="flex min-w-0 items-center gap-1.5"><span className="mono block truncate text-xs text-[hsl(var(--sidebar-foreground))]" data-testid="text-sidebar-wallet">{shortAddress(address)}</span><HermitTick walletAddress={address} currentWallet className="size-4" /></span>
+        <span className="flex min-w-0 items-center gap-1.5"><span className="mono block min-w-0 truncate text-xs text-[hsl(var(--sidebar-foreground))]" data-testid="text-sidebar-wallet">{shortAddress(address)}</span><HermitTick walletAddress={address} currentWallet className="size-4" /></span>
       </span>
     </>
   );
