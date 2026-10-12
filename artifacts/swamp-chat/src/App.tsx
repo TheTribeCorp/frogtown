@@ -371,45 +371,113 @@ function WalletEntry() {
   };
 
   return (
-    <div className="swamp-app noise min-h-[100dvh] overflow-hidden">
-      <div className="mx-auto flex min-h-[100dvh] max-w-[1500px] flex-col lg:flex-row">
-        <section className="relative flex min-h-[46dvh] flex-1 flex-col justify-between overflow-hidden bg-[hsl(var(--sidebar))] px-6 py-7 text-[hsl(var(--sidebar-foreground))] md:px-12 lg:min-h-[100dvh] lg:max-w-[51%] lg:px-16 lg:py-10">
-          <div className="absolute -right-32 -top-32 size-96 rounded-full border-[1px] border-[hsl(var(--secondary)/.17)]" />
-          <div className="absolute -right-12 top-10 size-44 rounded-full border-[1px] border-[hsl(var(--accent)/.28)]" />
-          <div className="absolute bottom-[-15%] left-[-10%] size-80 rounded-full bg-[hsl(var(--primary)/.16)] blur-3xl" />
-          <div className="relative z-10 flex items-center justify-between"><FrogtownMark /><span className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--sidebar-foreground)/.45)]">XRPL / $HERMIT</span></div>
-          <div className="relative z-10 my-12 max-w-xl lg:my-0">
-            <p className="mono mb-5 text-xs uppercase tracking-[.24em] text-[hsl(var(--sidebar-accent))]">$HERMIT community / XRPL</p>
-            <h1 className="max-w-[680px] text-[clamp(3.4rem,8vw,7.6rem)] font-semibold leading-[.87] tracking-[-.085em]">Frogtown<br /><span className="text-[hsl(var(--sidebar-accent))]">brings us closer.</span></h1>
-            <p className="mt-8 max-w-md text-base leading-7 text-[hsl(var(--sidebar-foreground)/.62)] md:text-lg">Meet the home for $HERMIT, the chill frog of the XRPL. Connect your Xaman wallet to join encrypted chats, community rooms, and a shared timeline—bringing the people behind the ledger together.</p>
-          </div>
-          <div className="relative z-10 flex items-end justify-between gap-8">
-            <div><p className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--sidebar-foreground)/.38)]">built for the XRPL community</p><div className="mt-3 flex items-center gap-2 text-sm text-[hsl(var(--sidebar-foreground)/.68)]"><span className="size-2 rounded-full bg-[hsl(var(--sidebar-accent))]" /> One ledger. Many voices.</div></div>
-            <div className="mono hidden text-right text-[10px] leading-5 text-[hsl(var(--sidebar-foreground)/.38)] sm:block">your address<br />is enough.</div>
-          </div>
-        </section>
-        <section className="wallet-grid flex flex-1 items-center justify-center px-6 py-12 md:px-12 lg:max-w-[49%]">
-          <div className="w-full max-w-[460px]">
-            <div className="appear">
-              <div className="mb-7 flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]"><span className="mono rounded-full bg-[hsl(var(--primary)/.11)] px-2 py-1 text-[10px] text-[hsl(var(--primary))]">01</span><span>Connect to enter</span><span className="h-px flex-1 bg-[hsl(var(--border))]" /><span className="mono text-[10px]">XAMAN</span></div>
-              <h2 className="text-4xl font-semibold leading-[.98] tracking-[-.07em] md:text-5xl">Your people<br />are in Frogtown.</h2>
-              <p className="mt-5 max-w-sm leading-6 text-[hsl(var(--muted-foreground))]">Connect with Xaman to join the $HERMIT community. Your XRPL address is your identity; your private chats are encrypted on your device.</p>
+    <div className="ft-entry">
+      <div className="ft-entry-shell">
+        <section className="ft-entry-scene" aria-labelledby="frogtown-welcome-title">
+          <header className="ft-entry-header">
+            <FrogtownMark />
+            <span className="ft-entry-network"><span className="ft-entry-network-dot" /> XRPL / $HERMIT</span>
+          </header>
+          <div className="ft-entry-intro">
+            <p className="ft-entry-kicker"><span /> $HERMIT community / XRPL</p>
+            <h1 id="frogtown-welcome-title">Good people.<br /><span>Good signals.</span></h1>
+            <p className="ft-entry-lede">A little more human side of the ledger. Find your people, settle into a room, and make yourself at home.</p>
+            <div className="ft-entry-spaces" aria-label="Frogtown spaces">
+              <span>Private chats</span><span>Community rooms</span><span>Public timeline</span>
             </div>
+          </div>
+
+          <div className="ft-entry-art" aria-label="An illustrative private conversation in Frogtown">
+            <div className="ft-entry-orbit ft-entry-orbit-one" />
+            <div className="ft-entry-orbit ft-entry-orbit-two" />
+            <div className="ft-entry-mascot-wrap">
+              <div className="ft-entry-mascot-glow" />
+              <img className="ft-entry-mascot" src="/images/hermit-mascot.jpg" alt="$HERMIT frog mascot wearing a red hood" />
+              <span className="ft-entry-mascot-sticker">one ledger<br />many voices</span>
+            </div>
+            <div className="ft-entry-bubble ft-entry-bubble-top"><span /> Room for your kind of weird.</div>
+            <div className="ft-entry-bubble ft-entry-bubble-bottom">Your wallet is your hello <b aria-hidden="true">↗</b></div>
+            <div className="ft-entry-phone">
+              <div className="ft-entry-phone-status" aria-hidden="true"><span>9:41</span><span>XRPL <i /></span></div>
+              <div className="ft-entry-phone-head">
+                <div className="ft-entry-avatar">M</div>
+                <div><strong>Mara + you</strong><span>illustrative private chat</span></div>
+                <LockKeyhole className="ft-entry-phone-lock" aria-label="End-to-end encrypted" />
+              </div>
+              <div className="ft-entry-phone-messages">
+                <p className="ft-entry-message received">Found a tiny XRPL art room that feels like a porch.</p>
+                <p className="ft-entry-message sent">That is exactly the kind of corner I came here for.</p>
+                <p className="ft-entry-message received">I’ll save you a seat. Just bring your wallet.</p>
+              </div>
+              <div className="ft-entry-phone-foot"><span /> Example · encrypted on-device</div>
+              <div className="ft-entry-phone-homebar" aria-hidden="true" />
+            </div>
+          </div>
+          <footer className="ft-entry-scene-foot">
+            <span>Made for the XRPL, open to every wallet.</span>
+            <span className="ft-entry-asterisk" aria-hidden="true">*</span>
+          </footer>
+        </section>
+
+        <section className="ft-entry-access" aria-labelledby="frogtown-entry-title">
+          <div className="ft-entry-access-top">
+            <span className="ft-entry-overline">YOUR FRONT DOOR</span>
+            <span className="ft-entry-access-tag">XRPL MAINNET</span>
+          </div>
+          <div className="ft-entry-access-body">
+            <div className="ft-entry-welcome"><span /> Welcome in</div>
+            <h2 id="frogtown-entry-title">Your people<br />are <span>around here.</span></h2>
+            <p className="ft-entry-access-copy">Connect any XRPL wallet to step inside. $HERMIT ownership is not required — your wallet address is your Frogtown identity.</p>
             {!session ? (
-              <div className="appear appear-delay-1 mt-10 rounded-[1.35rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 shadow-[0_18px_60px_hsl(174_25%_13%/.08)]">
-                <div className="flex items-start gap-4"><div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"><WalletCards className="size-5" /></div><div><p className="font-semibold">Connect your XRPL wallet</p><p className="mt-1 text-sm leading-5 text-[hsl(var(--muted-foreground))]">Sign in securely with Xaman and make your address your Frogtown identity.</p></div></div>
-                <button onClick={connect} disabled={createSession.isPending} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-4 py-3.5 text-sm font-medium text-[hsl(var(--card))] transition hover:-translate-y-0.5 hover:bg-[hsl(var(--primary))] disabled:cursor-wait disabled:opacity-60" data-testid="button-connect-wallet">{createSession.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Zap className="size-4 text-[hsl(var(--sidebar-accent))]" />}{createSession.isPending ? 'Opening Xaman…' : 'Connect with Xaman'}<ArrowRight className="ml-auto size-4 opacity-60" /></button>
-                <div className="mt-5 flex items-center justify-center gap-2 text-[11px] text-[hsl(var(--muted-foreground))]"><LockKeyhole className="size-3" /> Encrypted conversations · XRPL mainnet</div>
+              <div className="ft-entry-connect-card">
+                <div className="ft-entry-connect-intro">
+                  <div className="ft-entry-wallet-icon"><WalletCards className="size-5" /></div>
+                  <div><strong>Connect with Xaman</strong><span>Secure wallet sign-in, then you’re in.</span></div>
+                </div>
+                <button
+                  onClick={connect}
+                  disabled={createSession.isPending}
+                  className="ft-entry-connect-button"
+                  data-testid="button-connect-wallet"
+                  type="button"
+                >
+                  <span>{createSession.isPending ? 'Opening Xaman…' : 'Connect your wallet'}</span>
+                  {createSession.isPending ? <RefreshCw className="size-4 animate-spin" aria-hidden="true" /> : <ArrowUpRight className="size-4" aria-hidden="true" />}
+                </button>
+                <p className="ft-entry-open-access"><span aria-hidden="true">i</span> Any connected XRPL wallet can enter</p>
               </div>
             ) : (
-              <div className="appear mt-10 rounded-[1.35rem] border border-[hsl(var(--primary)/.3)] bg-[hsl(var(--card)/.82)] p-5 shadow-[0_18px_60px_hsl(174_25%_13%/.08)]">
-                <div className="flex items-start gap-4"><div className="relative flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))]"><QrCode className="size-6" /><span className="absolute -right-1 -top-1 size-2.5 rounded-full bg-[hsl(var(--primary))] pulse-dot" /></div><div><p className="font-semibold">Waiting for Xaman</p><p className="mt-1 text-sm leading-5 text-[hsl(var(--muted-foreground))]">{statusQuery.isFetching ? 'Listening for your approval…' : 'Scan the code or open the app.'}</p></div></div>
-                <div className="mt-6 grid gap-4 sm:grid-cols-[140px_1fr]"><div className="flex aspect-square items-center justify-center rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--foreground))] p-3"><img src={session.qrUrl} alt="Xaman wallet connection QR code" className="size-full rounded-md bg-[hsl(var(--card))]" data-testid="img-wallet-qr" /></div><div className="flex flex-col justify-between"><div><p className="mono break-all text-[11px] leading-5 text-[hsl(var(--muted-foreground))]">{session.sessionId}</p><p className="mt-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Your address never leaves the connection you approve.</p></div><a href={session.deeplink} className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-[hsl(var(--border))] px-3 py-2.5 text-xs font-medium transition hover:border-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.07)]" data-testid="link-open-xaman">Open Xaman <ExternalLink className="size-3.5" /></a></div></div>
-                <button className="mt-5 flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" onClick={() => setSession(null)} data-testid="button-cancel-wallet">Cancel and start over <ChevronRight className="size-3.5" /></button>
+              <div className="ft-entry-connect-card ft-entry-session-card">
+                <div className="ft-entry-connect-intro">
+                  <div className="ft-entry-wallet-icon waiting"><QrCode className="size-5" /><span className="pulse-dot" /></div>
+                  <div><strong>Waiting for Xaman</strong><span>{statusQuery.isFetching ? 'Listening for your approval…' : 'Scan the code or open the app.'}</span></div>
+                </div>
+                <div className="ft-entry-session-content">
+                  <div className="ft-entry-qr-wrap"><img src={session.qrUrl} alt="Xaman wallet connection QR code" data-testid="img-wallet-qr" /></div>
+                  <div className="ft-entry-session-details">
+                    <p className="mono break-all">{session.sessionId}</p>
+                    <p>Your address never leaves the connection you approve.</p>
+                    <a href={session.deeplink} data-testid="link-open-xaman">Open Xaman <ExternalLink className="size-3.5" /></a>
+                  </div>
+                </div>
+                <button className="ft-entry-cancel" onClick={() => setSession(null)} data-testid="button-cancel-wallet" type="button">Cancel and start over <ChevronRight className="size-3.5" /></button>
               </div>
             )}
-            <div className="appear appear-delay-2 mt-7 grid grid-cols-3 gap-3 text-center"><div><p className="text-lg font-semibold">01</p><p className="mono mt-1 text-[9px] uppercase tracking-[.12em] text-[hsl(var(--muted-foreground))]">wallet</p></div><div><p className="text-lg font-semibold">0</p><p className="mono mt-1 text-[9px] uppercase tracking-[.12em] text-[hsl(var(--muted-foreground))]">profiles</p></div><div><p className="text-lg font-semibold">∞</p><p className="mono mt-1 text-[9px] uppercase tracking-[.12em] text-[hsl(var(--muted-foreground))]">signal</p></div></div>
+
+            <div className="ft-entry-promise-list">
+              <div className="ft-entry-promise">
+                <span className="ft-entry-promise-icon private"><LockKeyhole aria-hidden="true" /></span>
+                <div><strong>Private means private.</strong><span>Direct and group chats are end-to-end encrypted on-device.</span></div>
+              </div>
+              <div className="ft-entry-promise">
+                <span className="ft-entry-promise-icon public"><Rss aria-hidden="true" /></span>
+                <div><strong>Out in the open.</strong><span>The shared timeline is public to Frogtown members.</span></div>
+              </div>
+            </div>
           </div>
+          <footer className="ft-entry-access-foot">
+            <span>Wallet address = your identity</span><span>FROGTOWN <b>·</b> XRPL</span>
+          </footer>
         </section>
       </div>
       {notice && <Notice message={notice.message} tone={notice.tone} onClose={() => setNotice(null)} />}

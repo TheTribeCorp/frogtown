@@ -1,0 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --background: 140 25% 97%;
+  --foreground: 147 28% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 147 28% 12%;
+  --border: 140 17% 84%;
+  --input: 140 18% 87%;
+  --ring: 145 58% 38%;
+  --primary: 145 58% 32%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 355 78% 43%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 138 22% 93%;
+  --muted-foreground: 145 13% 38%;
+  --accent: 350 68% 39%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 43%;
+  --destructive-foreground: 0 0% 100%;
+  --sidebar: 149 38% 12%;
+  --sidebar-foreground: 0 0% 96%;
+  --sidebar-accent: 2 100% 78%;
+  --app-font-sans: 'Space Grotesk', sans-serif;
+  --app-font-mono: 'DM Mono', monospace;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; }
+body {
+  margin: 0;
+  color: hsl(var(--foreground));
+  font-family: var(--app-font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; cursor: pointer; }
+.mono { font-family: var(--app-font-mono); }
+.swamp-app {
+  background:
+    radial-gradient(circle at 85% 10%, hsl(var(--secondary) / .09), transparent 25rem),
+    radial-gradient(circle at 15% 90%, hsl(var(--primary) / .12), transparent 28rem),
+    hsl(var(--background));
+}
+.noise::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: .035;
+  z-index: 40;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");
+}
+.appear { animation: appear .42s ease both; }
+.appear-delay-1 { animation-delay: .08s; }
+.appear-delay-2 { animation-delay: .16s; }
+.pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
+.wallet-grid {
+  background-image: linear-gradient(hsl(var(--primary) / .12) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary) / .12) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+@keyframes appear { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse-dot { 0%, 100% { opacity: .45; transform: scale(.9); } 50% { opacity: 1; transform: scale(1); } }
