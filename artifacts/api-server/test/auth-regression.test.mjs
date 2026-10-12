@@ -32,9 +32,10 @@ function sessionCookie(walletAddress, expiresAt = Date.now() + 60_000) {
   return `swamp_session=${payload}.${signature}`;
 }
 
-async function request(pathname, { method = "GET", cookie, body } = {}) {
+async function request(pathname, { method = "GET", cookie, body, origin } = {}) {
   const headers = {};
   if (cookie) headers.cookie = cookie;
+  if (origin) headers.origin = origin;
   if (body !== undefined) headers["content-type"] = "application/json";
   return fetch(`${baseUrl}${pathname}`, {
     method,
@@ -80,6 +81,11 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     const response = await request("/api/wallet/me", { cookie });
     assert.equal(response.status, 401, "invalid session should be rejected");
   }
+
+  const crossOrigin = await request("/api/wallet/me", { origin: "https://attacker.example" });
+  assert.equal(crossOrigin.status, 401);
+  assert.equal(crossOrigin.headers.get("access-control-allow-origin"), null);
+  assert.equal(crossOrigin.headers.get("access-control-allow-credentials"), null);
 
   const validCookie = sessionCookie(walletA);
   const identityResponse = await request("/api/wallet/me", { cookie: validCookie });

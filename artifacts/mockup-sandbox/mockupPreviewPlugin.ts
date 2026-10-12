@@ -1,6 +1,5 @@
-import { mkdirSync, writeFileSync } from "fs";
+import { mkdirSync, readdirSync, writeFileSync } from "fs";
 import path from "path";
-import glob from "fast-glob";
 import chokidar from "chokidar";
 import type { FSWatcher } from "chokidar";
 import type { Plugin } from "vite";
@@ -40,10 +39,23 @@ export function mockupPreviewPlugin(): Plugin {
   }
 
   async function discoverComponents(): Promise<Array<DiscoveredComponent>> {
-    const files = await glob(`${MOCKUPS_DIR}/**/*.tsx`, {
-      cwd: root,
-      ignore: ["**/_*/**", "**/_*.tsx"],
-    });
+    const files: string[] = [];
+    const visit = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.name.startsWith("_") || entry.name.startsWith(".")) continue;
+        const absolutePath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          visit(absolutePath);
+        } else if (entry.isFile() && entry.name.endsWith(".tsx")) {
+          files.push(path.relative(root, absolutePath).split(path.sep).join("/"));
+        }
+      }
+    };
+
+    const mockupsAbsDir = getMockupsAbsDir();
+    mkdirSync(mockupsAbsDir, { recursive: true });
+    visit(mockupsAbsDir);
+    files.sort();
 
     return files.map((f) => ({
       globKey: "./" + f.slice("src/".length),

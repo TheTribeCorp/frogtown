@@ -1,3 +1,4 @@
 - [SWAMP encryption model](swamp-encryption-model.md) — wallet login keys and client encryption keys are separate; verify public keys out of band.
 - [SWAMP message delivery](swamp-message-delivery.md) — treat SSE as a notification hint; recover from persisted history and make sends idempotent.
 - [Frogtown privacy and read state](swamp-timeline-privacy-and-read-state.md) — $HERMIT branding, public timeline, and per-wallet E2EE chat receipts stay distinct.
+- [Frogtown API origin policy](frogtown-api-origin-policy.md) — browser API calls are same-origin; any future external client needs an explicit origin allowlist.
