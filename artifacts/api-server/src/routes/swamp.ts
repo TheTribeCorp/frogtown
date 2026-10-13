@@ -23,7 +23,7 @@ import {
   SendMessageParams,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
-import { publishMessageCreated, publishMessageRead, subscribeToWalletMessages } from "../lib/message-events";
+import { publishMessageCreated, publishMessageRead, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
 import { recordDailyQuestActionInTransaction } from "../lib/gamification";
 import { getWalletHermitTick } from "../lib/hermit-tick";
 import {
@@ -37,17 +37,44 @@ import {
 
 const router: IRouter = Router();
 
-type XamanSession = {
-  xamanId: string;
-  expiresAt: Date;
-};
-
-const xamanSessions = new Map<string, XamanSession>();
 let groupSeedPromise: Promise<void> | undefined;
 const AUTH_COOKIE = "swamp_session";
 const AUTH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const isWalletAddress = (value: string) => /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(value);
+
+type EventCursor = {
+  messageAt: string;
+  messageId: string;
+  readAt: string;
+};
+
+function decodeEventCursor(value: string | undefined): EventCursor | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<EventCursor>;
+    if (
+      typeof parsed.messageAt !== "string" ||
+      !Number.isFinite(Date.parse(parsed.messageAt)) ||
+      typeof parsed.messageId !== "string" ||
+      typeof parsed.readAt !== "string" ||
+      !Number.isFinite(Date.parse(parsed.readAt))
+    ) {
+      return null;
+    }
+    return {
+      messageAt: parsed.messageAt,
+      messageId: parsed.messageId,
+      readAt: parsed.readAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function encodeEventCursor(cursor: EventCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
+}
 
 function serializeConversation(row: typeof conversationsTable.$inferSelect) {
   return {
@@ -212,7 +239,6 @@ router.post("/wallet/sessions", async (_req, res) => {
     }
 
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-    xamanSessions.set(payload.uuid, { xamanId: payload.uuid, expiresAt });
     res.status(201).json({
       sessionId: payload.uuid,
       qrUrl: payload.refs.qr_png,
@@ -227,19 +253,18 @@ router.post("/wallet/sessions", async (_req, res) => {
 router.get("/wallet/sessions/:sessionId", async (req, res) => {
   try {
     const { sessionId } = GetWalletSessionParams.parse(req.params);
-    const session = xamanSessions.get(sessionId);
-    if (!session) {
-      res.status(404).json({ error: "Wallet session not found." });
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId)) {
+      res.status(400).json({ error: "Invalid wallet session." });
       return;
     }
-    if (session.expiresAt.getTime() < Date.now()) {
-      res.json({ sessionId, status: "expired", walletAddress: null, network: "XRPL Mainnet" });
+    const apiKey = process.env.XAMAN_API_KEY;
+    const apiSecret = process.env.XAMAN_API_SECRET;
+    if (!apiKey || !apiSecret) {
+      res.status(503).json({ error: "Xaman is not configured for this environment." });
       return;
     }
 
-    const apiKey = process.env.XAMAN_API_KEY;
-    const apiSecret = process.env.XAMAN_API_SECRET;
-    const response = await fetch(`https://xumm.app/api/v1/platform/payload/${session.xamanId}`, {
+    const response = await fetch(`https://xumm.app/api/v1/platform/payload/${sessionId}`, {
       headers: { "X-API-Key": apiKey ?? "", "X-API-Secret": apiSecret ?? "" },
     });
     if (!response.ok) {
@@ -248,9 +273,13 @@ router.get("/wallet/sessions/:sessionId", async (req, res) => {
     }
 
     const payload = (await response.json()) as {
-      meta?: { resolved?: boolean; signed?: boolean };
+      meta?: { resolved?: boolean; signed?: boolean; expired?: boolean };
       response?: { account?: string };
     };
+    if (payload.meta?.expired === true) {
+      res.json({ sessionId, status: "expired", walletAddress: null, network: "XRPL Mainnet" });
+      return;
+    }
     const walletAddress = payload.response?.account ?? null;
     const connected = payload.meta?.resolved === true && payload.meta?.signed === true && walletAddress;
     if (connected) {
@@ -327,6 +356,115 @@ router.get("/events", (req, res): void => {
   });
   res.flushHeaders();
   res.write("retry: 2000\n\n");
+
+  if (process.env.VERCEL) {
+    const now = new Date().toISOString();
+    const cursor = decodeEventCursor(req.get("Last-Event-ID")) ?? {
+      messageAt: now,
+      messageId: "",
+      readAt: now,
+    };
+    let pollInFlight = false;
+    let cleanedUp = false;
+
+    const send = (event: WalletEvent) => {
+      if (res.writableEnded || res.destroyed) return;
+      res.write(`id: ${encodeEventCursor(cursor)}\ndata: ${JSON.stringify(event)}\n\n`);
+    };
+
+    const poll = async () => {
+      if (pollInFlight || cleanedUp) return;
+      pollInFlight = true;
+      try {
+        const messageAt = new Date(cursor.messageAt);
+        const messages = await db
+          .select({
+            id: messagesTable.id,
+            conversationId: messagesTable.conversationId,
+            senderAddress: messagesTable.senderAddress,
+            sentAt: messagesTable.sentAt,
+          })
+          .from(messagesTable)
+          .innerJoin(
+            conversationMembersTable,
+            and(
+              eq(messagesTable.conversationId, conversationMembersTable.conversationId),
+              eq(conversationMembersTable.walletAddress, walletAddress),
+            ),
+          )
+          .where(
+            or(
+              gt(messagesTable.sentAt, messageAt),
+              and(
+                eq(messagesTable.sentAt, messageAt),
+                gt(messagesTable.id, cursor.messageId),
+              ),
+            ),
+          )
+          .orderBy(asc(messagesTable.sentAt), asc(messagesTable.id))
+          .limit(100);
+
+        for (const message of messages) {
+          cursor.messageAt = message.sentAt.toISOString();
+          cursor.messageId = message.id;
+          send({
+            type: "message.created",
+            conversationId: message.conversationId,
+            messageId: message.id,
+            senderAddress: message.senderAddress,
+          });
+        }
+
+        const myConversations = db
+          .select({ conversationId: conversationMembersTable.conversationId })
+          .from(conversationMembersTable)
+          .where(eq(conversationMembersTable.walletAddress, walletAddress));
+        const readReceipts = await db
+          .select({
+            conversationId: conversationMembersTable.conversationId,
+            lastReadAt: conversationMembersTable.lastReadAt,
+          })
+          .from(conversationMembersTable)
+          .where(
+            and(
+              inArray(conversationMembersTable.conversationId, myConversations),
+              ne(conversationMembersTable.walletAddress, walletAddress),
+              gt(conversationMembersTable.lastReadAt, new Date(cursor.readAt)),
+            ),
+          )
+          .orderBy(asc(conversationMembersTable.lastReadAt), asc(conversationMembersTable.conversationId))
+          .limit(100);
+
+        for (const receipt of readReceipts) {
+          if (!receipt.lastReadAt) continue;
+          cursor.readAt = receipt.lastReadAt.toISOString();
+          send({ type: "message.read", conversationId: receipt.conversationId });
+        }
+      } catch (error) {
+        req.log.error({ err: error }, "Could not poll persisted message events");
+        if (!res.writableEnded && !res.destroyed) res.write(": retrying\n\n");
+      } finally {
+        pollInFlight = false;
+      }
+    };
+
+    const polling = setInterval(() => void poll(), 1_500);
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded && !res.destroyed) res.write(": keepalive\n\n");
+    }, 20_000);
+    const maximumLifetime = setTimeout(() => res.end(), 45_000);
+    const cleanup = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      clearInterval(polling);
+      clearInterval(heartbeat);
+      clearTimeout(maximumLifetime);
+    };
+    res.on("close", cleanup);
+    res.write(`id: ${encodeEventCursor(cursor)}\ndata: ${JSON.stringify({ type: "ready" })}\n\n`);
+    void poll();
+    return;
+  }
 
   const unsubscribe = subscribeToWalletMessages(walletAddress, (event) => {
     if (!res.writableEnded && !res.destroyed) {

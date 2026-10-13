@@ -2,6 +2,7 @@
 
 # compiled output
 dist
+.vercel/
 tmp
 out-tsc
 *.tsbuildinfo
