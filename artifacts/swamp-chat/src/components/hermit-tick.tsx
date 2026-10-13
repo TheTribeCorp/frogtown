@@ -1,4 +1,5 @@
 import { useGetWalletHermitTick, getGetWalletHermitTickQueryKey } from '@workspace/api-client-react';
+import { visibleHermitTick } from '@/lib/hermit-tick-display';
 
 type HermitTickProps = {
   walletAddress: string;
@@ -18,22 +19,7 @@ export function HermitTick({ walletAddress, currentWallet = false, className = '
     },
     request: { credentials: 'same-origin' },
   });
-  const refreshNeedsFallback = currentWallet
-    && (query.isError || query.data?.checkStatus === 'unavailable');
-  const fallbackQuery = useGetWalletHermitTick(walletAddress, undefined, {
-    query: {
-      enabled: Boolean(walletAddress) && refreshNeedsFallback,
-      queryKey: getGetWalletHermitTickQueryKey(walletAddress),
-      staleTime: 5 * 60 * 1000,
-      retry: false,
-    },
-    request: { credentials: 'same-origin' },
-  });
-
-  // Keep an already verified tick visible during refresh. If the forced
-  // self-check fails, retry through the public cached lookup before hiding it.
-  const result = refreshNeedsFallback ? fallbackQuery.data : query.data;
-  const tick = result?.checkStatus === 'checked' ? result.tick : null;
+  const tick = visibleHermitTick(query.data, query.isError);
   if (!tick) return null;
 
   const label = tick === 'gold' ? 'Gold $HERMIT holder' : 'Green $HERMIT holder';

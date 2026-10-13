@@ -40,6 +40,142 @@ function emptyTrustlineResponse() {
   });
 }
 
+function xrplResponse(body) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+test("successful XRPL holder checks award the tick from the issuer-side trustline", async () => {
+  const originalFetch = globalThis.fetch;
+  const wallet = syntheticWallet(3_001);
+  let request;
+  globalThis.fetch = async (url, init) => {
+    request = { url, init, body: JSON.parse(String(init?.body)) };
+    return xrplResponse({
+      result: {
+        lines: [{
+          account: wallet,
+          currency: "4845524D49540000000000000000000000000000",
+          balance: "-42.5",
+        }],
+      },
+    });
+  };
+
+  try {
+    const check = await getWalletHermitTick(wallet);
+    assert.equal(check.tick, "green");
+    assert.equal(check.checkStatus, "checked");
+    assert.equal(request.body.method, "account_lines");
+    assert.equal(request.body.params[0].account, "r95w8bhxwgLTNC8V2j3Fv9yPuwaQfMjYL3");
+    assert.equal(request.body.params[0].peer, wallet);
+    assert.equal(request.body.params[0].ledger_index, "validated");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a successful XRPL lookup with no $HERMIT trustline has no tick", async () => {
+  const originalFetch = globalThis.fetch;
+  const wallet = syntheticWallet(3_002);
+  globalThis.fetch = async () => xrplResponse({ result: { lines: [] } });
+
+  try {
+    const check = await getWalletHermitTick(wallet);
+    assert.equal(check.tick, null);
+    assert.equal(check.checkStatus, "checked");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("XRPL timeouts fail closed without awarding a tick", async () => {
+  const originalFetch = globalThis.fetch;
+  const wallet = syntheticWallet(3_003);
+  globalThis.fetch = async (_url, init) => {
+    assert.ok(init.signal instanceof AbortSignal);
+    const timeout = new Error("XRPL request timed out");
+    timeout.name = "TimeoutError";
+    throw timeout;
+  };
+
+  try {
+    const check = await getWalletHermitTick(wallet);
+    assert.equal(check.tick, null);
+    assert.equal(check.checkStatus, "unavailable");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("malformed XRPL responses fail closed without awarding a tick", async () => {
+  const originalFetch = globalThis.fetch;
+  const malformedResponses = [
+    new Response("not-json", { status: 200 }),
+    xrplResponse({}),
+    xrplResponse({ result: { lines: {} } }),
+    xrplResponse({
+      result: {
+        lines: [{
+          account: syntheticWallet(3_007),
+          currency: "4845524D49540000000000000000000000000000",
+          balance: "NaN",
+        }],
+      },
+    }),
+  ];
+  globalThis.fetch = async () => malformedResponses.shift();
+
+  try {
+    for (let index = 0; index < 4; index += 1) {
+      const check = await getWalletHermitTick(syntheticWallet(3_004 + index));
+      assert.equal(check.tick, null, `malformed response ${index + 1} must not award a tick`);
+      assert.equal(check.checkStatus, "unavailable");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("forced wallet refresh bypasses a successful cached lookup", async () => {
+  const originalFetch = globalThis.fetch;
+  const wallet = syntheticWallet(3_010);
+  const balances = ["-19", "-20000000"];
+  let networkCalls = 0;
+  globalThis.fetch = async () => {
+    const balance = balances[networkCalls];
+    networkCalls += 1;
+    return xrplResponse({
+      result: {
+        lines: [{
+          account: wallet,
+          currency: "4845524D49540000000000000000000000000000",
+          balance,
+        }],
+      },
+    });
+  };
+
+  try {
+    const cachedCheck = await getWalletHermitTick(wallet);
+    assert.equal(cachedCheck.tick, "green");
+    assert.equal(networkCalls, 1);
+
+    const refreshedCheck = await getWalletHermitTick(wallet, true);
+    assert.equal(refreshedCheck.tick, "gold");
+    assert.equal(refreshedCheck.checkStatus, "checked");
+    assert.equal(networkCalls, 2, "forced refresh must make a new XRPL request");
+
+    const laterPublicCheck = await getWalletHermitTick(wallet);
+    assert.equal(laterPublicCheck.tick, "gold");
+    assert.equal(networkCalls, 2, "the successful refresh should replace the cached result");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("public lookup bursts have bounded concurrency and a finite queue", async () => {
   const originalFetch = globalThis.fetch;
   let active = 0;
