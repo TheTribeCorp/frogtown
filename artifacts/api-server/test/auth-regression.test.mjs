@@ -204,6 +204,51 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
   }
 });
 
+test("health check reports database outages without exposing connection details", async () => {
+  const healthy = await request("/api/healthz");
+  assert.equal(healthy.status, 200);
+  assert.deepEqual(await healthy.json(), { status: "ok", database: "ok" });
+
+  const port = await freePort();
+  const unhealthyChild = spawn(process.execPath, [path.join(apiDir, "dist/index.mjs")], {
+    cwd: apiDir,
+    env: {
+      ...process.env,
+      NODE_ENV: "test",
+      PORT: String(port),
+      SESSION_SECRET: testSecret,
+      DATABASE_URL: "postgresql://healthcheck:invalid@127.0.0.1:1/frogtown",
+    },
+    stdio: "ignore",
+  });
+
+  try {
+    const deadline = Date.now() + 8_000;
+    let response;
+    while (Date.now() < deadline) {
+      if (unhealthyChild.exitCode !== null) {
+        throw new Error("Health-check API exited before serving the simulated database outage.");
+      }
+      try {
+        response = await fetch(`http://127.0.0.1:${port}/api/healthz`);
+        if (response.status === 503) break;
+      } catch {
+        // The child API has not started listening yet.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    assert.ok(response, "health-check API should respond during the simulated database outage");
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      status: "unavailable",
+      database: "unavailable",
+    });
+  } finally {
+    unhealthyChild.kill("SIGTERM");
+  }
+});
+
 test("authenticated non-members cannot fetch, decrypt, send, or mark another conversation read", async () => {
   const cookie = sessionCookie(walletA);
   const conversationId = "non-member-authorization-check";

@@ -26,10 +26,16 @@ paths:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
+      description: Checks API and PostgreSQL availability without exposing database details
       responses:
         "200":
-          description: Healthy
+          description: API and database are available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: PostgreSQL is unavailable
           content:
             application/json:
               schema:
@@ -1025,11 +1031,17 @@ components:
   schemas:
     HealthStatus:
       type: object
+      description: Public API and database availability status
       properties:
         status:
           type: string
+          enum: [ok, unavailable]
+        database:
+          type: string
+          enum: [ok, unavailable]
       required:
         - status
+        - database
     ErrorResponse:
       type: object
       properties:

@@ -9,12 +9,13 @@ import * as zod from 'zod';
 
 
 /**
- * Returns server health status
+ * Checks API and PostgreSQL availability without exposing database details
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
-  "status": zod.string()
-})
+  "status": zod.enum(['ok', 'unavailable']),
+  "database": zod.enum(['ok', 'unavailable'])
+}).describe('Public API and database availability status')
 
 
 /**

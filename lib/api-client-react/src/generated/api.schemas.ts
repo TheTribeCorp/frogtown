@@ -5,8 +5,28 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type HealthStatusStatus = typeof HealthStatusStatus[keyof typeof HealthStatusStatus];
+
+
+export const HealthStatusStatus = {
+  ok: 'ok',
+  unavailable: 'unavailable',
+} as const;
+
+export type HealthStatusDatabase = typeof HealthStatusDatabase[keyof typeof HealthStatusDatabase];
+
+
+export const HealthStatusDatabase = {
+  ok: 'ok',
+  unavailable: 'unavailable',
+} as const;
+
+/**
+ * Public API and database availability status
+ */
 export interface HealthStatus {
-  status: string;
+  status: HealthStatusStatus;
+  database: HealthStatusDatabase;
 }
 
 export interface ErrorResponse {

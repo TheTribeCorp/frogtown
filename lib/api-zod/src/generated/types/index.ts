@@ -32,6 +32,8 @@ export * from './getWalletHermitTickParams';
 export * from './group';
 export * from './groupInput';
 export * from './healthStatus';
+export * from './healthStatusDatabase';
+export * from './healthStatusStatus';
 export * from './joinGroupInput';
 export * from './listConversationMessagesParams';
 export * from './listConversationsParams';
