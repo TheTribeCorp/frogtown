@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { index, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const timelinePostsTable = pgTable("swamp_timeline_posts", {
@@ -39,12 +39,28 @@ export const timelineContentReportsTable = pgTable("swamp_timeline_content_repor
   index("swamp_timeline_reports_wallet_created_idx").on(table.walletAddress, table.createdAt),
 ]);
 
+export const timelineModerationActionsTable = pgTable("swamp_timeline_moderation_actions", {
+  id: text("id").primaryKey(),
+  moderatorAddress: text("moderator_address").notNull(),
+  subjectType: text("subject_type").notNull(),
+  subjectId: text("subject_id").notNull(),
+  action: text("action").notNull(),
+  contentSnapshot: text("content_snapshot").notNull(),
+  reportCount: integer("report_count").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("swamp_timeline_moderation_actions_created_idx").on(table.createdAt),
+  index("swamp_timeline_moderation_actions_moderator_created_idx").on(table.moderatorAddress, table.createdAt),
+]);
+
 export const insertTimelinePostSchema = createInsertSchema(timelinePostsTable);
 export const insertTimelinePostLikeSchema = createInsertSchema(timelinePostLikesTable);
 export const insertTimelinePostCommentSchema = createInsertSchema(timelinePostCommentsTable);
 export const insertTimelineContentReportSchema = createInsertSchema(timelineContentReportsTable);
+export const insertTimelineModerationActionSchema = createInsertSchema(timelineModerationActionsTable);
 
 export type TimelinePost = z.infer<typeof insertTimelinePostSchema>;
 export type TimelinePostLike = z.infer<typeof insertTimelinePostLikeSchema>;
 export type TimelinePostComment = z.infer<typeof insertTimelinePostCommentSchema>;
 export type TimelineContentReport = z.infer<typeof insertTimelineContentReportSchema>;
+export type TimelineModerationAction = z.infer<typeof insertTimelineModerationActionSchema>;

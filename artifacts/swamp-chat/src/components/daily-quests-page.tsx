@@ -24,16 +24,20 @@ import {
 import { Link } from 'wouter';
 import {
   getGetGamificationLeaderboardQueryKey,
+  getGetGamificationHistoryQueryKey,
   getGetGamificationSummaryQueryKey,
   useCheckInGamification,
+  useGetGamificationHistory,
   useGetGamificationLeaderboard,
   useGetGamificationSummary,
   usePlayGamificationCoinFlip,
+  type GetGamificationHistoryQueryResult,
 } from '@workspace/api-client-react';
 import { HermitTick } from '@/components/hermit-tick';
 
 type DailyQuestsPageProps = { walletAddress?: string };
 type FlipChoice = 'heads' | 'tails';
+type HistoryItem = GetGamificationHistoryQueryResult['items'][number];
 
 const QUEST_COPY = {
   check_in: {
@@ -107,6 +111,15 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
   const leaderboardQuery = useGetGamificationLeaderboard({
     query: { queryKey: getGetGamificationLeaderboardQueryKey(), refetchInterval: 30_000 },
   });
+  const [historyCursor, setHistoryCursor] = useState<string | undefined>();
+  const historyParams = { cursor: historyCursor, limit: 20 };
+  const historyQuery = useGetGamificationHistory(historyParams, {
+    query: {
+      enabled: Boolean(walletAddress),
+      queryKey: [...getGetGamificationHistoryQueryKey(historyParams), walletAddress ?? 'anonymous'],
+    },
+  });
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const checkIn = useCheckInGamification();
   const flip = usePlayGamificationCoinFlip();
   const [choice, setChoice] = useState<FlipChoice>('heads');
@@ -115,6 +128,20 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
   const [flipError, setFlipError] = useState('');
   const [lastFlip, setLastFlip] = useState<Awaited<ReturnType<typeof flip.mutateAsync>> | null>(null);
   const pendingFlip = useRef<{ requestId: string; choice: FlipChoice } | null>(null);
+
+  useEffect(() => {
+    setHistoryCursor(undefined);
+    setHistoryItems([]);
+  }, [walletAddress]);
+
+  useEffect(() => {
+    if (!historyQuery.data) return;
+    setHistoryItems((current) => {
+      const seen = new Set(current.map((item) => item.id));
+      const incoming = historyQuery.data.items.filter((item) => !seen.has(item.id));
+      return historyCursor ? [...current, ...incoming] : [...incoming, ...current];
+    });
+  }, [historyQuery.data, historyCursor]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setResetClock(utcUntilReset()), 1000);
@@ -132,8 +159,11 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
     setCheckInError('');
     checkIn.mutate(undefined, {
       onSuccess: () => {
+        setHistoryCursor(undefined);
+        setHistoryItems([]);
         void client.invalidateQueries({ queryKey: getGetGamificationSummaryQueryKey() });
         void client.invalidateQueries({ queryKey: getGetGamificationLeaderboardQueryKey() });
+        void client.invalidateQueries({ queryKey: getGetGamificationHistoryQueryKey() });
       },
       onError: (error) => setCheckInError(error instanceof Error ? error.message : 'Check-in could not be saved. Try again.'),
     });
@@ -154,8 +184,11 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
       onSuccess: (result) => {
         pendingFlip.current = null;
         setLastFlip(result);
+        setHistoryCursor(undefined);
+        setHistoryItems([]);
         void client.invalidateQueries({ queryKey: getGetGamificationSummaryQueryKey() });
         void client.invalidateQueries({ queryKey: getGetGamificationLeaderboardQueryKey() });
+        void client.invalidateQueries({ queryKey: getGetGamificationHistoryQueryKey() });
       },
       onError: (error) => setFlipError(error instanceof Error
         ? `${error.message} Retrying is safe; Frogtown reuses this flip request.`
@@ -338,6 +371,51 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
             <div className="flex items-center justify-between gap-2 px-1 text-[9px] text-[hsl(var(--muted-foreground)/.75)]"><span>Daily tally · UTC day {summary.dayKey}</span>{leaderboardQuery.isFetching && <span className="inline-flex items-center gap-1.5"><LoaderCircle className="size-3 animate-spin" /> Updating</span>}</div>
           </aside>
         </div>
+
+        <section className="mt-5 overflow-hidden rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.82)] shadow-[0_10px_30px_hsl(155_27%_15%/.035)]" data-testid="panel-points-history">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[hsl(var(--border)/.75)] px-5 py-4">
+            <div>
+              <p className="mono text-[9px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">Your account, at a glance</p>
+              <h2 className="mt-1 text-lg font-semibold tracking-[-.04em]">Points activity</h2>
+            </div>
+            <span className="rounded-full bg-[hsl(var(--primary)/.08)] px-2.5 py-1 text-[10px] font-medium text-[hsl(var(--primary))]">Private to your wallet</span>
+          </div>
+          {historyQuery.isError && historyItems.length === 0 ? (
+            <div className="p-5 text-center" role="alert" data-testid="error-points-history">
+              <p className="text-xs text-[hsl(var(--muted-foreground))]">Points activity couldn’t be loaded.</p>
+              <button type="button" onClick={() => void historyQuery.refetch()} className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.07)]" data-testid="button-retry-points-history"><RotateCw className="size-3" /> Try again</button>
+            </div>
+          ) : historyItems.length === 0 && historyQuery.isLoading ? (
+            <div className="space-y-3 p-5" aria-label="Loading points activity" data-testid="loading-points-history"><div className="h-11 animate-pulse rounded-xl bg-[hsl(var(--muted))]" /><div className="h-11 animate-pulse rounded-xl bg-[hsl(var(--muted))]" /></div>
+          ) : historyItems.length === 0 ? (
+            <div className="px-5 py-8 text-center" data-testid="empty-points-history"><p className="text-sm font-medium">No points activity yet.</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Quest awards and coin-flip results will appear here.</p></div>
+          ) : (
+            <>
+              <ol className="divide-y divide-[hsl(var(--border)/.65)]" data-testid="list-points-history">
+                {historyItems.map((item) => {
+                  const sign = item.pointsChange > 0 ? '+' : item.pointsChange < 0 ? '−' : '';
+                  const detail = item.kind === 'coin_flip'
+                    ? `Picked ${item.choice}; ${item.result} landed${item.won ? ` · ${item.payoutPoints} points paid out` : ` · ${item.stakePoints} point stake lost`}`
+                    : 'Daily quest completed';
+                  return (
+                    <li key={item.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5" data-testid={`item-points-history-${item.id}`}>
+                      <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${item.pointsChange >= 0 ? 'bg-[hsl(var(--primary)/.1)] text-[hsl(var(--primary))]' : 'bg-[hsl(var(--destructive)/.08)] text-[hsl(var(--destructive))]'}`}>
+                        {item.kind === 'coin_flip' ? <Coins className="size-4" /> : <Check className="size-4" />}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium">{item.description}</p>
+                        <p className="mt-1 text-[10px] text-[hsl(var(--muted-foreground))]">{detail} · {new Date(item.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                      </div>
+                      <span className={`mono text-xs font-semibold tabular-nums ${item.pointsChange >= 0 ? 'text-[hsl(var(--primary))]' : 'text-[hsl(var(--destructive))]'}`} data-testid={`text-history-points-${item.id}`}>{sign}{Math.abs(item.pointsChange).toLocaleString()} {Math.abs(item.pointsChange) === 1 ? 'point' : 'points'}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+              {historyQuery.isError && <p className="px-5 pt-3 text-xs text-[hsl(var(--destructive))]" role="alert">Older activity could not be loaded. Your current history is still shown.</p>}
+              {historyQuery.data?.nextCursor && <div className="border-t border-[hsl(var(--border)/.75)] px-5 py-3 text-center"><button type="button" onClick={() => setHistoryCursor(historyQuery.data?.nextCursor ?? undefined)} disabled={historyQuery.isFetching} className="inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-medium text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.07)] disabled:opacity-50" data-testid="button-load-older-points-history">{historyQuery.isFetching ? <LoaderCircle className="size-3.5 animate-spin" /> : <ChevronRight className="size-3.5" />}Load older activity</button></div>}
+            </>
+          )}
+        </section>
       </div>
     </div>
   );

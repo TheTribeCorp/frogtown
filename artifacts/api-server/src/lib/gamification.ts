@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lt, or, sql } from "drizzle-orm";
 import {
   coinFlipsTable,
   dailyQuestActionsTable,
@@ -19,6 +19,7 @@ export type CoinChoice = "heads" | "tails";
 
 export class InsufficientPointsError extends Error {}
 export class CoinFlipRequestConflictError extends Error {}
+export class InvalidGamificationHistoryCursorError extends Error {}
 
 export function utcDayKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
@@ -220,6 +221,139 @@ export async function getGamificationLeaderboard() {
       currentStreak: activeStreak(profile, today),
       frogBadgeEarned: Boolean(profile.frogBadgeEarnedAt),
     })),
+  };
+}
+
+type GamificationHistoryCursor = { createdAt: Date; id: string };
+type GamificationHistoryItem = {
+  id: string;
+  kind: "quest" | "coin_flip";
+  description: string;
+  createdAt: string;
+  pointsChange: number;
+  choice: CoinChoice | null;
+  result: CoinChoice | null;
+  won: boolean | null;
+  stakePoints: number | null;
+  payoutPoints: number | null;
+};
+
+function decodeGamificationHistoryCursor(value?: string): GamificationHistoryCursor | null {
+  if (!value) return null;
+  try {
+    if (value.length > 512) throw new Error("Cursor is too long.");
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
+      createdAt?: unknown;
+      id?: unknown;
+    };
+    const createdAt = typeof parsed.createdAt === "string" ? new Date(parsed.createdAt) : null;
+    if (!createdAt || !Number.isFinite(createdAt.getTime()) || typeof parsed.id !== "string" || parsed.id.length > 256) {
+      throw new Error("Cursor is invalid.");
+    }
+    return { createdAt, id: parsed.id };
+  } catch {
+    throw new InvalidGamificationHistoryCursorError();
+  }
+}
+
+function encodeGamificationHistoryCursor(value: GamificationHistoryCursor) {
+  return Buffer.from(JSON.stringify({
+    createdAt: value.createdAt.toISOString(),
+    id: value.id,
+  })).toString("base64url");
+}
+
+export async function getGamificationHistory(
+  walletAddress: string,
+  options: { cursor?: string; limit?: number } = {},
+) {
+  const cursor = decodeGamificationHistoryCursor(options.cursor);
+  const limit = Math.min(Math.max(options.limit ?? 20, 1), 50);
+  const questEventId = sql<string>`concat('quest:', ${dailyQuestCompletionsTable.dayKey}, ':', ${dailyQuestCompletionsTable.questId})`;
+  const flipEventId = sql<string>`concat('flip:', ${coinFlipsTable.id})`;
+  const questCreatedAtBucket = sql<Date>`date_trunc('milliseconds', ${dailyQuestCompletionsTable.completedAt})`;
+  const flipCreatedAtBucket = sql<Date>`date_trunc('milliseconds', ${coinFlipsTable.createdAt})`;
+  const questCursorFilter = cursor
+    ? or(
+      lt(questCreatedAtBucket, cursor.createdAt),
+      and(
+        eq(questCreatedAtBucket, cursor.createdAt),
+        lt(questEventId, cursor.id),
+      ),
+    )
+    : undefined;
+  const flipCursorFilter = cursor
+    ? or(
+      lt(flipCreatedAtBucket, cursor.createdAt),
+      and(
+        eq(flipCreatedAtBucket, cursor.createdAt),
+        lt(flipEventId, cursor.id),
+      ),
+    )
+    : undefined;
+  const [quests, flips] = await Promise.all([
+    db
+      .select()
+      .from(dailyQuestCompletionsTable)
+      .where(and(
+        eq(dailyQuestCompletionsTable.walletAddress, walletAddress),
+        questCursorFilter,
+      ))
+      .orderBy(desc(questCreatedAtBucket), desc(questEventId))
+      .limit(limit + 1),
+    db
+      .select()
+      .from(coinFlipsTable)
+      .where(and(
+        eq(coinFlipsTable.walletAddress, walletAddress),
+        flipCursorFilter,
+      ))
+      .orderBy(desc(flipCreatedAtBucket), desc(flipEventId))
+      .limit(limit + 1),
+  ]);
+  const questTitles: Record<string, string> = {
+    check_in: "Daily check-in",
+    ledger_minute: "Timeline post",
+    community_engagement: "Like and comment",
+    room_spotlight: "Community room message",
+  };
+  const items: GamificationHistoryItem[] = [
+    ...quests.map((quest) => ({
+      id: `quest:${quest.dayKey}:${quest.questId}`,
+      kind: "quest" as const,
+      description: questTitles[quest.questId] ?? "Daily quest",
+      createdAt: quest.completedAt.toISOString(),
+      pointsChange: pointsValue(quest.pointsHundredths),
+      choice: null,
+      result: null,
+      won: null,
+      stakePoints: null,
+      payoutPoints: null,
+    })),
+    ...flips.map((flip) => ({
+      id: `flip:${flip.id}`,
+      kind: "coin_flip" as const,
+      description: flip.won ? "Coin flip won" : "Coin flip lost",
+      createdAt: flip.createdAt.toISOString(),
+      pointsChange: pointsValue(flip.netChangeHundredths),
+      choice: flip.choice as CoinChoice,
+      result: flip.result as CoinChoice,
+      won: flip.won,
+      stakePoints: pointsValue(flip.stakeHundredths),
+      payoutPoints: pointsValue(flip.payoutHundredths),
+    })),
+  ].sort((left, right) => {
+    const timeDifference = Date.parse(right.createdAt) - Date.parse(left.createdAt);
+    return timeDifference || right.id.localeCompare(left.id);
+  });
+  const pageItems = items.slice(0, limit);
+  const hasMore = items.length > limit;
+  const last = pageItems[pageItems.length - 1];
+  return {
+    items: pageItems,
+    nextCursor: hasMore && last
+      ? encodeGamificationHistoryCursor({ createdAt: new Date(last.createdAt), id: last.id })
+      : null,
   };
 }
 

@@ -324,6 +324,39 @@ export interface TimelineModerationQueue {
   items: TimelineModerationItem[];
 }
 
+export type TimelineModerationHistoryItemSubjectType = typeof TimelineModerationHistoryItemSubjectType[keyof typeof TimelineModerationHistoryItemSubjectType];
+
+
+export const TimelineModerationHistoryItemSubjectType = {
+  post: 'post',
+  comment: 'comment',
+} as const;
+
+export type TimelineModerationHistoryItemAction = typeof TimelineModerationHistoryItemAction[keyof typeof TimelineModerationHistoryItemAction];
+
+
+export const TimelineModerationHistoryItemAction = {
+  dismiss: 'dismiss',
+  remove: 'remove',
+} as const;
+
+export interface TimelineModerationHistoryItem {
+  id: string;
+  moderatorAddress: string;
+  subjectType: TimelineModerationHistoryItemSubjectType;
+  subjectId: string;
+  action: TimelineModerationHistoryItemAction;
+  contentSnapshot: string;
+  reportCount: number;
+  createdAt: string;
+}
+
+export interface TimelineModerationHistoryPage {
+  items: TimelineModerationHistoryItem[];
+  /** @nullable */
+  nextCursor: string | null;
+}
+
 export type TimelineModerationActionInputAction = typeof TimelineModerationActionInputAction[keyof typeof TimelineModerationActionInputAction];
 
 
@@ -397,6 +430,60 @@ export interface GamificationLeaderboardEntry {
 
 export interface GamificationLeaderboard {
   items: GamificationLeaderboardEntry[];
+}
+
+export type GamificationHistoryItemKind = typeof GamificationHistoryItemKind[keyof typeof GamificationHistoryItemKind];
+
+
+export const GamificationHistoryItemKind = {
+  quest: 'quest',
+  coin_flip: 'coin_flip',
+} as const;
+
+/**
+ * @nullable
+ */
+export type GamificationHistoryItemChoice = typeof GamificationHistoryItemChoice[keyof typeof GamificationHistoryItemChoice] | null;
+
+
+export const GamificationHistoryItemChoice = {
+  heads: 'heads',
+  tails: 'tails',
+} as const;
+
+/**
+ * @nullable
+ */
+export type GamificationHistoryItemResult = typeof GamificationHistoryItemResult[keyof typeof GamificationHistoryItemResult] | null;
+
+
+export const GamificationHistoryItemResult = {
+  heads: 'heads',
+  tails: 'tails',
+} as const;
+
+export interface GamificationHistoryItem {
+  id: string;
+  kind: GamificationHistoryItemKind;
+  description: string;
+  createdAt: string;
+  pointsChange: number;
+  /** @nullable */
+  choice: GamificationHistoryItemChoice;
+  /** @nullable */
+  result: GamificationHistoryItemResult;
+  /** @nullable */
+  won: boolean | null;
+  /** @nullable */
+  stakePoints: number | null;
+  /** @nullable */
+  payoutPoints: number | null;
+}
+
+export interface GamificationHistoryPage {
+  items: GamificationHistoryItem[];
+  /** @nullable */
+  nextCursor: string | null;
 }
 
 export type CoinFlipInputChoice = typeof CoinFlipInputChoice[keyof typeof CoinFlipInputChoice];
@@ -484,6 +571,30 @@ limit?: number;
 };
 
 export type ListTimelineCommentsParams = {
+cursor?: string;
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
+};
+
+export type ListTimelineModerationHistoryParams = {
+/**
+ * @maxLength 512
+ */
+cursor?: string;
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
+};
+
+export type GetGamificationHistoryParams = {
+/**
+ * @maxLength 512
+ */
 cursor?: string;
 /**
  * @minimum 1

@@ -590,6 +590,35 @@ export const ListTimelineModerationReportsResponse = zod.object({
 
 
 /**
+ * @summary List durable moderation decisions for an authorized moderator
+ */
+export const listTimelineModerationHistoryQueryCursorMax = 512;
+
+export const listTimelineModerationHistoryQueryLimitMax = 50;
+
+
+
+export const ListTimelineModerationHistoryQueryParams = zod.object({
+  "cursor": zod.coerce.string().max(listTimelineModerationHistoryQueryCursorMax).optional(),
+  "limit": zod.coerce.number().int().min(1).max(listTimelineModerationHistoryQueryLimitMax).optional()
+})
+
+export const ListTimelineModerationHistoryResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "moderatorAddress": zod.string(),
+  "subjectType": zod.enum(['post', 'comment']),
+  "subjectId": zod.string(),
+  "action": zod.enum(['dismiss', 'remove']),
+  "contentSnapshot": zod.string(),
+  "reportCount": zod.number().int(),
+  "createdAt": zod.coerce.date()
+})),
+  "nextCursor": zod.string().nullable()
+})
+
+
+/**
  * @summary Dismiss reports or remove reported content as a moderator
  */
 export const ResolveTimelineModerationReportParams = zod.object({
@@ -625,6 +654,37 @@ export const GetGamificationSummaryResponse = zod.object({
   "progress": zod.number().int(),
   "target": zod.number().int()
 }))
+})
+
+
+/**
+ * @summary List the authenticated wallet's quest awards and coin-flip results
+ */
+export const getGamificationHistoryQueryCursorMax = 512;
+
+export const getGamificationHistoryQueryLimitMax = 50;
+
+
+
+export const GetGamificationHistoryQueryParams = zod.object({
+  "cursor": zod.coerce.string().max(getGamificationHistoryQueryCursorMax).optional(),
+  "limit": zod.coerce.number().int().min(1).max(getGamificationHistoryQueryLimitMax).optional()
+})
+
+export const GetGamificationHistoryResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['quest', 'coin_flip']),
+  "description": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "pointsChange": zod.number(),
+  "choice": zod.union([zod.literal('heads'),zod.literal('tails'),zod.literal(null)]).nullable(),
+  "result": zod.union([zod.literal('heads'),zod.literal('tails'),zod.literal(null)]).nullable(),
+  "won": zod.boolean().nullable(),
+  "stakePoints": zod.number().nullable(),
+  "payoutPoints": zod.number().nullable()
+})),
+  "nextCursor": zod.string().nullable()
 })
 
 

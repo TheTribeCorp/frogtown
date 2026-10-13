@@ -32,8 +32,10 @@ import type {
   CurrentWallet,
   DirectConversationInput,
   ErrorResponse,
+  GamificationHistoryPage,
   GamificationLeaderboard,
   GamificationSummary,
+  GetGamificationHistoryParams,
   GetWalletHermitTickParams,
   Group,
   GroupInput,
@@ -43,6 +45,7 @@ import type {
   ListConversationsParams,
   ListGroupsParams,
   ListTimelineCommentsParams,
+  ListTimelineModerationHistoryParams,
   ListTimelinePostsParams,
   Message,
   MessageInput,
@@ -54,6 +57,7 @@ import type {
   TimelineCommentsPage,
   TimelineModerationActionInput,
   TimelineModerationActionResult,
+  TimelineModerationHistoryPage,
   TimelineModerationQueue,
   TimelineModeratorAccess,
   TimelinePost,
@@ -2899,6 +2903,114 @@ export function useListTimelineModerationReports<TData = Awaited<ReturnType<type
 
 
 
+export const getListTimelineModerationHistoryUrl = (params?: ListTimelineModerationHistoryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/timeline/moderation/history?${stringifiedParams}` : `/api/timeline/moderation/history`
+}
+
+/**
+ * @summary List durable moderation decisions for an authorized moderator
+ */
+export const listTimelineModerationHistory = async (params?: ListTimelineModerationHistoryParams, options?: Parameters<typeof customFetch>[1]): Promise<TimelineModerationHistoryPage> => {
+
+  return customFetch<TimelineModerationHistoryPage>(getListTimelineModerationHistoryUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTimelineModerationHistoryQueryKey = (params?: ListTimelineModerationHistoryParams,) => {
+    return [
+    `/api/timeline/moderation/history`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListTimelineModerationHistoryQueryOptions = <TData = Awaited<ReturnType<typeof listTimelineModerationHistory>>, TError = ErrorType<ErrorResponse>>(params?: ListTimelineModerationHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationHistory>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTimelineModerationHistoryQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTimelineModerationHistory>>> = ({ signal }) => listTimelineModerationHistory(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationHistory>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListTimelineModerationHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof listTimelineModerationHistory>>>
+export type ListTimelineModerationHistoryQueryError = ErrorType<ErrorResponse>
+
+
+export function useListTimelineModerationHistory<TData = Awaited<ReturnType<typeof listTimelineModerationHistory>>, TError = ErrorType<ErrorResponse>>(
+ params: undefined |  ListTimelineModerationHistoryParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationHistory>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTimelineModerationHistory>>,
+          TError,
+          Awaited<ReturnType<typeof listTimelineModerationHistory>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTimelineModerationHistory<TData = Awaited<ReturnType<typeof listTimelineModerationHistory>>, TError = ErrorType<ErrorResponse>>(
+ params?: ListTimelineModerationHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationHistory>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTimelineModerationHistory>>,
+          TError,
+          Awaited<ReturnType<typeof listTimelineModerationHistory>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTimelineModerationHistory<TData = Awaited<ReturnType<typeof listTimelineModerationHistory>>, TError = ErrorType<ErrorResponse>>(
+ params?: ListTimelineModerationHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationHistory>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List durable moderation decisions for an authorized moderator
+ */
+
+export function useListTimelineModerationHistory<TData = Awaited<ReturnType<typeof listTimelineModerationHistory>>, TError = ErrorType<ErrorResponse>>(
+ params?: ListTimelineModerationHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTimelineModerationHistory>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListTimelineModerationHistoryQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getResolveTimelineModerationReportUrl = (subjectType: 'post' | 'comment',
     subjectId: string,) => {
 
@@ -3079,6 +3191,114 @@ export function useGetGamificationSummary<TData = Awaited<ReturnType<typeof getG
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetGamificationSummaryQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetGamificationHistoryUrl = (params?: GetGamificationHistoryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/gamification/history?${stringifiedParams}` : `/api/gamification/history`
+}
+
+/**
+ * @summary List the authenticated wallet's quest awards and coin-flip results
+ */
+export const getGamificationHistory = async (params?: GetGamificationHistoryParams, options?: Parameters<typeof customFetch>[1]): Promise<GamificationHistoryPage> => {
+
+  return customFetch<GamificationHistoryPage>(getGetGamificationHistoryUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGamificationHistoryQueryKey = (params?: GetGamificationHistoryParams,) => {
+    return [
+    `/api/gamification/history`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetGamificationHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getGamificationHistory>>, TError = ErrorType<ErrorResponse>>(params?: GetGamificationHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationHistory>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGamificationHistoryQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGamificationHistory>>> = ({ signal }) => getGamificationHistory(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGamificationHistory>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGamificationHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getGamificationHistory>>>
+export type GetGamificationHistoryQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetGamificationHistory<TData = Awaited<ReturnType<typeof getGamificationHistory>>, TError = ErrorType<ErrorResponse>>(
+ params: undefined |  GetGamificationHistoryParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationHistory>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGamificationHistory>>,
+          TError,
+          Awaited<ReturnType<typeof getGamificationHistory>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGamificationHistory<TData = Awaited<ReturnType<typeof getGamificationHistory>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetGamificationHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationHistory>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGamificationHistory>>,
+          TError,
+          Awaited<ReturnType<typeof getGamificationHistory>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGamificationHistory<TData = Awaited<ReturnType<typeof getGamificationHistory>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetGamificationHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationHistory>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the authenticated wallet's quest awards and coin-flip results
+ */
+
+export function useGetGamificationHistory<TData = Awaited<ReturnType<typeof getGamificationHistory>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetGamificationHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationHistory>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGamificationHistoryQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

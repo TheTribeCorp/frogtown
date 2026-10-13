@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, lt, or, sql } from "drizzle-orm";
 import { Router, type IRouter, type Request, type Response } from "express";
 import {
   CreateTimelineCommentBody,
@@ -12,6 +12,8 @@ import {
   GetTimelineModerationAccessResponse,
   LikeTimelinePostParams,
   LikeTimelinePostResponse,
+  ListTimelineModerationHistoryQueryParams,
+  ListTimelineModerationHistoryResponse,
   ListTimelineModerationReportsResponse,
   ListTimelineCommentsParams,
   ListTimelineCommentsQueryParams,
@@ -35,6 +37,7 @@ import {
 import {
   db,
   timelineContentReportsTable,
+  timelineModerationActionsTable,
   timelinePostCommentsTable,
   timelinePostLikesTable,
   timelinePostsTable,
@@ -46,8 +49,74 @@ const router: IRouter = Router();
 const DEFAULT_POST_PAGE_SIZE = 30;
 const DEFAULT_COMMENT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
+const FEED_RATE_WINDOW_MS = 10 * 60 * 1000;
+const MAX_POSTS_PER_WINDOW = 5;
+const MAX_COMMENTS_PER_WINDOW = 15;
+type TimelineTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 type TimelineCursor = { createdAt: Date; id: string };
+
+class TimelineRateLimitError extends Error {
+  constructor(readonly retryAfterSeconds: number, contentType: "post" | "comment") {
+    super(contentType === "post"
+      ? "You have shared several posts recently. Please wait a little before posting again."
+      : "You have left several comments recently. Please wait a little before commenting again.");
+  }
+}
+
+function throwTimelineRateLimit(oldestCreatedAt: string | null, contentType: "post" | "comment"): never {
+  const oldestTimestamp = oldestCreatedAt ? Date.parse(oldestCreatedAt) : Number.NaN;
+  const retryAt = (Number.isFinite(oldestTimestamp) ? oldestTimestamp : Date.now()) + FEED_RATE_WINDOW_MS;
+  const retryAfterSeconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
+  throw new TimelineRateLimitError(retryAfterSeconds, contentType);
+}
+
+async function lockTimelineRateLimit(
+  tx: TimelineTransaction,
+  walletAddress: string,
+  contentType: "post" | "comment",
+) {
+  const lockScope = `timeline-${contentType}`;
+  await tx.execute(sql`
+    select pg_advisory_xact_lock(hashtext(${walletAddress}), hashtext(${lockScope}))
+  `);
+}
+
+async function enforcePostRateLimit(tx: TimelineTransaction, walletAddress: string) {
+  await lockTimelineRateLimit(tx, walletAddress, "post");
+  const cutoff = new Date(Date.now() - FEED_RATE_WINDOW_MS);
+  const [activity] = await tx
+    .select({
+      count: sql<number>`count(*)::int`,
+      oldestCreatedAt: sql<string | null>`min(${timelinePostsTable.createdAt})::text`,
+    })
+    .from(timelinePostsTable)
+    .where(and(
+      eq(timelinePostsTable.authorAddress, walletAddress),
+      gt(timelinePostsTable.createdAt, cutoff),
+    ));
+  if (Number(activity?.count ?? 0) >= MAX_POSTS_PER_WINDOW) {
+    throwTimelineRateLimit(activity?.oldestCreatedAt ?? null, "post");
+  }
+}
+
+async function enforceCommentRateLimit(tx: TimelineTransaction, walletAddress: string) {
+  await lockTimelineRateLimit(tx, walletAddress, "comment");
+  const cutoff = new Date(Date.now() - FEED_RATE_WINDOW_MS);
+  const [activity] = await tx
+    .select({
+      count: sql<number>`count(*)::int`,
+      oldestCreatedAt: sql<string | null>`min(${timelinePostCommentsTable.createdAt})::text`,
+    })
+    .from(timelinePostCommentsTable)
+    .where(and(
+      eq(timelinePostCommentsTable.authorAddress, walletAddress),
+      gt(timelinePostCommentsTable.createdAt, cutoff),
+    ));
+  if (Number(activity?.count ?? 0) >= MAX_COMMENTS_PER_WINDOW) {
+    throwTimelineRateLimit(activity?.oldestCreatedAt ?? null, "comment");
+  }
+}
 
 function encodeCursor(value: TimelineCursor) {
   return Buffer.from(JSON.stringify({
@@ -193,50 +262,54 @@ function requireModerator(walletAddress: string, res: Response) {
   return true;
 }
 
+async function removeTimelineCommentInTransaction(transaction: TimelineTransaction, commentId: string) {
+  await transaction
+    .delete(timelineContentReportsTable)
+    .where(and(
+      eq(timelineContentReportsTable.subjectType, "comment"),
+      eq(timelineContentReportsTable.subjectId, commentId),
+    ));
+  await transaction
+    .delete(timelinePostCommentsTable)
+    .where(eq(timelinePostCommentsTable.id, commentId));
+}
+
 async function removeTimelineComment(commentId: string) {
-  await db.transaction(async (transaction) => {
+  await db.transaction((transaction) => removeTimelineCommentInTransaction(transaction, commentId));
+}
+
+async function removeTimelinePostInTransaction(transaction: TimelineTransaction, postId: string) {
+  const comments = await transaction
+    .select({ id: timelinePostCommentsTable.id })
+    .from(timelinePostCommentsTable)
+    .where(eq(timelinePostCommentsTable.postId, postId));
+  if (comments.length > 0) {
     await transaction
       .delete(timelineContentReportsTable)
       .where(and(
         eq(timelineContentReportsTable.subjectType, "comment"),
-        eq(timelineContentReportsTable.subjectId, commentId),
+        inArray(timelineContentReportsTable.subjectId, comments.map((comment) => comment.id)),
       ));
     await transaction
       .delete(timelinePostCommentsTable)
-      .where(eq(timelinePostCommentsTable.id, commentId));
-  });
+      .where(eq(timelinePostCommentsTable.postId, postId));
+  }
+  await transaction
+    .delete(timelineContentReportsTable)
+    .where(and(
+      eq(timelineContentReportsTable.subjectType, "post"),
+      eq(timelineContentReportsTable.subjectId, postId),
+    ));
+  await transaction
+    .delete(timelinePostLikesTable)
+    .where(eq(timelinePostLikesTable.postId, postId));
+  await transaction
+    .delete(timelinePostsTable)
+    .where(eq(timelinePostsTable.id, postId));
 }
 
 async function removeTimelinePost(postId: string) {
-  await db.transaction(async (transaction) => {
-    const comments = await transaction
-      .select({ id: timelinePostCommentsTable.id })
-      .from(timelinePostCommentsTable)
-      .where(eq(timelinePostCommentsTable.postId, postId));
-    if (comments.length > 0) {
-      await transaction
-        .delete(timelineContentReportsTable)
-        .where(and(
-          eq(timelineContentReportsTable.subjectType, "comment"),
-          inArray(timelineContentReportsTable.subjectId, comments.map((comment) => comment.id)),
-        ));
-      await transaction
-        .delete(timelinePostCommentsTable)
-        .where(eq(timelinePostCommentsTable.postId, postId));
-    }
-    await transaction
-      .delete(timelineContentReportsTable)
-      .where(and(
-        eq(timelineContentReportsTable.subjectType, "post"),
-        eq(timelineContentReportsTable.subjectId, postId),
-      ));
-    await transaction
-      .delete(timelinePostLikesTable)
-      .where(eq(timelinePostLikesTable.postId, postId));
-    await transaction
-      .delete(timelinePostsTable)
-      .where(eq(timelinePostsTable.id, postId));
-  });
+  await db.transaction((transaction) => removeTimelinePostInTransaction(transaction, postId));
 }
 
 router.get("/timeline/posts", async (req, res) => {
@@ -288,6 +361,7 @@ router.post("/timeline/posts", async (req, res) => {
   }
   try {
     const inserted = await db.transaction(async (tx) => {
+      await enforcePostRateLimit(tx, walletAddress);
       const [post] = await tx
         .insert(timelinePostsTable)
         .values({
@@ -301,7 +375,12 @@ router.post("/timeline/posts", async (req, res) => {
     });
     const post = (await serializePosts([inserted], walletAddress))[0];
     res.status(201).json(CreateTimelinePostResponse.parse(post));
-  } catch {
+  } catch (error) {
+    if (error instanceof TimelineRateLimitError) {
+      res.setHeader("Retry-After", String(error.retryAfterSeconds));
+      res.status(429).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: "Unable to publish this post." });
   }
 });
@@ -590,6 +669,45 @@ router.get("/timeline/moderation/reports", async (req, res): Promise<void> => {
   }
 });
 
+router.get("/timeline/moderation/history", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress || !requireModerator(walletAddress, res)) return;
+  const query = ListTimelineModerationHistoryQueryParams.safeParse(req.query);
+  if (!query.success) {
+    invalidBody(res, "Moderation history page size or cursor is invalid.");
+    return;
+  }
+  const { cursor, valid } = decodeCursor(query.data.cursor);
+  if (!valid) {
+    invalidBody(res, "Moderation history cursor is invalid.");
+    return;
+  }
+  try {
+    const pageSize = Math.min(query.data.limit ?? 20, MAX_PAGE_SIZE);
+    const createdAtBucket = sql<Date>`date_trunc('milliseconds', ${timelineModerationActionsTable.createdAt})`;
+    const rows = await db
+      .select()
+      .from(timelineModerationActionsTable)
+      .where(cursor
+        ? or(
+          lt(createdAtBucket, cursor.createdAt),
+          and(eq(createdAtBucket, cursor.createdAt), lt(timelineModerationActionsTable.id, cursor.id)),
+        )
+        : undefined)
+      .orderBy(desc(createdAtBucket), desc(timelineModerationActionsTable.id))
+      .limit(pageSize + 1);
+    const hasMore = rows.length > pageSize;
+    const items = rows.slice(0, pageSize);
+    const last = items[items.length - 1];
+    res.json(ListTimelineModerationHistoryResponse.parse({
+      items,
+      nextCursor: hasMore && last ? encodeCursor({ createdAt: last.createdAt, id: last.id }) : null,
+    }));
+  } catch {
+    res.status(500).json({ error: "Unable to load moderator history." });
+  }
+});
+
 router.post("/timeline/moderation/reports/:subjectType/:subjectId", async (req, res): Promise<void> => {
   const walletAddress = requireAuth(req, res);
   if (!walletAddress || !requireModerator(walletAddress, res)) return;
@@ -601,42 +719,66 @@ router.post("/timeline/moderation/reports/:subjectType/:subjectId", async (req, 
   }
   const { subjectType, subjectId } = params.data;
   try {
-    const openReports = await db
-      .select({ subjectId: timelineContentReportsTable.subjectId })
-      .from(timelineContentReportsTable)
-      .where(and(
-        eq(timelineContentReportsTable.subjectType, subjectType),
-        eq(timelineContentReportsTable.subjectId, subjectId),
-      ))
-      .limit(1);
-    if (!openReports[0]) {
-      res.status(404).json({ error: "No open reports were found for this item." });
-      return;
-    }
-    if (body.data.action === "dismiss") {
-      await db
-        .delete(timelineContentReportsTable)
+    const resolution = await db.transaction(async (tx) => {
+      const openReports = await tx
+        .select({ walletAddress: timelineContentReportsTable.walletAddress })
+        .from(timelineContentReportsTable)
         .where(and(
           eq(timelineContentReportsTable.subjectType, subjectType),
           eq(timelineContentReportsTable.subjectId, subjectId),
-        ));
-    } else if (subjectType === "post") {
-      if (!(await postExists(subjectId))) {
-        res.status(404).json({ error: "Reported content was not found." });
-        return;
+        ))
+        .for("update");
+      if (openReports.length === 0) return "no-reports" as const;
+
+      let content: { body: string } | undefined;
+      if (subjectType === "post") {
+        const [post] = await tx
+          .select({ body: timelinePostsTable.body })
+          .from(timelinePostsTable)
+          .where(eq(timelinePostsTable.id, subjectId))
+          .for("update");
+        content = post;
+      } else {
+        const [comment] = await tx
+          .select({ body: timelinePostCommentsTable.body })
+          .from(timelinePostCommentsTable)
+          .where(eq(timelinePostCommentsTable.id, subjectId))
+          .for("update");
+        content = comment;
       }
-      await removeTimelinePost(subjectId);
-    } else {
-      const comment = await db
-        .select({ id: timelinePostCommentsTable.id })
-        .from(timelinePostCommentsTable)
-        .where(eq(timelinePostCommentsTable.id, subjectId))
-        .limit(1);
-      if (!comment[0]) {
-        res.status(404).json({ error: "Reported content was not found." });
-        return;
+      if (!content) return "missing-content" as const;
+
+      await tx.insert(timelineModerationActionsTable).values({
+        id: `moderation-${randomUUID()}`,
+        moderatorAddress: walletAddress,
+        subjectType,
+        subjectId,
+        action: body.data.action,
+        contentSnapshot: content.body,
+        reportCount: openReports.length,
+      });
+
+      if (body.data.action === "dismiss") {
+        await tx
+          .delete(timelineContentReportsTable)
+          .where(and(
+            eq(timelineContentReportsTable.subjectType, subjectType),
+            eq(timelineContentReportsTable.subjectId, subjectId),
+          ));
+      } else if (subjectType === "post") {
+        await removeTimelinePostInTransaction(tx, subjectId);
+      } else {
+        await removeTimelineCommentInTransaction(tx, subjectId);
       }
-      await removeTimelineComment(subjectId);
+      return "resolved" as const;
+    });
+    if (resolution === "no-reports") {
+      res.status(404).json({ error: "No open reports were found for this item." });
+      return;
+    }
+    if (resolution === "missing-content") {
+      res.status(404).json({ error: "Reported content was not found." });
+      return;
     }
     req.log.info({ subjectType, subjectId, action: body.data.action }, "Timeline report resolved");
     res.json(ResolveTimelineModerationReportResponse.parse({
@@ -665,6 +807,7 @@ router.post("/timeline/posts/:postId/comments", async (req, res) => {
   }
   try {
     const comment = await db.transaction(async (tx) => {
+      await enforceCommentRateLimit(tx, walletAddress);
       const [post] = await tx
         .select({ authorAddress: timelinePostsTable.authorAddress })
         .from(timelinePostsTable)
@@ -693,7 +836,12 @@ router.post("/timeline/posts/:postId/comments", async (req, res) => {
       ...comment,
       reportedByMe: false,
     }));
-  } catch {
+  } catch (error) {
+    if (error instanceof TimelineRateLimitError) {
+      res.setHeader("Retry-After", String(error.retryAfterSeconds));
+      res.status(429).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: "Unable to publish this comment." });
   }
 });

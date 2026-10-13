@@ -758,6 +758,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /timeline/moderation/history:
+    get:
+      operationId: listTimelineModerationHistory
+      tags: [timeline]
+      summary: List durable moderation decisions for an authorized moderator
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        "200":
+          description: Paginated moderation decisions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineModerationHistoryPage"
+        "400":
+          description: Invalid history cursor or page size
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not a configured moderator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /timeline/moderation/reports/{subjectType}/{subjectId}:
     post:
       operationId: resolveTimelineModerationReport
@@ -809,6 +853,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GamificationSummary"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /gamification/history:
+    get:
+      operationId: getGamificationHistory
+      tags: [gamification]
+      summary: List the authenticated wallet's quest awards and coin-flip results
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        "200":
+          description: Paginated points and coin-flip history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GamificationHistoryPage"
+        "400":
+          description: Invalid history cursor or page size
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Wallet session missing or expired
           content:
@@ -1318,6 +1400,39 @@ components:
           items:
             $ref: "#/components/schemas/TimelineModerationItem"
       required: [items]
+    TimelineModerationHistoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+        moderatorAddress:
+          type: string
+        subjectType:
+          type: string
+          enum: [post, comment]
+        subjectId:
+          type: string
+        action:
+          type: string
+          enum: [dismiss, remove]
+        contentSnapshot:
+          type: string
+        reportCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, moderatorAddress, subjectType, subjectId, action, contentSnapshot, reportCount, createdAt]
+    TimelineModerationHistoryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineModerationHistoryItem"
+        nextCursor:
+          type: ["string", "null"]
+      required: [items, nextCursor]
     TimelineModerationActionInput:
       type: object
       properties:
@@ -1398,6 +1513,47 @@ components:
           items:
             $ref: "#/components/schemas/GamificationLeaderboardEntry"
       required: [items]
+    GamificationHistoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [quest, coin_flip]
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        pointsChange:
+          type: number
+          format: double
+        choice:
+          type: ["string", "null"]
+          enum: [heads, tails, null]
+        result:
+          type: ["string", "null"]
+          enum: [heads, tails, null]
+        won:
+          type: ["boolean", "null"]
+        stakePoints:
+          type: ["number", "null"]
+          format: double
+        payoutPoints:
+          type: ["number", "null"]
+          format: double
+      required: [id, kind, description, createdAt, pointsChange, choice, result, won, stakePoints, payoutPoints]
+    GamificationHistoryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GamificationHistoryItem"
+        nextCursor:
+          type: ["string", "null"]
+      required: [items, nextCursor]
     CoinFlipInput:
       type: object
       properties:

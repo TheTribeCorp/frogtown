@@ -235,6 +235,17 @@ test("message events reach private-chat and group recipients with sender metadat
 
   const stream = await openMessageEvents(walletB);
   try {
+    const plaintextResponse = await request(`/api/conversations/${directConversation.id}/messages`, {
+      method: "POST",
+      cookie: sessionCookie(walletA),
+      body: {
+        senderAddress: walletA,
+        messageId: randomUUID(),
+        body: "this must never be stored as readable text",
+      },
+    });
+    assert.equal(plaintextResponse.status, 400, "the API must reject plaintext before persistence");
+
     const directMessageId = randomUUID();
     const directMessageResponse = await request(`/api/conversations/${directConversation.id}/messages`, {
       method: "POST",
@@ -313,6 +324,45 @@ test("group discovery uses persisted counts and does not invent online presence"
     assert.ok(Number.isInteger(group.memberCount) && group.memberCount >= 0);
     assert.equal(group.onlineCount, 0);
   }
+});
+
+test("timeline post and comment bursts are limited per wallet, including concurrent requests", async () => {
+  const wallet = randomWalletAddress();
+  const cookie = sessionCookie(wallet);
+  const postRequests = await Promise.all(
+    Array.from({ length: 6 }, (_, index) => request("/api/timeline/posts", {
+      method: "POST",
+      cookie,
+      body: { body: `launch-test rate-limit post ${index}` },
+    })),
+  );
+  const postStatuses = postRequests.map((response) => response.status).sort((left, right) => left - right);
+  assert.deepEqual(postStatuses, [201, 201, 201, 201, 201, 429]);
+  const limitedPost = postRequests.find((response) => response.status === 429);
+  assert.ok(Number(limitedPost.headers.get("retry-after")) > 0);
+  await Promise.all(postRequests.map((response) => response.arrayBuffer()));
+
+  const commentWallet = randomWalletAddress();
+  const commentCookie = sessionCookie(commentWallet);
+  const seedPostResponse = await request("/api/timeline/posts", {
+    method: "POST",
+    cookie: commentCookie,
+    body: { body: "launch-test comment rate-limit seed" },
+  });
+  assert.equal(seedPostResponse.status, 201);
+  const seedPost = await seedPostResponse.json();
+  const commentRequests = await Promise.all(
+    Array.from({ length: 16 }, (_, index) => request(`/api/timeline/posts/${seedPost.id}/comments`, {
+      method: "POST",
+      cookie: commentCookie,
+      body: { body: `launch-test rate-limit comment ${index}` },
+    })),
+  );
+  const commentStatuses = commentRequests.map((response) => response.status).sort((left, right) => left - right);
+  assert.deepEqual(commentStatuses, [...Array(15).fill(201), 429]);
+  const limitedComment = commentRequests.find((response) => response.status === 429);
+  assert.ok(Number(limitedComment.headers.get("retry-after")) > 0);
+  await Promise.all(commentRequests.map((response) => response.arrayBuffer()));
 });
 
 test("timeline owners can edit and remove their content but cannot change another wallet's content", async () => {
@@ -401,6 +451,8 @@ test("only configured moderators can review reports and dismiss or remove report
 
   const memberQueue = await request("/api/timeline/moderation/reports", { cookie: memberCookie });
   assert.equal(memberQueue.status, 403);
+  const memberHistory = await request("/api/timeline/moderation/history", { cookie: memberCookie });
+  assert.equal(memberHistory.status, 403);
   const memberModerationAction = await request("/api/timeline/moderation/reports/post/unknown", {
     method: "POST",
     cookie: memberCookie,
@@ -453,6 +505,16 @@ test("only configured moderators can review reports and dismiss or remove report
     cookie: memberCookie,
   });
   assert.equal(removedOwnerPost.status, 404);
+
+  const historyResponse = await request("/api/timeline/moderation/history?limit=50", {
+    cookie: moderatorCookie,
+  });
+  assert.equal(historyResponse.status, 200);
+  const history = (await historyResponse.json()).items.filter((item) => item.subjectId === post.id);
+  assert.deepEqual(history.map((item) => item.action).sort(), ["dismiss", "remove"]);
+  assert.ok(history.every((item) => item.moderatorAddress === walletB));
+  assert.ok(history.every((item) => item.contentSnapshot === "launch-test reported post"));
+  assert.ok(history.every((item) => item.reportCount === 1));
 });
 
 test("daily quests, points, and coin flips are authenticated, idempotent, and server-awarded", async () => {
@@ -578,6 +640,107 @@ test("daily quests, points, and coin flips are authenticated, idempotent, and se
     body: { requestId: randomUUID(), choice: "tails" },
   });
   assert.equal(insufficient.status, 409);
+});
+
+test("concurrent check-ins and coin-flip retries cannot duplicate points or overspend", async () => {
+  const wallet = randomWalletAddress();
+  const cookie = sessionCookie(wallet);
+  const checkIns = await Promise.all([
+    request("/api/gamification/check-in", { method: "POST", cookie }),
+    request("/api/gamification/check-in", { method: "POST", cookie }),
+  ]);
+  assert.ok(checkIns.every((response) => response.status === 200));
+  await Promise.all(checkIns.map((response) => response.arrayBuffer()));
+
+  const checkInSummary = await request("/api/gamification/summary", { cookie }).then((response) => response.json());
+  assert.equal(checkInSummary.points, 1, "simultaneous check-ins should award one point only");
+
+  const repeatedRequest = { requestId: randomUUID(), choice: "heads" };
+  const repeatedFlips = await Promise.all([
+    request("/api/gamification/coin-flips", { method: "POST", cookie, body: repeatedRequest }),
+    request("/api/gamification/coin-flips", { method: "POST", cookie, body: repeatedRequest }),
+  ]);
+  assert.ok(repeatedFlips.every((response) => response.status === 200));
+  const repeatedResults = await Promise.all(repeatedFlips.map((response) => response.json()));
+  assert.equal(repeatedResults[0].id, repeatedResults[1].id);
+  assert.equal(repeatedResults[0].points, repeatedResults[1].points);
+  assert.equal(
+    repeatedResults[0].points,
+    checkInSummary.points + repeatedResults[0].netChangePoints,
+    "the same concurrent flip request must change the balance once",
+  );
+
+  const balanceBeforeRace = repeatedResults[0].points;
+  const racingResponses = await Promise.all([
+    request("/api/gamification/coin-flips", {
+      method: "POST",
+      cookie,
+      body: { requestId: randomUUID(), choice: "heads" },
+    }),
+    request("/api/gamification/coin-flips", {
+      method: "POST",
+      cookie,
+      body: { requestId: randomUUID(), choice: "tails" },
+    }),
+  ]);
+  const racingResults = await Promise.all(racingResponses.map(async (response) => ({
+    status: response.status,
+    body: await response.json(),
+  })));
+  assert.ok(racingResults.every((result) => result.status === 200 || result.status === 409));
+  const successfulFlips = racingResults.filter((result) => result.status === 200).map((result) => result.body);
+  const expectedBalance = balanceBeforeRace
+    + successfulFlips.reduce((total, flip) => total + flip.netChangePoints, 0);
+  const finalSummary = await request("/api/gamification/summary", { cookie }).then((response) => response.json());
+  assert.ok(finalSummary.points >= 0, "a concurrent wager must never overdraw the wallet");
+  assert.equal(finalSummary.points, expectedBalance);
+});
+
+test("points history is private to the signed-in wallet and paginates quest awards", async () => {
+  const unauthorized = await request("/api/gamification/history");
+  assert.equal(unauthorized.status, 401);
+
+  const wallet = randomWalletAddress();
+  const cookie = sessionCookie(wallet);
+  const checkIn = await request("/api/gamification/check-in", { method: "POST", cookie });
+  assert.equal(checkIn.status, 200);
+  await checkIn.arrayBuffer();
+  const post = await request("/api/timeline/posts", {
+    method: "POST",
+    cookie,
+    body: { body: "launch-test points history post" },
+  });
+  assert.equal(post.status, 201);
+  await post.arrayBuffer();
+
+  const firstPageResponse = await request("/api/gamification/history?limit=1", { cookie });
+  assert.equal(firstPageResponse.status, 200);
+  const firstPage = await firstPageResponse.json();
+  assert.equal(firstPage.items.length, 1);
+  assert.ok(firstPage.nextCursor);
+
+  const secondPageResponse = await request(
+    `/api/gamification/history?limit=1&cursor=${encodeURIComponent(firstPage.nextCursor)}`,
+    { cookie },
+  );
+  assert.equal(secondPageResponse.status, 200);
+  const secondPage = await secondPageResponse.json();
+  assert.equal(secondPage.items.length, 1);
+  assert.equal(secondPage.nextCursor, null);
+  assert.notEqual(firstPage.items[0].id, secondPage.items[0].id);
+  assert.deepEqual(
+    new Set([firstPage.items[0].description, secondPage.items[0].description]),
+    new Set(["Daily check-in", "Timeline post"]),
+  );
+
+  const otherWalletHistory = await request("/api/gamification/history", {
+    cookie: sessionCookie(randomWalletAddress()),
+  });
+  assert.equal(otherWalletHistory.status, 200);
+  assert.deepEqual((await otherWalletHistory.json()).items, []);
+
+  const invalidCursor = await request("/api/gamification/history?cursor=not-a-valid-cursor", { cookie });
+  assert.equal(invalidCursor.status, 400);
 });
 
 test("the first 100-point balance earns the permanent Frog badge", async () => {

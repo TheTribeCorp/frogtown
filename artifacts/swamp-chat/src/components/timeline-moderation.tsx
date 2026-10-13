@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, Flag, LoaderCircle, ShieldCheck, Trash2 } from 'lucide-react';
 import {
   getListTimelineCommentsQueryKey,
+  getListTimelineModerationHistoryQueryKey,
   getListTimelineModerationReportsQueryKey,
   getListTimelinePostsQueryKey,
+  useListTimelineModerationHistory,
   useListTimelineModerationReports,
   useResolveTimelineModerationReport,
 } from '@workspace/api-client-react';
@@ -21,10 +23,43 @@ function reportedAt(value: string) {
 export function TimelineModerationPanel({ enabled }: { enabled: boolean }) {
   const client = useQueryClient();
   const [actionError, setActionError] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyCursor, setHistoryCursor] = useState<string | undefined>();
+  const [historyItems, setHistoryItems] = useState<{
+    id: string;
+    moderatorAddress: string;
+    subjectType: 'post' | 'comment';
+    subjectId: string;
+    action: 'dismiss' | 'remove';
+    contentSnapshot: string;
+    reportCount: number;
+    createdAt: string;
+  }[]>([]);
   const queue = useListTimelineModerationReports({
     query: { enabled, queryKey: getListTimelineModerationReportsQueryKey() },
   });
+  const historyParams = { cursor: historyCursor, limit: 20 };
+  const history = useListTimelineModerationHistory(historyParams, {
+    query: {
+      enabled: enabled && historyOpen,
+      queryKey: [...getListTimelineModerationHistoryQueryKey(historyParams), historyCursor ?? 'first-page'],
+    },
+  });
   const resolveReport = useResolveTimelineModerationReport();
+
+  useEffect(() => {
+    setHistoryCursor(undefined);
+    setHistoryItems([]);
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!history.data) return;
+    setHistoryItems((current) => {
+      const seen = new Set(current.map((item) => item.id));
+      const incoming = history.data.items.filter((item) => !seen.has(item.id));
+      return historyCursor ? [...current, ...incoming] : [...incoming, ...current];
+    });
+  }, [history.data, historyCursor]);
 
   const resolve = (subjectType: 'post' | 'comment', subjectId: string, action: 'dismiss' | 'remove') => {
     if (action === 'remove' && !window.confirm('Remove this reported content from the public timeline? This cannot be undone.')) return;
@@ -32,6 +67,7 @@ export function TimelineModerationPanel({ enabled }: { enabled: boolean }) {
     resolveReport.mutate({ subjectType, subjectId, data: { action } }, {
       onSuccess: () => {
         void client.invalidateQueries({ queryKey: getListTimelineModerationReportsQueryKey() });
+        void client.invalidateQueries({ queryKey: getListTimelineModerationHistoryQueryKey() });
         if (action === 'remove') {
           void client.invalidateQueries({ queryKey: getListTimelinePostsQueryKey() });
           void client.invalidateQueries({
@@ -99,6 +135,45 @@ export function TimelineModerationPanel({ enabled }: { enabled: boolean }) {
           </div>
         )}
       </div>
+      <details
+        className="border-t border-[hsl(var(--border)/.75)]"
+        onToggle={(event) => setHistoryOpen(event.currentTarget.open)}
+        data-testid="panel-moderation-history"
+      >
+        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-medium transition hover:bg-[hsl(var(--muted)/.35)] sm:px-5">
+          <span>Decision history</span>
+          <span className="mono text-[9px] text-[hsl(var(--muted-foreground))]">Moderator-only · {historyItems.length} loaded</span>
+        </summary>
+        <div className="space-y-3 border-t border-[hsl(var(--border)/.65)] p-4 sm:p-5">
+          {history.isError && historyItems.length === 0 ? (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.05)] p-3 text-xs text-[hsl(var(--destructive))]" role="alert" data-testid="error-moderation-history">
+              <span>Decision history could not be loaded.</span>
+              <button type="button" onClick={() => void history.refetch()} className="font-medium underline underline-offset-2" data-testid="button-retry-moderation-history">Retry</button>
+            </div>
+          ) : historyItems.length === 0 && history.isLoading ? (
+            <div className="animate-pulse rounded-xl border border-[hsl(var(--border))] p-4" aria-label="Loading moderator history" data-testid="loading-moderation-history"><div className="h-3 w-1/3 rounded bg-[hsl(var(--muted))]" /><div className="mt-3 h-3 w-full rounded bg-[hsl(var(--muted))]" /></div>
+          ) : historyItems.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-[hsl(var(--border))] px-4 py-6 text-center text-xs text-[hsl(var(--muted-foreground))]" data-testid="empty-moderation-history">No moderator decisions have been recorded yet.</p>
+          ) : (
+            <>
+              <div className="space-y-3" data-testid="list-moderation-history">
+                {historyItems.map((item) => (
+                  <article key={item.id} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background)/.55)] p-4" data-testid={`item-moderation-history-${item.id}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[.1em] ${item.action === 'remove' ? 'bg-[hsl(var(--destructive)/.08)] text-[hsl(var(--destructive))]' : 'bg-[hsl(var(--primary)/.09)] text-[hsl(var(--primary))]'}`}>{item.action === 'remove' ? 'Content removed' : 'Report dismissed'}</span>
+                      <span className="mono text-[10px] text-[hsl(var(--muted-foreground))]">{item.subjectType} · {compactAddress(item.moderatorAddress)}</span>
+                      <span className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))]">{item.reportCount} {item.reportCount === 1 ? 'report' : 'reports'} · {reportedAt(item.createdAt)}</span>
+                    </div>
+                    <p className="mt-3 max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-[hsl(var(--border)/.7)] bg-[hsl(var(--card)/.78)] px-3 py-2.5 text-xs leading-5 text-[hsl(var(--muted-foreground))]">{item.contentSnapshot}</p>
+                  </article>
+                ))}
+              </div>
+              {history.isError && <p className="text-xs text-[hsl(var(--destructive))]" role="alert">Older decisions could not be loaded. The history shown above is still available.</p>}
+              {history.data?.nextCursor && <div className="text-center"><button type="button" onClick={() => setHistoryCursor(history.data?.nextCursor ?? undefined)} disabled={history.isFetching} className="inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-medium text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.07)] disabled:opacity-50" data-testid="button-load-older-moderation-history">{history.isFetching ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}Load older decisions</button></div>}
+            </>
+          )}
+        </div>
+      </details>
     </section>
   );
 }
