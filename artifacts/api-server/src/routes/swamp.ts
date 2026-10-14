@@ -83,6 +83,58 @@ function serializeConversation(row: typeof conversationsTable.$inferSelect) {
   };
 }
 
+function decodeCanonicalBase64Url(value: unknown): Buffer | null {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/.test(value)) return null;
+  const decoded = Buffer.from(value, "base64url");
+  return decoded.toString("base64url") === value ? decoded : null;
+}
+
+function hasValidRecipientEnvelope(body: string, memberWallets: string[]): boolean {
+  const prefix = "e2ee:v1:";
+  if (!body.startsWith(prefix)) return false;
+  const encodedEnvelope = decodeCanonicalBase64Url(body.slice(prefix.length));
+  if (!encodedEnvelope) return false;
+
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(encodedEnvelope));
+  } catch {
+    return false;
+  }
+  if (
+    typeof envelope !== "object"
+    || envelope === null
+    || Array.isArray(envelope)
+    || !("version" in envelope)
+    || envelope.version !== 1
+    || !("entries" in envelope)
+    || typeof envelope.entries !== "object"
+    || envelope.entries === null
+    || Array.isArray(envelope.entries)
+  ) {
+    return false;
+  }
+
+  const entries = envelope.entries as Record<string, unknown>;
+  const expectedWallets = new Set(memberWallets);
+  const recipientWallets = Object.keys(entries);
+  if (
+    recipientWallets.length !== expectedWallets.size
+    || recipientWallets.some((walletAddress) => !expectedWallets.has(walletAddress))
+  ) {
+    return false;
+  }
+
+  return recipientWallets.every((walletAddress) => {
+    const entry = entries[walletAddress];
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
+    const cipherEntry = entry as Record<string, unknown>;
+    const iv = decodeCanonicalBase64Url(cipherEntry.iv);
+    const ciphertext = decodeCanonicalBase64Url(cipherEntry.ciphertext);
+    return iv?.length === 12 && ciphertext !== null && ciphertext.length >= 16;
+  });
+}
+
 async function ensureSeedGroups() {
   if (!groupSeedPromise) {
     groupSeedPromise = (async () => {
@@ -805,6 +857,10 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
       .where(eq(conversationMembersTable.conversationId, conversationId));
     if (!memberships.some((member) => member.walletAddress === input.senderAddress)) {
       res.status(403).json({ error: "You are not a member of this conversation." });
+      return;
+    }
+    if (!hasValidRecipientEnvelope(input.body, memberships.map((member) => member.walletAddress))) {
+      res.status(400).json({ error: "Encrypted message recipients must match the conversation members." });
       return;
     }
     const [conversation] = await db

@@ -46,6 +46,10 @@ test('only a message recipient can decrypt its recipient-only ciphertext', async
 
   assert.ok(encryptedBody.startsWith('e2ee:v1:'));
   assert.ok(!encryptedBody.includes(plaintext));
+  const envelope = JSON.parse(
+    new TextDecoder().decode(Buffer.from(encryptedBody.slice('e2ee:v1:'.length), 'base64url')),
+  );
+  assert.deepEqual(Object.keys(envelope.entries).sort(), [senderAddress, recipientAddress].sort());
   assert.equal(
     await decryptForConversation(
       encryptedBody,

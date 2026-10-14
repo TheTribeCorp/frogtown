@@ -38,6 +38,17 @@ function randomWalletAddress() {
   return `r${randomUUID().replaceAll("-", "").replaceAll("0", "1")}`;
 }
 
+function recipientEnvelope(walletAddresses) {
+  const entries = Object.fromEntries(walletAddresses.map((walletAddress) => [
+    walletAddress,
+    {
+      iv: Buffer.alloc(12, 1).toString("base64url"),
+      ciphertext: Buffer.alloc(16, 2).toString("base64url"),
+    },
+  ]));
+  return `e2ee:v1:${Buffer.from(JSON.stringify({ version: 1, entries })).toString("base64url")}`;
+}
+
 async function request(pathname, { method = "GET", cookie, body, origin } = {}) {
   const headers = {};
   if (cookie) headers.cookie = cookie;
@@ -249,24 +260,69 @@ test("health check reports database outages without exposing connection details"
   }
 });
 
-test("authenticated non-members cannot fetch, decrypt, send, or mark another conversation read", async () => {
-  const cookie = sessionCookie(walletA);
-  const conversationId = "non-member-authorization-check";
-  const requests = [
-    ["/api/conversations/" + conversationId + "/messages?walletAddress=" + walletA, "GET"],
-    ["/api/conversations/" + conversationId + "/keys", "GET"],
-    ["/api/conversations/" + conversationId + "/read", "POST", { messageId: "33333333-3333-4333-8333-333333333333" }],
-    ["/api/conversations/" + conversationId + "/messages", "POST", {
-      senderAddress: walletA,
-      messageId: "44444444-4444-4444-8444-444444444444",
-      body: "e2ee:v1:recipient-encrypted-payload",
+test("only current conversation members can fetch messages and keys, and message envelopes exclude outsiders", async () => {
+  const sender = randomWalletAddress();
+  const recipient = randomWalletAddress();
+  const outsider = randomWalletAddress();
+  const conversationResponse = await request("/api/conversations", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { walletAddress: recipient, fromWalletAddress: sender },
+  });
+  assert.equal(conversationResponse.status, 201);
+  const conversation = await conversationResponse.json();
+
+  const messageId = randomUUID();
+  const encryptedBody = recipientEnvelope([sender, recipient]);
+  const sent = await request(`/api/conversations/${conversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { senderAddress: sender, messageId, body: encryptedBody },
+  });
+  assert.equal(sent.status, 201);
+
+  const recipientMessages = await request(
+    `/api/conversations/${conversation.id}/messages?walletAddress=${recipient}`,
+    { cookie: sessionCookie(recipient) },
+  );
+  assert.equal(recipientMessages.status, 200);
+  const received = await recipientMessages.json();
+  assert.equal(received.find((message) => message.id === messageId)?.body, encryptedBody);
+
+  const recipientKeys = await request(`/api/conversations/${conversation.id}/keys`, {
+    cookie: sessionCookie(recipient),
+  });
+  assert.equal(recipientKeys.status, 200);
+  assert.deepEqual(
+    (await recipientKeys.json()).map((key) => key.walletAddress).sort(),
+    [sender, recipient].sort(),
+  );
+
+  const outsiderRequests = [
+    [`/api/conversations/${conversation.id}/messages?walletAddress=${outsider}`, "GET"],
+    [`/api/conversations/${conversation.id}/keys`, "GET"],
+    [`/api/conversations/${conversation.id}/read`, "POST", { messageId }],
+    [`/api/conversations/${conversation.id}/messages`, "POST", {
+      senderAddress: outsider,
+      messageId: randomUUID(),
+      body: recipientEnvelope([outsider]),
     }],
   ];
-
-  for (const [pathname, method, body] of requests) {
-    const response = await request(pathname, { method, cookie, body });
+  for (const [pathname, method, body] of outsiderRequests) {
+    const response = await request(pathname, { method, cookie: sessionCookie(outsider), body });
     assert.equal(response.status, 403, `${method} ${pathname} should require conversation membership`);
   }
+
+  const leakedEnvelope = await request(`/api/conversations/${conversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: {
+      senderAddress: sender,
+      messageId: randomUUID(),
+      body: recipientEnvelope([sender, recipient, outsider]),
+    },
+  });
+  assert.equal(leakedEnvelope.status, 400, "the API must reject envelopes addressed to non-members");
 });
 
 test("message events reach private-chat and group recipients with sender metadata", async () => {
@@ -295,7 +351,7 @@ test("message events reach private-chat and group recipients with sender metadat
     const directMessageResponse = await request(`/api/conversations/${directConversation.id}/messages`, {
       method: "POST",
       cookie: sessionCookie(walletA),
-      body: { senderAddress: walletA, messageId: directMessageId, body: "e2ee:v1:private-test" },
+      body: { senderAddress: walletA, messageId: directMessageId, body: recipientEnvelope([walletA, walletB]) },
     });
     assert.equal(directMessageResponse.status, 201);
     const directEvent = await stream.nextEvent();
@@ -322,7 +378,7 @@ test("message events reach private-chat and group recipients with sender metadat
     const groupMessageResponse = await request(`/api/conversations/${group.conversationId}/messages`, {
       method: "POST",
       cookie: sessionCookie(walletA),
-      body: { senderAddress: walletA, messageId: groupMessageId, body: "e2ee:v1:group-test" },
+      body: { senderAddress: walletA, messageId: groupMessageId, body: recipientEnvelope([walletA, walletB]) },
     });
     assert.equal(groupMessageResponse.status, 201);
     const groupEvent = await stream.nextEvent();
@@ -636,13 +692,13 @@ test("daily quests, points, and coin flips are authenticated, idempotent, and se
   const groupMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
     method: "POST",
     cookie,
-    body: { senderAddress: wallet, messageId, body: "e2ee:v1:encrypted-room-quest" },
+    body: { senderAddress: wallet, messageId, body: recipientEnvelope([wallet]) },
   });
   assert.equal(groupMessage.status, 201);
   const repeatedGroupMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
     method: "POST",
     cookie,
-    body: { senderAddress: wallet, messageId, body: "e2ee:v1:encrypted-room-quest" },
+    body: { senderAddress: wallet, messageId, body: recipientEnvelope([wallet]) },
   });
   assert.equal(repeatedGroupMessage.status, 200);
   const allQuests = await getSummary();
