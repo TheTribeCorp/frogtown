@@ -1,4 +1,5 @@
 semodules = ["nodejs-24", "python-base-3.13"]
+modules = ["postgresql-16", "nodejs-24"]
 
 [deployment]
 router = "application"
@@ -23,3 +24,6 @@ timeoutMs = 20000
 
 [userenv.shared]
 FROGTOWN_MODERATOR_WALLETS = "rpKRLnCowtD52QzGu5x6i9jn5a2LMbhgsS, rGKV4YcEk2Fw5s7KFmKGHoZcqxK93F6Zz7, "
+
+[nix]
+channel = "stable-25_05"
