@@ -187,6 +187,9 @@ function requireAddress(value: string) {
 }
 
 function sessionSecret() {
+  if (process.env.VERCEL_ENV === "preview") {
+    return process.env.PREVIEW_SESSION_SECRET;
+  }
   return process.env.SESSION_SECRET;
 }
 

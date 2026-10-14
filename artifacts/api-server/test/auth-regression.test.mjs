@@ -28,9 +28,9 @@ async function freePort() {
   return address.port;
 }
 
-function sessionCookie(walletAddress, expiresAt = Date.now() + 60_000) {
+function sessionCookie(walletAddress, expiresAt = Date.now() + 60_000, secret = testSecret) {
   const payload = Buffer.from(JSON.stringify({ walletAddress, expiresAt })).toString("base64url");
-  const signature = createHmac("sha256", testSecret).update(payload).digest("base64url");
+  const signature = createHmac("sha256", secret).update(payload).digest("base64url");
   return `swamp_session=${payload}.${signature}`;
 }
 
@@ -137,6 +137,57 @@ before(async () => {
 
 after(() => {
   child?.kill("SIGTERM");
+});
+
+test("preview deployments use a separate session signing secret", async () => {
+  const port = await freePort();
+  const previewSecret = "preview-auth-regression-only-local-test-key";
+  const productionSecret = "production-auth-regression-only-local-test-key";
+  const previewChild = spawn(process.execPath, [path.join(apiDir, "dist/index.mjs")], {
+    cwd: apiDir,
+    env: {
+      ...process.env,
+      NODE_ENV: "test",
+      VERCEL_ENV: "preview",
+      PORT: String(port),
+      SESSION_SECRET: productionSecret,
+      PREVIEW_SESSION_SECRET: previewSecret,
+    },
+    stdio: "ignore",
+  });
+
+  try {
+    const deadline = Date.now() + 10_000;
+    let started = false;
+    while (Date.now() < deadline) {
+      if (previewChild.exitCode !== null) {
+        throw new Error("Preview-mode API exited before serving authorization requests.");
+      }
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/api/wallet/me`);
+        if (response.status === 401) {
+          started = true;
+          break;
+        }
+      } catch {
+        // The child server has not started listening yet.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(started, true, "preview-mode API should start and reject missing cookies");
+
+    const previewCookie = await fetch(`http://127.0.0.1:${port}/api/wallet/me`, {
+      headers: { cookie: sessionCookie(walletA, Date.now() + 60_000, previewSecret) },
+    });
+    assert.equal(previewCookie.status, 200, "preview signing secret should authenticate preview sessions");
+
+    const productionCookie = await fetch(`http://127.0.0.1:${port}/api/wallet/me`, {
+      headers: { cookie: sessionCookie(walletA, Date.now() + 60_000, productionSecret) },
+    });
+    assert.equal(productionCookie.status, 401, "production signing secret must not authenticate preview sessions");
+  } finally {
+    previewChild.kill("SIGTERM");
+  }
 });
 
 test("wallet authentication and ownership guards reject unauthenticated or mismatched callers", async () => {

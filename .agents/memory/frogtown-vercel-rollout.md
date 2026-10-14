@@ -14,3 +14,9 @@ In this project, a Vercel Build Output API function placed at `functions/api/[..
 **Why:** The user chose to try keeping the current database rather than include a database migration in the initial Vercel move. Vercel documents Git linking in the dashboard and its alert thresholds depend on observed traffic, so neither should be represented as an already-configured repo link or continuous database monitor.
 
 **How to apply:** Use the production database connection details when configuring Vercel, never the development database. Keep Replit available until Vercel sign-in, chat, and timeline behavior are verified; `/api/healthz` must return JSON rather than the SPA HTML. Check the actual GitHub branch and workspace remote before claiming code delivery; do not push to the production branch until database and Vercel readiness are confirmed. Use native anomaly email alerts only if the plan supports them, and use an external synthetic monitor for no-traffic DB outages only after the user authorizes one.
+
+Vercel Preview and Production have separate environment-variable targets. The user explicitly approved reusing the production PostgreSQL database in Preview, so Preview posts, messages, and points can affect live records. Keep the Preview session-signing secret separate from Production.
+
+**Why:** Preview was missing its own environment targets and the user chose to share the live database rather than wait for an isolated test database.
+
+**How to apply:** Never assume Production secrets are available to Preview. Check environment targets, warn before sharing a database, and use a distinct preview session secret.
