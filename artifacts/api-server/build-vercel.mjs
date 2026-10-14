@@ -11,7 +11,7 @@ const packageDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceDir = path.resolve(packageDir, "../..");
 const outputDir = path.join(workspaceDir, ".vercel/output");
 const staticDir = path.join(outputDir, "static");
-const functionDir = path.join(outputDir, "functions/api/[...path].func");
+const functionDir = path.join(outputDir, "functions/api.func");
 
 async function buildVercelOutput() {
   await rm(outputDir, { recursive: true, force: true });
@@ -57,6 +57,16 @@ async function buildVercelOutput() {
       {
         version: 3,
         routes: [
+          {
+            src: "^/api$",
+            dest: "/api?__frogtown_api_path=",
+            check: true,
+          },
+          {
+            src: "^/api/(.*)$",
+            dest: "/api?__frogtown_api_path=$1",
+            check: true,
+          },
           { handle: "filesystem" },
           { src: "/(.*)", dest: "/index.html" },
         ],
