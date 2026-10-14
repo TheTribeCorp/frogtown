@@ -2,9 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   getWalletHermitTick,
+  hermitTickCacheControl,
   tickForHermitBalance,
   tickForIssuerBalance,
 } from "../src/lib/hermit-tick.ts";
+
+test("holder checks use short edge caching only for verified public results", () => {
+  assert.equal(
+    hermitTickCacheControl("checked", false),
+    "public, max-age=0, s-maxage=30, stale-while-revalidate=15",
+  );
+  assert.equal(hermitTickCacheControl("checked", true), "no-store");
+  assert.equal(hermitTickCacheControl("unavailable", false), "no-store");
+});
 
 test("holder ticks use the exact 20 million $HERMIT boundary", () => {
   assert.equal(tickForHermitBalance("0"), null);

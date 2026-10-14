@@ -6,6 +6,15 @@ export type HermitTickCheck = {
   checkedAt: Date;
 };
 
+export function hermitTickCacheControl(
+  checkStatus: HermitTickCheck["checkStatus"],
+  forceRefresh: boolean,
+): string {
+  return checkStatus === "checked" && !forceRefresh
+    ? "public, max-age=0, s-maxage=30, stale-while-revalidate=15"
+    : "no-store";
+}
+
 const HERMIT_ISSUER = "r95w8bhxwgLTNC8V2j3Fv9yPuwaQfMjYL3";
 const HERMIT_CURRENCY = "4845524D49540000000000000000000000000000";
 const XRPL_MAINNET_RPC = "https://s1.ripple.com:51234/";

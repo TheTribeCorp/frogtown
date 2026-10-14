@@ -13,6 +13,11 @@ export {
   encryptForConversation,
 } from './e2ee-crypto';
 export type { ConversationPublicKey } from './e2ee-crypto';
+export {
+  getConversationKeyChanges,
+  trustConversationKeyChange,
+} from './e2ee-key-trust';
+export type { ConversationKeyChange } from './e2ee-key-trust';
 
 export type LocalIdentityKey = {
   privateKey: CryptoKey;

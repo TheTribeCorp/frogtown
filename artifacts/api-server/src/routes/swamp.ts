@@ -25,7 +25,7 @@ import {
 import { db } from "@workspace/db";
 import { publishMessageCreated, publishMessageRead, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
 import { recordDailyQuestActionInTransaction } from "../lib/gamification";
-import { getWalletHermitTick } from "../lib/hermit-tick";
+import { getWalletHermitTick, hermitTickCacheControl } from "../lib/hermit-tick";
 import {
   conversationMembersTable,
   conversationsTable,
@@ -384,6 +384,7 @@ router.get("/wallets/:walletAddress/hermit-tick", async (req, res): Promise<void
   if (check.checkStatus === "unavailable") {
     req.log.warn("XRPL $HERMIT holder check is temporarily unavailable.");
   }
+  res.setHeader("Cache-Control", hermitTickCacheControl(check.checkStatus, parsedQuery.data.refresh));
   res.json(GetWalletHermitTickResponse.parse(check));
 });
 
