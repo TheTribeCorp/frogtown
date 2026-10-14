@@ -6,3 +6,4 @@
 - [Frogtown timeline rate limits](frogtown-timeline-rate-limits.md) — feed write limits must coordinate in PostgreSQL across instances; raw timestamp aggregates may need explicit text casting.
 - [XRPL $HERMIT holder checks](frogtown-xrpl-holder-checks.md) — query `account_lines` from the issuer with the wallet as `peer`; Clio can return empty holder-side pages.
 - [Frogtown Vercel rollout](frogtown-vercel-rollout.md) — keep Replit production and its PostgreSQL data live until Vercel has been verified; no data move without confirmation.
+- [Frogtown email monitoring](frogtown-email-monitoring.md) — scheduled GitHub Actions health checks can use failed-run email notifications without another monitoring credential.

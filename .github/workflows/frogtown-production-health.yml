@@ -1,0 +1,44 @@
+name: Frogtown production health
+
+on:
+  schedule:
+    # GitHub emails the workflow owner about failed scheduled runs when
+    # Actions email notifications are enabled in their account settings.
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frogtown-production-health
+  cancel-in-progress: true
+
+jobs:
+  health:
+    name: Check Vercel API and database
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Verify the production health endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://frogtown-sooty.vercel.app/api/healthz"
+
+          for attempt in $(seq 1 12); do
+            if response="$(curl --fail --silent --show-error --max-time 15 "$url" 2>/dev/null)" \
+              && printf '%s' "$response" | jq -e '.status == "ok" and .database == "ok"' >/dev/null; then
+              echo "Frogtown API and database are healthy."
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 12 ]; then
+              echo "Health check failed; retrying ($attempt/12)."
+              sleep 10
+            fi
+          done
+
+          echo "::error::Frogtown production health check failed after 12 attempts."
+          exit 1
