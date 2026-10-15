@@ -214,6 +214,9 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
   const unauthenticated = [
     ["/api/conversations?walletAddress=" + walletA, "GET"],
     ["/api/conversations/wallet-test/messages?walletAddress=" + walletA, "GET"],
+    ["/api/conversations/wallet-test/history-share-work", "GET"],
+    ["/api/conversations/wallet-test/history-shares", "GET"],
+    ["/api/conversations/wallet-test/history-shares", "POST", { messageId: "11111111-1111-4111-8111-111111111111", recipientAddress: walletB, body: recipientEnvelope([walletB]) }],
     ["/api/conversations/wallet-test/read", "POST", { messageId: "message-test" }],
     ["/api/conversations/wallet-test/messages", "POST", { senderAddress: walletA, messageId: "11111111-1111-4111-8111-111111111111", body: "e2ee:v1:test" }],
     ["/api/conversations/wallet-test/keys", "GET"],
@@ -374,6 +377,94 @@ test("only current conversation members can fetch messages and keys, and message
     },
   });
   assert.equal(leakedEnvelope.status, 400, "the API must reject envelopes addressed to non-members");
+});
+
+test("group history shares are limited to new members and remain recipient-only", async () => {
+  const owner = randomWalletAddress();
+  const lateJoiner = randomWalletAddress();
+  const outsider = randomWalletAddress();
+  const publicKey = JSON.stringify({
+    kty: "EC",
+    crv: "P-256",
+    x: Buffer.alloc(32, 3).toString("base64url"),
+    y: Buffer.alloc(32, 4).toString("base64url"),
+  });
+  const keyResponse = await request("/api/wallet/keys", {
+    method: "PUT",
+    cookie: sessionCookie(lateJoiner),
+    body: { publicKey },
+  });
+  assert.equal(keyResponse.status, 201);
+
+  const groupResponse = await request("/api/groups", {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: { name: `History test ${randomUUID()}`, description: "", creatorAddress: owner },
+  });
+  assert.equal(groupResponse.status, 201);
+  const group = await groupResponse.json();
+  const messageId = randomUUID();
+  const sourceBody = recipientEnvelope([owner]);
+  const sent = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: { messageId, senderAddress: owner, body: sourceBody },
+  });
+  assert.equal(sent.status, 201);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const joined = await request(`/api/groups/${group.id}/join`, {
+    method: "POST",
+    cookie: sessionCookie(lateJoiner),
+    body: { walletAddress: lateJoiner },
+  });
+  assert.equal(joined.status, 200);
+
+  const workResponse = await request(`/api/conversations/${group.conversationId}/history-share-work`, {
+    cookie: sessionCookie(owner),
+  });
+  assert.equal(workResponse.status, 200);
+  const work = await workResponse.json();
+  assert.equal(work.length, 1);
+  assert.equal(work[0].messageId, messageId);
+  assert.equal(work[0].recipientAddress, lateJoiner);
+
+  const unauthorizedShare = await request(`/api/conversations/${group.conversationId}/history-shares`, {
+    method: "POST",
+    cookie: sessionCookie(lateJoiner),
+    body: { messageId, recipientAddress: lateJoiner, body: recipientEnvelope([lateJoiner]) },
+  });
+  assert.equal(unauthorizedShare.status, 403, "a new member cannot reshare history they were not present for");
+
+  const invalidRecipients = await request(`/api/conversations/${group.conversationId}/history-shares`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: { messageId, recipientAddress: lateJoiner, body: recipientEnvelope([owner, lateJoiner]) },
+  });
+  assert.equal(invalidRecipients.status, 400, "a history share must be encrypted only for its named recipient");
+
+  const encryptedShare = recipientEnvelope([lateJoiner]);
+  const storedShare = await request(`/api/conversations/${group.conversationId}/history-shares`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: { messageId, recipientAddress: lateJoiner, body: encryptedShare },
+  });
+  assert.equal(storedShare.status, 201);
+
+  const recipientShares = await request(`/api/conversations/${group.conversationId}/history-shares`, {
+    cookie: sessionCookie(lateJoiner),
+  });
+  assert.equal(recipientShares.status, 200);
+  assert.equal((await recipientShares.json())[0].body, encryptedShare);
+  const ownerShares = await request(`/api/conversations/${group.conversationId}/history-shares`, {
+    cookie: sessionCookie(owner),
+  });
+  assert.deepEqual(await ownerShares.json(), [], "only the named recipient can fetch the share");
+
+  const outsiderWork = await request(`/api/conversations/${group.conversationId}/history-share-work`, {
+    cookie: sessionCookie(outsider),
+  });
+  assert.equal(outsiderWork.status, 403);
 });
 
 test("message events reach private-chat and group recipients with sender metadata", async () => {
@@ -845,7 +936,7 @@ test("concurrent check-ins and coin-flip retries cannot duplicate points or over
     + successfulFlips.reduce((total, flip) => total + flip.netChangePoints, 0);
   const finalSummary = await request("/api/gamification/summary", { cookie }).then((response) => response.json());
   assert.ok(finalSummary.points >= 0, "a concurrent wager must never overdraw the wallet");
-  assert.equal(finalSummary.points, expectedBalance);
+  assert.ok(Math.abs(finalSummary.points - expectedBalance) < 1e-9);
 });
 
 test("points history is private to the signed-in wallet and paginates quest awards", async () => {

@@ -327,6 +327,75 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /conversations/{conversationId}/history-share-work:
+    get:
+      operationId: listConversationHistoryShareWork
+      tags: [conversations]
+      summary: Get encrypted group history that the current member can share with newer members
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      responses:
+        "200":
+          description: Source ciphertext and eligible recipient keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HistoryShareWorkItem"
+        "403":
+          description: Caller is not a group member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /conversations/{conversationId}/history-shares:
+    get:
+      operationId: listConversationHistoryShares
+      tags: [conversations]
+      summary: List encrypted history shares addressed to the current wallet
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      responses:
+        "200":
+          description: Recipient-only history ciphertext
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConversationHistoryShare"
+        "403":
+          description: Caller is not a group member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createConversationHistoryShare
+      tags: [conversations]
+      summary: Store a recipient-only encrypted copy of an older group message
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationHistoryShareInput"
+      responses:
+        "201":
+          description: Encrypted history share stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationHistoryShare"
+        "403":
+          description: Caller is not an eligible existing member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /groups:
     get:
       operationId: listGroups
@@ -1118,6 +1187,50 @@ components:
         publicKey:
           type: ["string", "null"]
       required: [walletAddress, publicKey]
+    HistoryShareWorkItem:
+      type: object
+      properties:
+        messageId:
+          type: string
+        senderAddress:
+          type: string
+        body:
+          type: string
+        sentAt:
+          type: string
+          format: date-time
+        recipientAddress:
+          type: string
+        recipientPublicKey:
+          type: string
+      required: [messageId, senderAddress, body, sentAt, recipientAddress, recipientPublicKey]
+    ConversationHistoryShare:
+      type: object
+      properties:
+        messageId:
+          type: string
+        sharedByAddress:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [messageId, sharedByAddress, body, createdAt]
+    ConversationHistoryShareInput:
+      type: object
+      properties:
+        messageId:
+          type: string
+          format: uuid
+        recipientAddress:
+          type: string
+          minLength: 25
+        body:
+          type: string
+          minLength: 1
+          maxLength: 200000
+      required: [messageId, recipientAddress, body]
     Conversation:
       type: object
       properties:

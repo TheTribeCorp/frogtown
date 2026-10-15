@@ -26,13 +26,14 @@ SWAMP is a wallet-native XRPL chat platform where Xaman-connected wallet address
 - `artifacts/api-server/src/routes/swamp.ts` — Xaman sessions, conversations, messages, and groups
 - `artifacts/api-server/src/lib/message-crypto.ts` — AES-256-GCM message encryption at rest
 - `lib/api-spec/openapi.yaml` — source of truth for generated API clients
-- `lib/db/src/schema/swamp.ts` — Drizzle schema for conversations, messages, and groups
+- `lib/db/src/schema/swamp.ts` — Drizzle schema for conversations, messages, groups, and recipient-only history shares
 
 ## Architecture decisions
 
 - Xaman sign-in is the identity layer; there is no separate profile or password account.
 - Direct and group chat membership is keyed by XRPL wallet address.
 - Message bodies are encrypted end-to-end on the sender's device; the API stores ciphertext and does not decrypt it. `SESSION_SECRET` signs wallet session cookies, while Vercel Preview uses the separate `PREVIEW_SESSION_SECRET`.
+- Group history is automatically re-encrypted on an existing member's device for a newcomer; the server stores only ciphertext addressed to that recipient. Apply `lib/db/migrations/0001_group_message_history_shares.sql` to external Neon databases before deploying this feature.
 - The frontend uses generated OpenAPI hooks so chat and wallet polling stay aligned with the server contract.
 
 ## Product

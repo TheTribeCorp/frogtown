@@ -28,6 +28,8 @@ import type {
   CoinFlipInput,
   CoinFlipResult,
   Conversation,
+  ConversationHistoryShare,
+  ConversationHistoryShareInput,
   ConversationKey,
   CurrentWallet,
   DirectConversationInput,
@@ -40,6 +42,7 @@ import type {
   Group,
   GroupInput,
   HealthStatus,
+  HistoryShareWorkItem,
   JoinGroupInput,
   ListConversationMessagesParams,
   ListConversationsParams,
@@ -1448,6 +1451,297 @@ export function useGetConversationEncryptionKeys<TData = Awaited<ReturnType<type
 
 
 
+
+export const getListConversationHistoryShareWorkUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/history-share-work`
+}
+
+/**
+ * @summary Get encrypted group history that the current member can share with newer members
+ */
+export const listConversationHistoryShareWork = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<HistoryShareWorkItem[]> => {
+
+  return customFetch<HistoryShareWorkItem[]>(getListConversationHistoryShareWorkUrl(conversationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListConversationHistoryShareWorkQueryKey = (conversationId: string,) => {
+    return [
+    `/api/conversations/${conversationId}/history-share-work`
+    ] as const;
+    }
+
+
+export const getListConversationHistoryShareWorkQueryOptions = <TData = Awaited<ReturnType<typeof listConversationHistoryShareWork>>, TError = ErrorType<ErrorResponse>>(conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShareWork>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListConversationHistoryShareWorkQueryKey(conversationId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listConversationHistoryShareWork>>> = ({ signal }) => listConversationHistoryShareWork(conversationId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: conversationId !== null && conversationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShareWork>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListConversationHistoryShareWorkQueryResult = NonNullable<Awaited<ReturnType<typeof listConversationHistoryShareWork>>>
+export type ListConversationHistoryShareWorkQueryError = ErrorType<ErrorResponse>
+
+
+export function useListConversationHistoryShareWork<TData = Awaited<ReturnType<typeof listConversationHistoryShareWork>>, TError = ErrorType<ErrorResponse>>(
+ conversationId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShareWork>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listConversationHistoryShareWork>>,
+          TError,
+          Awaited<ReturnType<typeof listConversationHistoryShareWork>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListConversationHistoryShareWork<TData = Awaited<ReturnType<typeof listConversationHistoryShareWork>>, TError = ErrorType<ErrorResponse>>(
+ conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShareWork>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listConversationHistoryShareWork>>,
+          TError,
+          Awaited<ReturnType<typeof listConversationHistoryShareWork>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListConversationHistoryShareWork<TData = Awaited<ReturnType<typeof listConversationHistoryShareWork>>, TError = ErrorType<ErrorResponse>>(
+ conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShareWork>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get encrypted group history that the current member can share with newer members
+ */
+
+export function useListConversationHistoryShareWork<TData = Awaited<ReturnType<typeof listConversationHistoryShareWork>>, TError = ErrorType<ErrorResponse>>(
+ conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShareWork>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListConversationHistoryShareWorkQueryOptions(conversationId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListConversationHistorySharesUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/history-shares`
+}
+
+/**
+ * @summary List encrypted history shares addressed to the current wallet
+ */
+export const listConversationHistoryShares = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<ConversationHistoryShare[]> => {
+
+  return customFetch<ConversationHistoryShare[]>(getListConversationHistorySharesUrl(conversationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListConversationHistorySharesQueryKey = (conversationId: string,) => {
+    return [
+    `/api/conversations/${conversationId}/history-shares`
+    ] as const;
+    }
+
+
+export const getListConversationHistorySharesQueryOptions = <TData = Awaited<ReturnType<typeof listConversationHistoryShares>>, TError = ErrorType<ErrorResponse>>(conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShares>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListConversationHistorySharesQueryKey(conversationId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listConversationHistoryShares>>> = ({ signal }) => listConversationHistoryShares(conversationId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: conversationId !== null && conversationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShares>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListConversationHistorySharesQueryResult = NonNullable<Awaited<ReturnType<typeof listConversationHistoryShares>>>
+export type ListConversationHistorySharesQueryError = ErrorType<ErrorResponse>
+
+
+export function useListConversationHistoryShares<TData = Awaited<ReturnType<typeof listConversationHistoryShares>>, TError = ErrorType<ErrorResponse>>(
+ conversationId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShares>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listConversationHistoryShares>>,
+          TError,
+          Awaited<ReturnType<typeof listConversationHistoryShares>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListConversationHistoryShares<TData = Awaited<ReturnType<typeof listConversationHistoryShares>>, TError = ErrorType<ErrorResponse>>(
+ conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShares>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listConversationHistoryShares>>,
+          TError,
+          Awaited<ReturnType<typeof listConversationHistoryShares>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListConversationHistoryShares<TData = Awaited<ReturnType<typeof listConversationHistoryShares>>, TError = ErrorType<ErrorResponse>>(
+ conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShares>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List encrypted history shares addressed to the current wallet
+ */
+
+export function useListConversationHistoryShares<TData = Awaited<ReturnType<typeof listConversationHistoryShares>>, TError = ErrorType<ErrorResponse>>(
+ conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listConversationHistoryShares>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListConversationHistorySharesQueryOptions(conversationId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateConversationHistoryShareUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/history-shares`
+}
+
+/**
+ * @summary Store a recipient-only encrypted copy of an older group message
+ */
+export const createConversationHistoryShare = async (conversationId: string,
+    conversationHistoryShareInput: ConversationHistoryShareInput, options?: Parameters<typeof customFetch>[1]): Promise<ConversationHistoryShare> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ConversationHistoryShare>(getCreateConversationHistoryShareUrl(conversationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(conversationHistoryShareInput)
+  }
+);}
+
+
+
+
+
+export const getCreateConversationHistoryShareMutationKey = () => ['createConversationHistoryShare'] as const;
+
+export const getCreateConversationHistoryShareMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConversationHistoryShare>>, TError,CreateConversationHistoryShareMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createConversationHistoryShare>>, TError,CreateConversationHistoryShareMutationVariables, TContext> => {
+
+const mutationKey = getCreateConversationHistoryShareMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createConversationHistoryShare>>, CreateConversationHistoryShareMutationVariables> = (props) => {
+          const {conversationId,data} = props ?? {};
+
+          return  createConversationHistoryShare(conversationId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateConversationHistoryShareMutationResult = NonNullable<Awaited<ReturnType<typeof createConversationHistoryShare>>>
+    export type CreateConversationHistoryShareMutationBody = BodyType<ConversationHistoryShareInput>
+    export type CreateConversationHistoryShareMutationError = ErrorType<ErrorResponse>
+    export type CreateConversationHistoryShareMutationVariables = {conversationId: string;data: BodyType<ConversationHistoryShareInput>}
+
+    /**
+ * @summary Store a recipient-only encrypted copy of an older group message
+ */
+export const useCreateConversationHistoryShare = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConversationHistoryShare>>, TError,CreateConversationHistoryShareMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createConversationHistoryShare>>,
+        TError,
+        CreateConversationHistoryShareMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateConversationHistoryShareMutationOptions(options), queryClient);
+    }
 
 export const getListGroupsUrl = (params: ListGroupsParams,) => {
   const normalizedParams = new URLSearchParams();

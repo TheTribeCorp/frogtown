@@ -3,6 +3,8 @@ import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzl
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   CreateDirectConversationBody,
+  CreateConversationHistoryShareBody,
+  CreateConversationHistoryShareParams,
   CreateGroupBody,
   GetConversationEncryptionKeysParams,
   GetWalletHermitTickParams,
@@ -16,6 +18,8 @@ import {
   MarkConversationReadParams,
   ListConversationMessagesParams,
   ListConversationMessagesQueryParams,
+  ListConversationHistoryShareWorkParams,
+  ListConversationHistorySharesParams,
   ListConversationsQueryParams,
   ListGroupsQueryParams,
   RegisterWalletEncryptionKeyBody,
@@ -32,6 +36,7 @@ import {
   groupMembersTable,
   groupsTable,
   messagesTable,
+  messageHistorySharesTable,
   walletKeysTable,
 } from "@workspace/db";
 
@@ -133,6 +138,35 @@ function hasValidRecipientEnvelope(body: string, memberWallets: string[]): boole
     const ciphertext = decodeCanonicalBase64Url(cipherEntry.ciphertext);
     return iv?.length === 12 && ciphertext !== null && ciphertext.length >= 16;
   });
+}
+
+function envelopeIncludesRecipient(body: string, walletAddress: string): boolean {
+  const prefix = "e2ee:v1:";
+  if (!body.startsWith(prefix)) return false;
+  const encodedEnvelope = decodeCanonicalBase64Url(body.slice(prefix.length));
+  if (!encodedEnvelope) return false;
+  try {
+    const envelope: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(encodedEnvelope));
+    if (
+      typeof envelope !== "object"
+      || envelope === null
+      || Array.isArray(envelope)
+      || !("version" in envelope)
+      || envelope.version !== 1
+      || !("entries" in envelope)
+      || typeof envelope.entries !== "object"
+      || envelope.entries === null
+      || Array.isArray(envelope.entries)
+    ) return false;
+    const entry = (envelope.entries as Record<string, unknown>)[walletAddress];
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
+    const cipherEntry = entry as Record<string, unknown>;
+    const iv = decodeCanonicalBase64Url(cipherEntry.iv);
+    const ciphertext = decodeCanonicalBase64Url(cipherEntry.ciphertext);
+    return iv?.length === 12 && ciphertext !== null && ciphertext.length >= 16;
+  } catch {
+    return false;
+  }
 }
 
 async function ensureSeedGroups() {
@@ -768,6 +802,226 @@ router.get("/conversations/:conversationId/messages", async (req, res) => {
   } catch {
     res.status(400).json({ error: "Unable to load this conversation." });
   }
+});
+
+router.get("/conversations/:conversationId/history-share-work", async (req, res): Promise<void> => {
+  const sessionWallet = requireAuth(req, res);
+  if (!sessionWallet) return;
+  const parsed = ListConversationHistoryShareWorkParams.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid conversation." });
+    return;
+  }
+  const conversationId = parsed.data.conversationId;
+  const conversation = await db
+    .select({ type: conversationsTable.type })
+    .from(conversationsTable)
+    .where(eq(conversationsTable.id, conversationId))
+    .limit(1);
+  if (conversation[0]?.type !== "group") {
+    res.status(404).json({ error: "Group conversation not found." });
+    return;
+  }
+  const memberships = await db
+    .select({
+      walletAddress: conversationMembersTable.walletAddress,
+      joinedAt: conversationMembersTable.joinedAt,
+    })
+    .from(conversationMembersTable)
+    .where(eq(conversationMembersTable.conversationId, conversationId));
+  const sharerMembership = memberships.find((member) => member.walletAddress === sessionWallet);
+  if (!sharerMembership) {
+    res.status(403).json({ error: "You are not a member of this group." });
+    return;
+  }
+
+  const [messages, existingShares] = await Promise.all([
+    db.select({
+      id: messagesTable.id,
+      senderAddress: messagesTable.senderAddress,
+      body: messagesTable.body,
+      sentAt: messagesTable.sentAt,
+    })
+      .from(messagesTable)
+      .where(eq(messagesTable.conversationId, conversationId))
+      .orderBy(asc(messagesTable.sentAt)),
+    db.select({
+      messageId: messageHistorySharesTable.messageId,
+      recipientAddress: messageHistorySharesTable.recipientAddress,
+    })
+      .from(messageHistorySharesTable)
+      .where(eq(messageHistorySharesTable.conversationId, conversationId)),
+  ]);
+  const keys = memberships.length > 0
+    ? await db.select({
+      walletAddress: walletKeysTable.walletAddress,
+      publicKey: walletKeysTable.publicKey,
+    })
+      .from(walletKeysTable)
+      .where(inArray(walletKeysTable.walletAddress, memberships.map((member) => member.walletAddress)))
+    : [];
+  const publicKeys = new Map(keys.map((key) => [key.walletAddress, key.publicKey]));
+  const sharedPairs = new Set(existingShares.map((share) => `${share.messageId}:${share.recipientAddress}`));
+  const work: Array<{
+    messageId: string;
+    senderAddress: string;
+    body: string;
+    sentAt: Date;
+    recipientAddress: string;
+    recipientPublicKey: string;
+  }> = [];
+
+  for (const message of messages) {
+    if (sharerMembership.joinedAt > message.sentAt || !envelopeIncludesRecipient(message.body, sessionWallet)) continue;
+    for (const recipient of memberships) {
+      const publicKey = publicKeys.get(recipient.walletAddress);
+      if (
+        recipient.walletAddress === sessionWallet
+        || recipient.joinedAt <= message.sentAt
+        || !publicKey
+        || sharedPairs.has(`${message.id}:${recipient.walletAddress}`)
+      ) continue;
+      work.push({
+        messageId: message.id,
+        senderAddress: message.senderAddress,
+        body: message.body,
+        sentAt: message.sentAt,
+        recipientAddress: recipient.walletAddress,
+        recipientPublicKey: publicKey,
+      });
+      if (work.length >= 20) {
+        res.json(work);
+        return;
+      }
+    }
+  }
+  res.json(work);
+});
+
+router.get("/conversations/:conversationId/history-shares", async (req, res): Promise<void> => {
+  const sessionWallet = requireAuth(req, res);
+  if (!sessionWallet) return;
+  const parsed = ListConversationHistorySharesParams.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid conversation." });
+    return;
+  }
+  const conversationId = parsed.data.conversationId;
+  const membership = await db
+    .select({ walletAddress: conversationMembersTable.walletAddress })
+    .from(conversationMembersTable)
+    .where(and(
+      eq(conversationMembersTable.conversationId, conversationId),
+      eq(conversationMembersTable.walletAddress, sessionWallet),
+    ))
+    .limit(1);
+  if (!membership[0]) {
+    res.status(403).json({ error: "You are not a member of this conversation." });
+    return;
+  }
+  const shares = await db.select({
+    messageId: messageHistorySharesTable.messageId,
+    sharedByAddress: messageHistorySharesTable.sharedByAddress,
+    body: messageHistorySharesTable.body,
+    createdAt: messageHistorySharesTable.createdAt,
+  })
+    .from(messageHistorySharesTable)
+    .where(and(
+      eq(messageHistorySharesTable.conversationId, conversationId),
+      eq(messageHistorySharesTable.recipientAddress, sessionWallet),
+    ));
+  res.json(shares);
+});
+
+router.post("/conversations/:conversationId/history-shares", async (req, res): Promise<void> => {
+  const sessionWallet = requireAuth(req, res);
+  if (!sessionWallet) return;
+  const parsedParams = CreateConversationHistoryShareParams.safeParse(req.params);
+  const parsedBody = CreateConversationHistoryShareBody.safeParse(req.body);
+  if (!parsedParams.success || !parsedBody.success) {
+    res.status(400).json({ error: "Invalid encrypted history share." });
+    return;
+  }
+  const { conversationId } = parsedParams.data;
+  const { messageId, recipientAddress, body } = parsedBody.data;
+  if (!isWalletAddress(recipientAddress) || !hasValidRecipientEnvelope(body, [recipientAddress])) {
+    res.status(400).json({ error: "History shares must be encrypted only for the named recipient." });
+    return;
+  }
+
+  const [conversation, message, memberships, recipientKey] = await Promise.all([
+    db.select({ type: conversationsTable.type })
+      .from(conversationsTable)
+      .where(eq(conversationsTable.id, conversationId))
+      .limit(1),
+    db.select({
+      id: messagesTable.id,
+      body: messagesTable.body,
+      sentAt: messagesTable.sentAt,
+      encrypted: messagesTable.encrypted,
+    })
+      .from(messagesTable)
+      .where(and(
+        eq(messagesTable.id, messageId),
+        eq(messagesTable.conversationId, conversationId),
+      ))
+      .limit(1),
+    db.select({
+      walletAddress: conversationMembersTable.walletAddress,
+      joinedAt: conversationMembersTable.joinedAt,
+    })
+      .from(conversationMembersTable)
+      .where(eq(conversationMembersTable.conversationId, conversationId)),
+    db.select({ walletAddress: walletKeysTable.walletAddress })
+      .from(walletKeysTable)
+      .where(eq(walletKeysTable.walletAddress, recipientAddress))
+      .limit(1),
+  ]);
+  if (conversation[0]?.type !== "group" || !message[0] || !message[0].encrypted) {
+    res.status(404).json({ error: "Encrypted group message not found." });
+    return;
+  }
+  const sharer = memberships.find((member) => member.walletAddress === sessionWallet);
+  const recipient = memberships.find((member) => member.walletAddress === recipientAddress);
+  if (!sharer || !recipient) {
+    res.status(403).json({ error: "Both wallets must currently belong to the group." });
+    return;
+  }
+  if (
+    sharer.joinedAt > message[0].sentAt
+    || recipient.joinedAt <= message[0].sentAt
+    || !envelopeIncludesRecipient(message[0].body, sessionWallet)
+    || recipientKey.length === 0
+  ) {
+    res.status(403).json({ error: "Only an eligible existing member can share this message with a newer member." });
+    return;
+  }
+
+  await db.insert(messageHistorySharesTable).values({
+    conversationId,
+    messageId,
+    recipientAddress,
+    sharedByAddress: sessionWallet,
+    body,
+  }).onConflictDoNothing();
+  const saved = await db.select({
+    messageId: messageHistorySharesTable.messageId,
+    sharedByAddress: messageHistorySharesTable.sharedByAddress,
+    body: messageHistorySharesTable.body,
+    createdAt: messageHistorySharesTable.createdAt,
+  })
+    .from(messageHistorySharesTable)
+    .where(and(
+      eq(messageHistorySharesTable.conversationId, conversationId),
+      eq(messageHistorySharesTable.messageId, messageId),
+      eq(messageHistorySharesTable.recipientAddress, recipientAddress),
+    ))
+    .limit(1);
+  if (!saved[0]) {
+    res.status(500).json({ error: "Encrypted history share could not be saved." });
+    return;
+  }
+  res.status(201).json(saved[0]);
 });
 
 router.post("/conversations/:conversationId/read", async (req, res) => {

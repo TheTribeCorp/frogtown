@@ -45,9 +45,12 @@ import {
   getGetGamificationSummaryQueryKey,
   getHealthCheckQueryKey,
   getListConversationMessagesQueryKey,
+  getListConversationHistoryShareWorkQueryKey,
+  getListConversationHistorySharesQueryKey,
   getListConversationsQueryKey,
   getListGroupsQueryKey,
   useCreateDirectConversation,
+  useCreateConversationHistoryShare,
   useCreateGroup,
   useCreateWalletSession,
   useGetConversationEncryptionKeys,
@@ -56,6 +59,8 @@ import {
   useHealthCheck,
   useJoinGroup,
   useListConversationMessages,
+  useListConversationHistoryShareWork,
+  useListConversationHistoryShares,
   useListConversations,
   useListGroups,
   useMarkConversationRead,
@@ -579,14 +584,18 @@ function MessagePane({ conversation, onBack, isActive }: { conversation: { id: s
   const [safetyCode, setSafetyCode] = useState('');
   const [keyChanges, setKeyChanges] = useState<ConversationKeyChange[]>([]);
   const [keyTrustError, setKeyTrustError] = useState('');
-  const [decryptedMessages, setDecryptedMessages] = useState<Array<{ id: string; conversationId: string; senderAddress: string; body: string; sentAt: string; isMine: boolean; encrypted: boolean; isRead: boolean; decryptionFailed: boolean }>>([]);
+  const [decryptedMessages, setDecryptedMessages] = useState<Array<{ id: string; conversationId: string; senderAddress: string; body: string; sentAt: string; isMine: boolean; encrypted: boolean; isRead: boolean; decryptionFailed: boolean; historyPending: boolean; historyShared: boolean }>>([]);
   const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible');
   const lastMarkedMessageId = useRef<string | null>(null);
   const pendingReadMessageId = useRef<string | null>(null);
+  const historyShareInFlight = useRef(new Set<string>());
   const params = useMemo(() => ({ walletAddress }), [walletAddress]);
   const messagesQuery = useListConversationMessages(conversation?.id ?? '', params, { query: { enabled: Boolean(conversation?.id), queryKey: getListConversationMessagesQueryKey(conversation?.id ?? '', params), refetchInterval: 30000 } });
   const keysQuery = useGetConversationEncryptionKeys(conversation?.id ?? '', { query: { enabled: Boolean(conversation?.id), queryKey: ['/api/conversations', conversation?.id, 'keys'], refetchInterval: 15000 } });
+  const historySharesQuery = useListConversationHistoryShares(conversation?.id ?? '', { query: { enabled: Boolean(conversation?.id), queryKey: getListConversationHistorySharesQueryKey(conversation?.id ?? ''), refetchInterval: 30000 } });
+  const historyWorkQuery = useListConversationHistoryShareWork(conversation?.id ?? '', { query: { enabled: Boolean(conversation?.id && conversation.type === 'group' && isActive && pageVisible), queryKey: getListConversationHistoryShareWorkQueryKey(conversation?.id ?? ''), refetchInterval: 30000 } });
   const sendMessage = useSendMessage();
+  const createHistoryShare = useCreateConversationHistoryShare();
   const markConversationRead = useMarkConversationRead();
   const members: ConversationPublicKey[] = keysQuery.data ?? [];
   const missingMembers = members.filter((member) => !member.publicKey);
@@ -658,19 +667,34 @@ function MessagePane({ conversation, onBack, isActive }: { conversation: { id: s
       }
       try {
         const identity = await getLocalIdentityKey(walletAddress);
+        const historyShares = new Map((historySharesQuery.data ?? []).map((share) => [share.messageId, share]));
         const visible = await Promise.all(messagesQuery.data.map(async (message) => {
           try {
-            const body = await decryptForConversation(
-              message.body,
-              conversation.id,
-              message.senderAddress,
-              walletAddress,
-              identity,
-              keysQuery.data ?? [],
-            );
-            return { ...message, body, decryptionFailed: false };
+            const historyShare = historyShares.get(message.id);
+            const originalBody = historyShare
+              ? await decryptForConversation(
+                historyShare.body,
+                conversation.id,
+                historyShare.sharedByAddress,
+                walletAddress,
+                identity,
+                keysQuery.data ?? [],
+              )
+              : await decryptForConversation(
+                message.body,
+                conversation.id,
+                message.senderAddress,
+                walletAddress,
+                identity,
+                keysQuery.data ?? [],
+              );
+            const historyPending = !historyShare && originalBody === 'This message was sent before this wallet joined the room.';
+            const body = historyPending
+              ? 'Earlier encrypted message — waiting for a current member to open this room and share its history.'
+              : originalBody;
+            return { ...message, body, decryptionFailed: false, historyPending, historyShared: Boolean(historyShare) };
           } catch {
-            return { ...message, body: 'Unable to decrypt this message with the available wallet key.', decryptionFailed: true };
+            return { ...message, body: 'Unable to decrypt this message with the available wallet key.', decryptionFailed: true, historyPending: false, historyShared: false };
           }
         }));
         if (!cancelled) setDecryptedMessages(visible);
@@ -680,7 +704,87 @@ function MessagePane({ conversation, onBack, isActive }: { conversation: { id: s
     };
     void decryptMessages();
     return () => { cancelled = true; };
-  }, [conversation?.id, messagesQuery.data, keysQuery.data, walletAddress]);
+  }, [conversation?.id, messagesQuery.data, keysQuery.data, historySharesQuery.data, walletAddress]);
+
+  useEffect(() => {
+    if (
+      !conversation
+      || conversation.type !== 'group'
+      || !isActive
+      || !pageVisible
+      || !walletAddress
+      || !historyWorkQuery.data?.length
+      || !keysQuery.data
+      || keysQuery.isError
+      || keyChanges.length > 0
+      || keyTrustError
+    ) return;
+    let cancelled = false;
+    const shareHistory = async () => {
+      let sharedAny = false;
+      try {
+        const identity = await getLocalIdentityKey(walletAddress);
+        for (const item of historyWorkQuery.data ?? []) {
+          if (cancelled) break;
+          const taskKey = `${conversation.id}:${item.messageId}:${item.recipientAddress}`;
+          if (historyShareInFlight.current.has(taskKey)) continue;
+          historyShareInFlight.current.add(taskKey);
+          try {
+            const plaintext = await decryptForConversation(
+              item.body,
+              conversation.id,
+              item.senderAddress,
+              walletAddress,
+              identity,
+              keysQuery.data,
+            );
+            if (plaintext === 'This message was sent before this wallet joined the room.') continue;
+            const encryptedShare = await encryptForConversation(
+              plaintext,
+              conversation.id,
+              walletAddress,
+              identity,
+              [{ walletAddress: item.recipientAddress, publicKey: item.recipientPublicKey }],
+            );
+            await createHistoryShare.mutateAsync({
+              conversationId: conversation.id,
+              data: {
+                messageId: item.messageId,
+                recipientAddress: item.recipientAddress,
+                body: encryptedShare,
+              },
+            });
+            sharedAny = true;
+          } catch {
+            // The next poll retries transient failures. The server only stores a share after local decryption succeeds.
+          } finally {
+            historyShareInFlight.current.delete(taskKey);
+          }
+        }
+      } catch {
+        // Keep the original encrypted history intact if this device cannot access its local key.
+      }
+      if (sharedAny && !cancelled) {
+        await client.invalidateQueries({ queryKey: getListConversationHistorySharesQueryKey(conversation.id) });
+        await client.invalidateQueries({ queryKey: getListConversationHistoryShareWorkQueryKey(conversation.id) });
+      }
+    };
+    void shareHistory();
+    return () => { cancelled = true; };
+  }, [
+    conversation?.id,
+    conversation?.type,
+    isActive,
+    pageVisible,
+    walletAddress,
+    historyWorkQuery.data,
+    keysQuery.data,
+    keysQuery.isError,
+    keyChanges.length,
+    keyTrustError,
+    createHistoryShare.mutateAsync,
+    client,
+  ]);
 
   useEffect(() => {
     if (!conversation || !isActive || !pageVisible || messagesQuery.isLoading || messagesQuery.isError || keysQuery.isLoading || keysQuery.isError) return;
@@ -767,6 +871,8 @@ function MessagePane({ conversation, onBack, isActive }: { conversation: { id: s
   };
   if (!conversation) return <div className="hidden min-w-0 flex-1 items-center justify-center p-8 md:flex"><div className="max-w-sm text-center"><div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[hsl(var(--secondary)/.35)] text-[hsl(var(--foreground))]"><MessageCircle className="size-6" /></div><h2 className="mt-5 text-2xl font-semibold tracking-[-.05em]">Pick a conversation</h2><p className="mt-2 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Your private lines live here. Start one with any XRPL address.</p></div></div>;
   return <section className="flex min-h-[520px] min-w-0 flex-1 flex-col bg-[hsl(var(--background)/.42)]" data-testid="message-pane">
+      {conversation.type === 'group' && <div className="mx-4 mt-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.7)] px-4 py-2.5 text-xs leading-5 text-[hsl(var(--muted-foreground))]" role="note" data-testid="status-group-history-policy">Older group messages may be shared with new members by an existing member’s device. They stay end-to-end encrypted; Frogtown cannot read them.</div>}
+      {conversation.type === 'group' && decryptedMessages.some((message) => message.historyPending) && <div className="mx-4 mt-3 rounded-xl border border-[hsl(var(--primary)/.2)] bg-[hsl(var(--primary)/.06)] px-4 py-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]" role="status" data-testid="status-group-history-sharing">Older messages are end-to-end encrypted. They will appear when an existing member opens this room and their device shares them; Frogtown cannot read them.</div>}
       {keyTrustError && <div className="mx-4 mt-3 rounded-xl border border-[hsl(var(--destructive)/.24)] bg-[hsl(var(--destructive)/.06)] px-4 py-3 text-xs leading-5 text-[hsl(var(--destructive))]" role="alert" data-testid="warning-encryption-key-storage">{keyTrustError}</div>}
       {keyChanges.length > 0 && <div className="mx-4 mt-3 rounded-xl border border-[hsl(var(--accent)/.38)] bg-[hsl(var(--accent)/.08)] p-4 text-xs leading-5" role="alert" data-testid="warning-encryption-key-change">
         <div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-[hsl(var(--accent))]" /><div className="min-w-0 flex-1">

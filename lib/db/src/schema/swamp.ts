@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { index, pgTable, text, timestamp, integer, boolean } from "drizzle-orm/pg-core";
+import { index, pgTable, primaryKey, text, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const conversationsTable = pgTable("swamp_conversations", {
@@ -36,6 +36,22 @@ export const messagesTable = pgTable("swamp_messages", {
   encrypted: boolean("encrypted").notNull().default(true),
 }, (table) => [
   index("swamp_messages_conversation_sent_idx").on(table.conversationId, table.sentAt),
+]);
+
+export const messageHistorySharesTable = pgTable("swamp_message_history_shares", {
+  conversationId: text("conversation_id").notNull(),
+  messageId: text("message_id").notNull(),
+  recipientAddress: text("recipient_address").notNull(),
+  sharedByAddress: text("shared_by_address").notNull(),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({
+    name: "swamp_message_history_shares_pk",
+    columns: [table.conversationId, table.messageId, table.recipientAddress],
+  }),
+  index("swamp_message_history_shares_recipient_idx")
+    .on(table.conversationId, table.recipientAddress),
 ]);
 
 export const groupsTable = pgTable("swamp_groups", {

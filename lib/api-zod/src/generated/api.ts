@@ -258,6 +258,67 @@ export const GetConversationEncryptionKeysResponse = zod.array(GetConversationEn
 
 
 /**
+ * @summary Get encrypted group history that the current member can share with newer members
+ */
+export const ListConversationHistoryShareWorkParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const ListConversationHistoryShareWorkResponseItem = zod.object({
+  "messageId": zod.string(),
+  "senderAddress": zod.string(),
+  "body": zod.string(),
+  "sentAt": zod.coerce.date(),
+  "recipientAddress": zod.string(),
+  "recipientPublicKey": zod.string()
+})
+export const ListConversationHistoryShareWorkResponse = zod.array(ListConversationHistoryShareWorkResponseItem)
+
+
+/**
+ * @summary List encrypted history shares addressed to the current wallet
+ */
+export const ListConversationHistorySharesParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const ListConversationHistorySharesResponseItem = zod.object({
+  "messageId": zod.string(),
+  "sharedByAddress": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListConversationHistorySharesResponse = zod.array(ListConversationHistorySharesResponseItem)
+
+
+/**
+ * @summary Store a recipient-only encrypted copy of an older group message
+ */
+export const CreateConversationHistoryShareParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const createConversationHistoryShareBodyRecipientAddressMin = 25;
+
+export const createConversationHistoryShareBodyBodyMax = 200000;
+
+
+
+export const CreateConversationHistoryShareBody = zod.object({
+  "messageId": zod.string().uuid(),
+  "recipientAddress": zod.string().min(createConversationHistoryShareBodyRecipientAddressMin),
+  "body": zod.string().min(1).max(createConversationHistoryShareBodyBodyMax)
+})
+
+export const CreateConversationHistoryShareResponse = zod.object({
+  "messageId": zod.string(),
+  "sharedByAddress": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary List public and joined groups
  */
 export const listGroupsQueryWalletAddressMin = 25;

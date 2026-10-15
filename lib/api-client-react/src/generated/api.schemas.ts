@@ -104,6 +104,33 @@ export interface ConversationKey {
   publicKey: string | null;
 }
 
+export interface HistoryShareWorkItem {
+  messageId: string;
+  senderAddress: string;
+  body: string;
+  sentAt: string;
+  recipientAddress: string;
+  recipientPublicKey: string;
+}
+
+export interface ConversationHistoryShare {
+  messageId: string;
+  sharedByAddress: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface ConversationHistoryShareInput {
+  messageId: string;
+  /** @minLength 25 */
+  recipientAddress: string;
+  /**
+     * @minLength 1
+     * @maxLength 200000
+     */
+  body: string;
+}
+
 export type ConversationType = typeof ConversationType[keyof typeof ConversationType];
 
 

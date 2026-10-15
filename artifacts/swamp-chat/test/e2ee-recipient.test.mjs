@@ -83,3 +83,57 @@ test('only a message recipient can decrypt its recipient-only ciphertext', async
     'This message was sent before this wallet joined the room.',
   );
 });
+
+test('an existing group member can re-encrypt old history for a new member without server-readable plaintext', async () => {
+  const author = await createIdentity();
+  const sharer = await createIdentity();
+  const newcomer = await createIdentity();
+  const originalMembers = [
+    { walletAddress: senderAddress, publicKey: author.publicKey },
+    { walletAddress: outsiderAddress, publicKey: sharer.publicKey },
+  ];
+  const plaintext = 'The server must never receive this readable message.';
+  const originalCiphertext = await encryptForConversation(
+    plaintext,
+    conversationId,
+    senderAddress,
+    author.identity,
+    originalMembers,
+  );
+
+  const recoveredBySharer = await decryptForConversation(
+    originalCiphertext,
+    conversationId,
+    senderAddress,
+    outsiderAddress,
+    sharer.identity,
+    originalMembers,
+  );
+  const sharedCiphertext = await encryptForConversation(
+    recoveredBySharer,
+    conversationId,
+    outsiderAddress,
+    sharer.identity,
+    [{ walletAddress: recipientAddress, publicKey: newcomer.publicKey }],
+  );
+  const shareEnvelope = JSON.parse(
+    new TextDecoder().decode(Buffer.from(sharedCiphertext.slice('e2ee:v1:'.length), 'base64url')),
+  );
+
+  assert.deepEqual(Object.keys(shareEnvelope.entries), [recipientAddress]);
+  assert.ok(!sharedCiphertext.includes(plaintext));
+  assert.equal(
+    await decryptForConversation(
+      sharedCiphertext,
+      conversationId,
+      outsiderAddress,
+      recipientAddress,
+      newcomer.identity,
+      [
+        { walletAddress: outsiderAddress, publicKey: sharer.publicKey },
+        { walletAddress: recipientAddress, publicKey: newcomer.publicKey },
+      ],
+    ),
+    plaintext,
+  );
+});
