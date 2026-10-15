@@ -26,3 +26,9 @@ Vercel Preview is SSO-protected in this workspace. Unauthenticated HTTP health c
 **Why:** The Preview deployment redirected an unauthenticated `/api/healthz` request to Vercel login after the Neon database was configured.
 
 **How to apply:** Keep Preview protection enabled. Verify health JSON from a browser signed into Vercel, or use an explicitly configured automation-bypass secret without exposing it.
+
+The floating menu button seen in Frogtown's protected Preview is Vercel's Toolbar, not an app control. It is intentionally disabled for the current Frogtown Preview branch with `VERCEL_PREVIEW_FEEDBACK_ENABLED=0`; Production was not changed.
+
+**Why:** The user asked to remove the small button that opens GitHub from the interface. Hiding Vercel's Preview Toolbar removes it without deleting any Frogtown navigation or features.
+
+**How to apply:** Keep the setting scoped to Preview. If new Preview branches should also hide the toolbar, add the same branch-scoped setting; don't change Production visibility unless the user asks.
