@@ -32,7 +32,7 @@ SWAMP is a wallet-native XRPL chat platform where Xaman-connected wallet address
 
 - Xaman sign-in is the identity layer; there is no separate profile or password account.
 - Direct and group chat membership is keyed by XRPL wallet address.
-- Message bodies and conversation previews are encrypted at rest with `SESSION_SECRET`; the API decrypts them only when serving an authorized conversation.
+- Message bodies are encrypted end-to-end on the sender's device; the API stores ciphertext and does not decrypt it. `SESSION_SECRET` signs wallet session cookies, while Vercel Preview uses the separate `PREVIEW_SESSION_SECRET`.
 - The frontend uses generated OpenAPI hooks so chat and wallet polling stay aligned with the server contract.
 
 ## Product

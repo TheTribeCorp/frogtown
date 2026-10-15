@@ -20,3 +20,9 @@ Vercel Preview and Production have separate environment-variable targets. Replit
 **Why:** The user initially chose to reuse the current production database for Vercel Preview, but the health endpoint returned `database: unavailable`; Replit's official docs confirm managed PostgreSQL is not directly accessible from external deployments.
 
 **How to apply:** Never assume Production secrets are available to Preview. Check variable targets, use a distinct preview session secret, and do not assume a Replit `DATABASE_URL` can be copied to Vercel. Keep the existing database untouched until the user has approved the external destination and migration plan.
+
+Vercel Preview is SSO-protected in this workspace. Unauthenticated HTTP health checks can follow a redirect to Vercel login and return 200 HTML; that is not a successful API health check.
+
+**Why:** The Preview deployment redirected an unauthenticated `/api/healthz` request to Vercel login after the Neon database was configured.
+
+**How to apply:** Keep Preview protection enabled. Verify health JSON from a browser signed into Vercel, or use an explicitly configured automation-bypass secret without exposing it.
