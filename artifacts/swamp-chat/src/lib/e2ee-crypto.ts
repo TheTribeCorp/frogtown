@@ -10,6 +10,23 @@ export type ConversationPublicKey = {
   publicKey: string | null;
 };
 
+export function getEncryptedMessageRecipients(encryptedBody: string): string[] {
+  if (!encryptedBody.startsWith(PROTOCOL_PREFIX)) return [];
+  try {
+    const envelope = JSON.parse(
+      decoder.decode(decodeBase64Url(encryptedBody.slice(PROTOCOL_PREFIX.length))),
+    ) as MessageEnvelope;
+    if (envelope.version !== 1 || !envelope.entries || typeof envelope.entries !== 'object' || Array.isArray(envelope.entries)) {
+      return [];
+    }
+    return Object.entries(envelope.entries)
+      .filter(([address, entry]) => Boolean(address) && typeof entry?.iv === 'string' && typeof entry?.ciphertext === 'string')
+      .map(([address]) => address);
+  } catch {
+    return [];
+  }
+}
+
 type IdentityCryptoKey = {
   privateKey: CryptoKey;
 };

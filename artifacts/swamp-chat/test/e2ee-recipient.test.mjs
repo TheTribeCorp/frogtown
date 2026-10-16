@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   decryptForConversation,
   encryptForConversation,
+  getEncryptedMessageRecipients,
 } from '../src/lib/e2ee-crypto.ts';
 
 const conversationId = 'conversation-recipient-only-test';
@@ -82,6 +83,23 @@ test('only a message recipient can decrypt its recipient-only ciphertext', async
     ),
     'This message was not encrypted for this device.',
   );
+});
+
+test('encrypted group recipient disclosure matches the envelope and fails closed for invalid input', () => {
+  const envelope = Buffer.from(JSON.stringify({
+    version: 1,
+    entries: {
+      [senderAddress]: { iv: 'aW5pdGlhbGl6YXRpb24', ciphertext: 'Y2lwaGVydGV4dA' },
+      [recipientAddress]: { iv: 'aW5pdGlhbGl6YXRpb24', ciphertext: 'Y2lwaGVydGV4dA' },
+    },
+  })).toString('base64url');
+
+  assert.deepEqual(
+    getEncryptedMessageRecipients(`e2ee:v1:${envelope}`).sort(),
+    [senderAddress, recipientAddress].sort(),
+  );
+  assert.deepEqual(getEncryptedMessageRecipients('legacy plaintext'), []);
+  assert.deepEqual(getEncryptedMessageRecipients('e2ee:v1:not-valid-json'), []);
 });
 
 test('group messages can be encrypted for key-ready members while omitting members without device keys', async () => {
