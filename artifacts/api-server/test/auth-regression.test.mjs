@@ -919,12 +919,22 @@ test("forgetting an encrypted backup resets only that wallet's history and prese
     ext: true,
     key_ops: [],
   });
+  const resetEventStream = await openMessageEvents(member);
   const reset = await request("/api/wallet/keys/reset", {
     method: "POST",
     cookie: sessionCookie(member),
     body: { publicKey: freshPublicKey },
   });
   assert.equal(reset.status, 200);
+  try {
+    let resetEvent = await resetEventStream.nextEvent();
+    while (resetEvent.type !== "wallet.encryption.reset") {
+      resetEvent = await resetEventStream.nextEvent();
+    }
+    assert.equal(resetEvent.walletAddress, member, "all signed-in devices for the wallet are notified");
+  } finally {
+    resetEventStream.close();
+  }
   const updatedKey = await request(`/api/wallet/keys/${member}`, {
     cookie: sessionCookie(member),
   });

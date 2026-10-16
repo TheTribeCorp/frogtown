@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, createContext, useContext, type ReactNode, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, createContext, useContext, type ReactNode, type FormEvent } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -105,6 +105,34 @@ import {
 } from '@/lib/e2ee';
 
 const queryClient = new QueryClient();
+const WALLET_ENCRYPTION_RESET_EVENT = 'frogtown:wallet-encryption-reset';
+const ENCRYPTION_KEY_CHECK_EVENT = 'frogtown:check-encryption-key';
+const ENCRYPTION_RESET_CHANNEL = 'frogtown:encryption-reset';
+const ENCRYPTION_RESET_STORAGE_KEY = 'frogtown:encryption-reset-notice';
+const BACKUP_CREATED_EVENT = 'frogtown:encrypted-backup-created';
+
+const freshStartBackupKey = (walletAddress: string) =>
+  `frogtown:fresh-start-backup:${walletAddress}`;
+
+function broadcastEncryptionReset(walletAddress: string) {
+  const notice = { walletAddress, createdAt: Date.now() };
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      const channel = new BroadcastChannel(ENCRYPTION_RESET_CHANNEL);
+      channel.postMessage(notice);
+      channel.close();
+      return;
+    } catch {
+      // Use the storage-event fallback when BroadcastChannel is unavailable.
+    }
+  }
+  try {
+    window.localStorage.setItem(ENCRYPTION_RESET_STORAGE_KEY, JSON.stringify(notice));
+    window.localStorage.removeItem(ENCRYPTION_RESET_STORAGE_KEY);
+  } catch {
+    // Other tabs will still be checked when they reconnect or become visible.
+  }
+}
 
 type WalletContextValue = {
   walletAddress: string;
@@ -167,24 +195,44 @@ function RealtimeBridge({ children }: { children: ReactNode }) {
           const path = query.queryKey[0];
           return typeof path === 'string'
             && path.startsWith('/api/conversations/')
-            && path.endsWith('/messages');
+            && (
+              path.endsWith('/messages')
+              || path.endsWith('/keys')
+              || path.endsWith('/history-shares')
+              || path.endsWith('/history-share-work')
+            );
         },
       });
     };
 
+    let hasConnected = false;
     source.onopen = () => {
+      const reconnected = hasConnected;
+      hasConnected = true;
       setStatus('live');
       refreshConversationData();
+      if (reconnected) {
+        window.dispatchEvent(new CustomEvent(ENCRYPTION_KEY_CHECK_EVENT));
+      }
     };
     source.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as {
           type?: string;
+          walletAddress?: string;
           conversationId?: string;
           messageId?: string;
           senderAddress?: string;
           isRequest?: boolean;
         };
+        if (payload.type === 'wallet.encryption.reset') {
+          if (payload.walletAddress === walletAddress) {
+            window.dispatchEvent(new CustomEvent(WALLET_ENCRYPTION_RESET_EVENT, {
+              detail: { walletAddress: payload.walletAddress, source: 'server' },
+            }));
+          }
+          return;
+        }
         if (!payload.conversationId) return;
         if (payload.type === 'conversation.updated') {
           refreshConversationData();
@@ -223,7 +271,10 @@ function RealtimeBridge({ children }: { children: ReactNode }) {
     source.onerror = () => setStatus('reconnecting');
 
     const recoverWhenVisible = () => {
-      if (document.visibilityState === 'visible') refreshConversationData();
+      if (document.visibilityState === 'visible') {
+        refreshConversationData();
+        window.dispatchEvent(new CustomEvent(ENCRYPTION_KEY_CHECK_EVENT));
+      }
     };
     document.addEventListener('visibilitychange', recoverWhenVisible);
     window.addEventListener('online', recoverWhenVisible);
@@ -1439,14 +1490,118 @@ function EncryptionRecoveryRoute() {
   );
 }
 
+function FreshStartBackupPrompt({
+  walletAddress,
+  forceVisible,
+  onBackupDone,
+}: {
+  walletAddress: string;
+  forceVisible: boolean;
+  onBackupDone: () => void;
+}) {
+  const [, setLocation] = useLocation();
+  const [visible, setVisible] = useState(forceVisible);
+
+  useEffect(() => {
+    const key = freshStartBackupKey(walletAddress);
+    const syncVisibility = () => {
+      try {
+        setVisible(forceVisible || window.localStorage.getItem(key) === '1');
+      } catch {
+        setVisible(forceVisible);
+      }
+    };
+    const handleBackupCreated = (event: Event) => {
+      const detail = (event as CustomEvent<{ walletAddress?: string }>).detail;
+      if (detail?.walletAddress !== walletAddress) return;
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        // The in-memory prompt still closes after the browser downloads the backup.
+      }
+      setVisible(false);
+      onBackupDone();
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === key) syncVisibility();
+    };
+
+    syncVisibility();
+    window.addEventListener(BACKUP_CREATED_EVENT, handleBackupCreated);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener(BACKUP_CREATED_EVENT, handleBackupCreated);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [walletAddress, forceVisible, onBackupDone]);
+
+  if (!visible) return null;
+  return (
+    <aside
+      className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-[hsl(var(--secondary-foreground)/.15)] bg-[hsl(var(--secondary)/.96)] px-4 py-3 text-[hsl(var(--secondary-foreground))] shadow-sm backdrop-blur md:px-6"
+      role="status"
+      data-testid="prompt-fresh-start-backup"
+    >
+      <div className="flex min-w-[220px] flex-1 items-start gap-2.5">
+        <KeyRound className="mt-0.5 size-4 shrink-0" />
+        <div>
+          <p className="text-xs font-semibold">Save a backup for your new key</p>
+          <p className="mt-0.5 text-[11px] leading-4 opacity-80">
+            Create and download an encrypted recovery file so you can restore your new chats on another device.
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setLocation('/settings/recovery')}
+          className="rounded-lg bg-[hsl(var(--secondary-foreground))] px-3 py-2 text-[11px] font-semibold text-[hsl(var(--secondary))] hover:opacity-90"
+          data-testid="button-create-fresh-start-backup"
+        >
+          Create backup
+        </button>
+        <button
+          onClick={() => setVisible(false)}
+          className="rounded-lg px-2.5 py-2 text-[11px] font-medium hover:bg-[hsl(var(--secondary-foreground)/.08)]"
+          aria-label="Remind me about the backup later"
+          data-testid="button-dismiss-fresh-start-backup"
+        >
+          Later
+        </button>
+      </div>
+    </aside>
+  );
+}
+
 function KeyBootstrapGate({ children }: { children: ReactNode }) {
   const { walletAddress, disconnect } = useWallet();
   const client = useQueryClient();
+  const resetBusyRef = useRef(false);
+  const ownResetEventUntilRef = useRef(0);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [canStartFresh, setCanStartFresh] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
+  const [freshStartPromptNow, setFreshStartPromptNow] = useState(false);
+  const [cleanupRequired, setCleanupRequired] = useState(false);
+
+  const clearResetLocalState = (targetWallet: string) => {
+    try {
+      clearPendingEncryptedMessages(targetWallet);
+    } finally {
+      try {
+        window.sessionStorage.removeItem(`swamp-selected-conversation:${targetWallet}`);
+      } catch {
+        // Conversation selection is only a local preference.
+      }
+      client.clear();
+    }
+  };
+
+  useEffect(() => {
+    setFreshStartPromptNow(false);
+    setCleanupRequired(false);
+  }, [walletAddress]);
 
   useEffect(() => {
     if (!walletAddress) {
@@ -1471,33 +1626,173 @@ function KeyBootstrapGate({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [walletAddress, attempt]);
 
+  useEffect(() => {
+    if (!walletAddress) return;
+    let pendingServerResetTimer: number | null = null;
+    const cancelPendingServerReset = () => {
+      if (pendingServerResetTimer !== null) {
+        window.clearTimeout(pendingServerResetTimer);
+        pendingServerResetTimer = null;
+      }
+    };
+    const applyRemoteReset = (targetWallet: string | undefined) => {
+      if (targetWallet !== walletAddress || resetBusyRef.current) return;
+      try {
+        clearResetLocalState(walletAddress);
+      } catch {
+        setCleanupRequired(true);
+        setCanStartFresh(false);
+        setError('Frogtown detected a key reset but could not clear this tab’s encrypted retry record. Chats are paused until cleanup succeeds.');
+        setStatus('error');
+        return;
+      }
+      setCleanupRequired(false);
+      setCanStartFresh(false);
+      setError('');
+      setStatus('loading');
+      setAttempt((value) => value + 1);
+    };
+    const onWindowReset = (event: Event) => {
+      const detail = (event as CustomEvent<{ walletAddress?: string; source?: string }>).detail;
+      if (detail?.source === 'server' && detail.walletAddress === walletAddress) {
+        if (Date.now() < ownResetEventUntilRef.current) {
+          ownResetEventUntilRef.current = 0;
+          return;
+        }
+        cancelPendingServerReset();
+        pendingServerResetTimer = window.setTimeout(() => {
+          pendingServerResetTimer = null;
+          applyRemoteReset(detail.walletAddress);
+        }, 400);
+        return;
+      }
+      cancelPendingServerReset();
+      applyRemoteReset(detail?.walletAddress);
+    };
+    const onKeyCheck = () => {
+      if (resetBusyRef.current || status !== 'ready') return;
+      void ensureIdentityKey(walletAddress).catch((cause: unknown) => {
+        if (!(cause instanceof IdentityKeyRecoveryRequiredError)) return;
+        try {
+          clearResetLocalState(walletAddress);
+        } catch {
+          setCleanupRequired(true);
+          setError('This wallet’s encryption key changed, but Frogtown could not clear this tab’s encrypted retry record. Chats are paused until cleanup succeeds.');
+          setCanStartFresh(false);
+          setStatus('error');
+          return;
+        }
+        setCleanupRequired(false);
+        setError(errorMessage(cause, 'This device’s encryption key changed. Restore its current backup to continue.'));
+        setCanStartFresh(true);
+        setStatus('error');
+      });
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== ENCRYPTION_RESET_STORAGE_KEY || !event.newValue) return;
+      try {
+        const notice = JSON.parse(event.newValue) as { walletAddress?: string };
+        cancelPendingServerReset();
+        applyRemoteReset(notice.walletAddress);
+      } catch {
+        // Ignore malformed cross-tab notices; key checks also run on visibility and reconnect.
+      }
+    };
+
+    let channel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel(ENCRYPTION_RESET_CHANNEL);
+        channel.onmessage = (event: MessageEvent<{ walletAddress?: string }>) => {
+          cancelPendingServerReset();
+          applyRemoteReset(event.data?.walletAddress);
+        };
+      } catch {
+        // The storage-event fallback remains available.
+      }
+    }
+    window.addEventListener(WALLET_ENCRYPTION_RESET_EVENT, onWindowReset);
+    window.addEventListener(ENCRYPTION_KEY_CHECK_EVENT, onKeyCheck);
+    window.addEventListener('storage', onStorage);
+    const keyCheckInterval = window.setInterval(onKeyCheck, 30_000);
+    return () => {
+      channel?.close();
+      cancelPendingServerReset();
+      window.clearInterval(keyCheckInterval);
+      window.removeEventListener(WALLET_ENCRYPTION_RESET_EVENT, onWindowReset);
+      window.removeEventListener(ENCRYPTION_KEY_CHECK_EVENT, onKeyCheck);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [walletAddress, client, status]);
+
   const startFresh = async () => {
     const confirmed = window.confirm(
       'This creates a new encryption key and permanently hides this wallet’s existing chat history. You will stay in your groups, but old messages will not be restored. Other members’ messages are not deleted. Continue?',
     );
     if (!confirmed) return;
+    resetBusyRef.current = true;
+    ownResetEventUntilRef.current = Date.now() + 5_000;
     setResetBusy(true);
     setError('');
     try {
-      clearPendingEncryptedMessages(walletAddress);
       await resetIdentityKey(walletAddress);
       try {
-        window.sessionStorage.removeItem(`swamp-selected-conversation:${walletAddress}`);
+        window.localStorage.setItem(freshStartBackupKey(walletAddress), '1');
       } catch {
-        // The server cutoff and fresh key are authoritative; selection state is only a UI preference.
+        // Keep the prompt visible for this session even if persistent browser storage is unavailable.
       }
-      client.clear();
+      broadcastEncryptionReset(walletAddress);
+      setFreshStartPromptNow(true);
       setCanStartFresh(false);
+      try {
+        clearResetLocalState(walletAddress);
+      } catch {
+        setCleanupRequired(true);
+        setStatus('error');
+        setError('The new key is active, but Frogtown could not clear this tab’s encrypted retry record. Chats are paused until cleanup succeeds.');
+        return;
+      }
+      setCleanupRequired(false);
       setStatus('loading');
       setAttempt((value) => value + 1);
     } catch (cause) {
+      ownResetEventUntilRef.current = 0;
       setError(errorMessage(cause, 'Could not reset this wallet’s encrypted chat history.'));
     } finally {
+      resetBusyRef.current = false;
       setResetBusy(false);
     }
   };
+  const retryEncryptionSetup = () => {
+    if (!cleanupRequired) {
+      setAttempt((value) => value + 1);
+      return;
+    }
+    try {
+      clearResetLocalState(walletAddress);
+      setCleanupRequired(false);
+      setError('');
+      setStatus('loading');
+      setAttempt((value) => value + 1);
+    } catch {
+      setError('Frogtown still cannot clear this tab’s encrypted retry record. Chats remain paused; try again after browser storage is available.');
+    }
+  };
+  const acknowledgeFreshBackup = useCallback(() => setFreshStartPromptNow(false), []);
 
-  if (!walletAddress || status === 'ready') return <>{children}</>;
+  if (!walletAddress) return <>{children}</>;
+  if (status === 'ready') {
+    return (
+      <>
+        <FreshStartBackupPrompt
+          walletAddress={walletAddress}
+          forceVisible={freshStartPromptNow}
+          onBackupDone={acknowledgeFreshBackup}
+        />
+        {children}
+      </>
+    );
+  }
   return (
     <div className="swamp-app noise flex min-h-[100dvh] items-center justify-center p-4">
       <section className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.95)] p-5 shadow-xl sm:p-7">
@@ -1511,21 +1806,34 @@ function KeyBootstrapGate({ children }: { children: ReactNode }) {
         {status === 'error' && (
           <>
             <div className="mt-5 flex gap-3">
-              <button onClick={() => setAttempt((value) => value + 1)} className="rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))]" data-testid="button-retry-encryption-setup">Try again</button>
+              <button onClick={retryEncryptionSetup} className="rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))]" data-testid="button-retry-encryption-setup">{cleanupRequired ? 'Clear retry data and continue' : 'Try again'}</button>
               <button onClick={disconnect} className="rounded-xl border border-[hsl(var(--border))] px-4 py-3 text-sm font-medium hover:bg-[hsl(var(--muted))]" data-testid="button-disconnect-encryption-setup">Disconnect</button>
             </div>
             <div className="mt-5">
               <EncryptionRecoveryPanel
                 walletAddress={walletAddress}
                 restoreOnly
-                onRestored={() => { setStatus('loading'); setAttempt((value) => value + 1); }}
+                onRestored={() => {
+                  try {
+                    clearResetLocalState(walletAddress);
+                  } catch {
+                    setCleanupRequired(true);
+                    setCanStartFresh(false);
+                    setError('The backup restored, but Frogtown could not clear this tab’s encrypted retry record. Chats are paused until cleanup succeeds.');
+                    setStatus('error');
+                    return;
+                  }
+                  setCleanupRequired(false);
+                  setStatus('loading');
+                  setAttempt((value) => value + 1);
+                }}
               />
             </div>
             {canStartFresh && (
               <section className="mt-4 rounded-xl border border-[hsl(var(--destructive)/.25)] bg-[hsl(var(--destructive)/.06)] p-4" data-testid="panel-forget-encryption-backup">
                 <h2 className="text-sm font-semibold">No backup? Start with fresh chats</h2>
                 <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">
-                  This replaces the wallet’s encryption key and clears its old private chats and message history. You’ll remain in your groups, but previous encrypted messages won’t be available. Messages are not deleted for other participants.
+                  This replaces the wallet’s encryption key and clears its old private chats and message history. You’ll remain in your groups, but previous encrypted messages won’t be available. Messages are not deleted for other participants. If another device reset this wallet, wait for its new backup before starting fresh here.
                 </p>
                 <button
                   onClick={() => void startFresh()}

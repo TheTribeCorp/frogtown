@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  clearPendingEncryptedMessages,
   findPendingEncryptedMessage,
   loadPendingEncryptedMessages,
   removePendingEncryptedMessage,
@@ -45,4 +46,13 @@ test('confirmed retries can be removed from the outbox', () => {
   savePendingEncryptedMessage('rWalletA', pending, storage);
   removePendingEncryptedMessage('rWalletA', pending.messageId, storage);
   assert.deepEqual(loadPendingEncryptedMessages('rWalletA', storage), []);
+});
+
+test('a fresh-start reset clears only this wallet tab’s pending encrypted retries', () => {
+  const storage = new MemoryStorage();
+  savePendingEncryptedMessage('rWalletA', pending, storage);
+  savePendingEncryptedMessage('rWalletB', { ...pending, conversationId: 'room-456' }, storage);
+  clearPendingEncryptedMessages('rWalletA', storage);
+  assert.deepEqual(loadPendingEncryptedMessages('rWalletA', storage), []);
+  assert.deepEqual(loadPendingEncryptedMessages('rWalletB', storage), [{ ...pending, conversationId: 'room-456' }]);
 });

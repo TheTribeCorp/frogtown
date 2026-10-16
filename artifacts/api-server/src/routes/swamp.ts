@@ -34,7 +34,7 @@ import {
   UnblockWalletParams,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
-import { publishConversationUpdated, publishMessageCreated, publishMessageRead, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
+import { publishConversationUpdated, publishMessageCreated, publishMessageRead, publishWalletEncryptionReset, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
 import { recordDailyQuestActionInTransaction } from "../lib/gamification";
 import { getWalletHermitTick, hermitTickCacheControl } from "../lib/hermit-tick";
 import {
@@ -1016,7 +1016,7 @@ router.post("/wallet/keys/reset", async (req, res): Promise<void> => {
 
   const resetAt = new Date();
   try {
-    await db.transaction(async (transaction) => {
+    const membersToNotify = await db.transaction(async (transaction) => {
       await transaction
         .insert(walletKeysTable)
         .values({ walletAddress, publicKey: parsedBody.data.publicKey })
@@ -1024,15 +1024,38 @@ router.post("/wallet/keys/reset", async (req, res): Promise<void> => {
           target: walletKeysTable.walletAddress,
           set: { publicKey: parsedBody.data.publicKey, createdAt: resetAt },
         });
-      await transaction
+      const updatedMemberships = await transaction
         .update(conversationMembersTable)
         .set({ historyStartsAt: resetAt, lastReadAt: resetAt })
-        .where(eq(conversationMembersTable.walletAddress, walletAddress));
+        .where(eq(conversationMembersTable.walletAddress, walletAddress))
+        .returning({ conversationId: conversationMembersTable.conversationId });
       await transaction
         .delete(messageHistorySharesTable)
         .where(eq(messageHistorySharesTable.recipientAddress, walletAddress));
+      const conversationIds = [...new Set(updatedMemberships.map((member) => member.conversationId))];
+      return conversationIds.length > 0
+        ? transaction
+          .select({
+            conversationId: conversationMembersTable.conversationId,
+            walletAddress: conversationMembersTable.walletAddress,
+          })
+          .from(conversationMembersTable)
+          .where(inArray(conversationMembersTable.conversationId, conversationIds))
+        : [];
     });
-    res.json({ resetAt: resetAt.toISOString() });
+    const resetAtIso = resetAt.toISOString();
+    const membersByConversation = new Map<string, string[]>();
+    for (const member of membersToNotify) {
+      const members = membersByConversation.get(member.conversationId) ?? [];
+      members.push(member.walletAddress);
+      membersByConversation.set(member.conversationId, members);
+    }
+    await Promise.all([
+      publishWalletEncryptionReset(walletAddress, resetAtIso),
+      ...[...membersByConversation.entries()].map(([conversationId, members]) =>
+        publishConversationUpdated(members, { conversationId })),
+    ]);
+    res.json({ resetAt: resetAtIso });
   } catch (error) {
     req.log.error({ error }, "Wallet encryption reset failed");
     res.status(500).json({ error: "The encryption key and chat history could not be reset." });

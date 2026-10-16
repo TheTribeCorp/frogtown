@@ -36,6 +36,39 @@ test('recovery backup encrypts the private key and restores it for the matching 
   assert.deepEqual(restored.publicJwk, identity.publicJwk);
 });
 
+test('a fresh-start encryption key can be backed up and restores to the same identity', async () => {
+  const freshIdentity = await createIdentity();
+  const backup = await createEncryptedIdentityBackupFile(walletAddress, freshIdentity, passphrase);
+  const restored = await decryptEncryptedIdentityBackupFile(walletAddress, backup, passphrase);
+  assert.deepEqual(restored.publicJwk, freshIdentity.publicJwk);
+  assert.deepEqual(restored.privateJwk, await crypto.subtle.exportKey('jwk', freshIdentity.privateKey));
+
+  const privateKey = await crypto.subtle.importKey(
+    'jwk',
+    restored.privateJwk,
+    { name: 'ECDH', namedCurve: 'P-256' },
+    true,
+    ['deriveBits'],
+  );
+  const publicKey = await crypto.subtle.importKey(
+    'jwk',
+    restored.publicJwk,
+    { name: 'ECDH', namedCurve: 'P-256' },
+    false,
+    [],
+  );
+  const probe = await crypto.subtle.generateKey(
+    { name: 'ECDH', namedCurve: 'P-256' },
+    false,
+    ['deriveBits'],
+  );
+  const [fromPrivate, fromPublic] = await Promise.all([
+    crypto.subtle.deriveBits({ name: 'ECDH', public: probe.publicKey }, privateKey, 256),
+    crypto.subtle.deriveBits({ name: 'ECDH', public: publicKey }, probe.privateKey, 256),
+  ]);
+  assert.deepEqual(new Uint8Array(fromPrivate), new Uint8Array(fromPublic));
+});
+
 test('recovery backup rejects a wrong passphrase and another wallet', async () => {
   const backup = await createEncryptedIdentityBackupFile(walletAddress, await createIdentity(), passphrase);
   await assert.rejects(

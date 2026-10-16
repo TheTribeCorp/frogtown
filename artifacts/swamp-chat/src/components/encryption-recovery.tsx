@@ -42,6 +42,9 @@ export function EncryptionRecoveryPanel({
       setBackupPassphrase('');
       setConfirmation('');
       setNotice('Encrypted backup downloaded. Keep the file and passphrase in separate safe places.');
+      window.dispatchEvent(new CustomEvent('frogtown:encrypted-backup-created', {
+        detail: { walletAddress },
+      }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not create the encrypted backup.');
     } finally {
