@@ -142,6 +142,23 @@ export const RegisterWalletEncryptionKeyResponse = zod.object({
 
 
 /**
+ * Resets only the authenticated wallet's access to existing encrypted chat history; shared messages remain for other participants.
+ * @summary Replace this wallet's encryption key and start chat history fresh
+ */
+export const resetWalletEncryptionKeyBodyPublicKeyMax = 2048;
+
+
+
+export const ResetWalletEncryptionKeyBody = zod.object({
+  "publicKey": zod.string().max(resetWalletEncryptionKeyBodyPublicKeyMax)
+})
+
+export const ResetWalletEncryptionKeyResponse = zod.object({
+  "resetAt": zod.coerce.date()
+})
+
+
+/**
  * @summary List wallets blocked by the current wallet
  */
 export const ListBlockedWalletsResponseItem = zod.object({

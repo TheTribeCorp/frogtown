@@ -22,6 +22,7 @@ export const conversationMembersTable = pgTable("swamp_conversation_members", {
   walletAddress: text("wallet_address").notNull(),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
   lastReadAt: timestamp("last_read_at", { withTimezone: true }),
+  historyStartsAt: timestamp("history_starts_at", { withTimezone: true }),
 }, (table) => [
   index("swamp_conversation_members_wallet_conversation_read_idx")
     .on(table.walletAddress, table.conversationId, table.lastReadAt),

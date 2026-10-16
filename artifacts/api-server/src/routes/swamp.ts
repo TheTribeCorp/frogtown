@@ -27,6 +27,7 @@ import {
   ListGroupsQueryParams,
   ListPushSubscriptionsResponse,
   RegisterWalletEncryptionKeyBody,
+  ResetWalletEncryptionKeyBody,
   RevokePushSubscriptionParams,
   SendMessageBody,
   SendMessageParams,
@@ -59,6 +60,19 @@ const AUTH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_PUSH_SUBSCRIPTIONS_PER_WALLET = 8;
 
 const isWalletAddress = (value: string) => /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(value);
+
+function isPublicEncryptionKey(value: string): boolean {
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    return parsed.kty === "EC"
+      && parsed.crv === "P-256"
+      && typeof parsed.x === "string"
+      && typeof parsed.y === "string"
+      && !("d" in parsed);
+  } catch {
+    return false;
+  }
+}
 
 function parsePushSubscription(value: unknown): {
   endpoint: string;
@@ -974,14 +988,8 @@ router.put("/wallet/keys", async (req, res): Promise<void> => {
     return;
   }
   const publicKey = parsedBody.data.publicKey;
-  try {
-    const parsed = JSON.parse(publicKey) as Record<string, unknown>;
-    if (parsed.kty !== "EC" || parsed.crv !== "P-256" || typeof parsed.x !== "string" || typeof parsed.y !== "string" || "d" in parsed) {
-      res.status(400).json({ error: "Only public P-256 encryption keys are accepted." });
-      return;
-    }
-  } catch {
-    res.status(400).json({ error: "Encryption key must be valid JSON." });
+  if (!isPublicEncryptionKey(publicKey)) {
+    res.status(400).json({ error: "Only public P-256 encryption keys are accepted." });
     return;
   }
   const existing = await db.select().from(walletKeysTable).where(eq(walletKeysTable.walletAddress, walletAddress)).limit(1);
@@ -995,6 +1003,40 @@ router.put("/wallet/keys", async (req, res): Promise<void> => {
   }
   await db.insert(walletKeysTable).values({ walletAddress, publicKey });
   res.status(201).json({ walletAddress, publicKey });
+});
+
+router.post("/wallet/keys/reset", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const parsedBody = ResetWalletEncryptionKeyBody.safeParse(req.body);
+  if (!parsedBody.success || !isPublicEncryptionKey(parsedBody.data.publicKey)) {
+    res.status(400).json({ error: "A valid public P-256 encryption key is required." });
+    return;
+  }
+
+  const resetAt = new Date();
+  try {
+    await db.transaction(async (transaction) => {
+      await transaction
+        .insert(walletKeysTable)
+        .values({ walletAddress, publicKey: parsedBody.data.publicKey })
+        .onConflictDoUpdate({
+          target: walletKeysTable.walletAddress,
+          set: { publicKey: parsedBody.data.publicKey, createdAt: resetAt },
+        });
+      await transaction
+        .update(conversationMembersTable)
+        .set({ historyStartsAt: resetAt, lastReadAt: resetAt })
+        .where(eq(conversationMembersTable.walletAddress, walletAddress));
+      await transaction
+        .delete(messageHistorySharesTable)
+        .where(eq(messageHistorySharesTable.recipientAddress, walletAddress));
+    });
+    res.json({ resetAt: resetAt.toISOString() });
+  } catch (error) {
+    req.log.error({ error }, "Wallet encryption reset failed");
+    res.status(500).json({ error: "The encryption key and chat history could not be reset." });
+  }
 });
 
 router.get("/conversations/:conversationId/keys", async (req, res): Promise<void> => {
@@ -1033,7 +1075,10 @@ router.get("/conversations", async (req, res) => {
     requireAddress(walletAddress);
     if (!requireMatchingWallet(sessionWallet, walletAddress, res)) return;
     const memberships = await db
-      .select({ conversationId: conversationMembersTable.conversationId })
+      .select({
+        conversationId: conversationMembersTable.conversationId,
+        historyStartsAt: conversationMembersTable.historyStartsAt,
+      })
       .from(conversationMembersTable)
       .where(eq(conversationMembersTable.walletAddress, walletAddress));
     if (memberships.length === 0) {
@@ -1085,14 +1130,25 @@ router.get("/conversations", async (req, res) => {
         eq(conversationMembersTable.walletAddress, walletAddress),
         ne(messagesTable.senderAddress, walletAddress),
         or(
+          isNull(conversationMembersTable.historyStartsAt),
+          gt(messagesTable.sentAt, conversationMembersTable.historyStartsAt),
+        ),
+        or(
           isNull(conversationMembersTable.lastReadAt),
           gt(messagesTable.sentAt, conversationMembersTable.lastReadAt),
         ),
       ))
       .groupBy(messagesTable.conversationId);
     const unreadCounts = new Map(unreadRows.map((row) => [row.conversationId, row.unreadCount]));
+    const historyStartsAt = new Map(memberships.map((member) => [member.conversationId, member.historyStartsAt]));
     res.json(rows
       .filter((row) => {
+        const historyStart = historyStartsAt.get(row.id);
+        if (
+          row.type === "direct"
+          && historyStart
+          && (!row.lastMessageAt || row.lastMessageAt <= historyStart)
+        ) return false;
         if (row.directStatus === "declined") return false;
         const otherWalletAddress = otherWalletByConversation.get(row.id);
         return !(row.type === "direct" && row.directStatus === "pending"
@@ -1100,12 +1156,15 @@ router.get("/conversations", async (req, res) => {
       })
       .map((row) => {
         const otherWalletAddress = otherWalletByConversation.get(row.id) ?? null;
+        const historyStart = historyStartsAt.get(row.id);
+        const historyCleared = Boolean(historyStart && row.lastMessageAt && row.lastMessageAt <= historyStart);
         return {
           ...serializeConversation(
             row,
             otherWalletAddress,
             otherWalletAddress ? blockedCounterparts.has(otherWalletAddress) : false,
           ),
+          ...(historyCleared ? { lastMessage: null, lastMessageAt: null } : {}),
           unreadCount: unreadCounts.get(row.id) ?? 0,
         };
       }));
@@ -1431,10 +1490,12 @@ router.get("/conversations/:conversationId/messages", async (req, res) => {
       .select({
         walletAddress: conversationMembersTable.walletAddress,
         lastReadAt: conversationMembersTable.lastReadAt,
+        historyStartsAt: conversationMembersTable.historyStartsAt,
       })
       .from(conversationMembersTable)
       .where(eq(conversationMembersTable.conversationId, conversationId));
-    if (!memberships.some((member) => member.walletAddress === sessionWallet)) {
+    const currentMembership = memberships.find((member) => member.walletAddress === sessionWallet);
+    if (!currentMembership) {
       res.status(403).json({ error: "You are not a member of this conversation." });
       return;
     }
@@ -1447,10 +1508,16 @@ router.get("/conversations/:conversationId/messages", async (req, res) => {
       res.status(403).json({ error: "This private-message request is no longer available." });
       return;
     }
+    const messageFilter = currentMembership.historyStartsAt
+      ? and(
+        eq(messagesTable.conversationId, conversationId),
+        gt(messagesTable.sentAt, currentMembership.historyStartsAt),
+      )
+      : eq(messagesTable.conversationId, conversationId);
     const rows = await db
       .select()
       .from(messagesTable)
-      .where(eq(messagesTable.conversationId, conversationId))
+      .where(messageFilter)
       .orderBy(asc(messagesTable.sentAt));
     res.json(rows.map((row) => {
       const recipients = memberships.filter((member) => member.walletAddress !== row.senderAddress);
@@ -1485,6 +1552,7 @@ router.get("/conversations/:conversationId/history-share-work", async (req, res)
     .select({
       walletAddress: conversationMembersTable.walletAddress,
       joinedAt: conversationMembersTable.joinedAt,
+      historyStartsAt: conversationMembersTable.historyStartsAt,
     })
     .from(conversationMembersTable)
     .where(eq(conversationMembersTable.conversationId, conversationId));
@@ -1531,12 +1599,17 @@ router.get("/conversations/:conversationId/history-share-work", async (req, res)
   }> = [];
 
   for (const message of messages) {
-    if (sharerMembership.joinedAt > message.sentAt || !envelopeIncludesRecipient(message.body, sessionWallet)) continue;
+    if (
+      sharerMembership.joinedAt > message.sentAt
+      || (sharerMembership.historyStartsAt && sharerMembership.historyStartsAt >= message.sentAt)
+      || !envelopeIncludesRecipient(message.body, sessionWallet)
+    ) continue;
     for (const recipient of memberships) {
       const publicKey = publicKeys.get(recipient.walletAddress);
       if (
         recipient.walletAddress === sessionWallet
         || recipient.joinedAt <= message.sentAt
+        || (recipient.historyStartsAt && recipient.historyStartsAt >= message.sentAt)
         || !publicKey
         || sharedPairs.has(`${message.id}:${recipient.walletAddress}`)
       ) continue;
@@ -1567,7 +1640,10 @@ router.get("/conversations/:conversationId/history-shares", async (req, res): Pr
   }
   const conversationId = parsed.data.conversationId;
   const membership = await db
-    .select({ walletAddress: conversationMembersTable.walletAddress })
+    .select({
+      walletAddress: conversationMembersTable.walletAddress,
+      historyStartsAt: conversationMembersTable.historyStartsAt,
+    })
     .from(conversationMembersTable)
     .where(and(
       eq(conversationMembersTable.conversationId, conversationId),
@@ -1578,6 +1654,16 @@ router.get("/conversations/:conversationId/history-shares", async (req, res): Pr
     res.status(403).json({ error: "You are not a member of this conversation." });
     return;
   }
+  const shareFilter = membership[0].historyStartsAt
+    ? and(
+      eq(messageHistorySharesTable.conversationId, conversationId),
+      eq(messageHistorySharesTable.recipientAddress, sessionWallet),
+      gt(messagesTable.sentAt, membership[0].historyStartsAt),
+    )
+    : and(
+      eq(messageHistorySharesTable.conversationId, conversationId),
+      eq(messageHistorySharesTable.recipientAddress, sessionWallet),
+    );
   const shares = await db.select({
     messageId: messageHistorySharesTable.messageId,
     sharedByAddress: messageHistorySharesTable.sharedByAddress,
@@ -1585,10 +1671,8 @@ router.get("/conversations/:conversationId/history-shares", async (req, res): Pr
     createdAt: messageHistorySharesTable.createdAt,
   })
     .from(messageHistorySharesTable)
-    .where(and(
-      eq(messageHistorySharesTable.conversationId, conversationId),
-      eq(messageHistorySharesTable.recipientAddress, sessionWallet),
-    ));
+    .innerJoin(messagesTable, eq(messagesTable.id, messageHistorySharesTable.messageId))
+    .where(shareFilter);
   res.json(shares);
 });
 
@@ -1628,6 +1712,7 @@ router.post("/conversations/:conversationId/history-shares", async (req, res): P
     db.select({
       walletAddress: conversationMembersTable.walletAddress,
       joinedAt: conversationMembersTable.joinedAt,
+      historyStartsAt: conversationMembersTable.historyStartsAt,
     })
       .from(conversationMembersTable)
       .where(eq(conversationMembersTable.conversationId, conversationId)),
@@ -1649,6 +1734,8 @@ router.post("/conversations/:conversationId/history-shares", async (req, res): P
   if (
     sharer.joinedAt > message[0].sentAt
     || recipient.joinedAt <= message[0].sentAt
+    || (sharer.historyStartsAt && sharer.historyStartsAt >= message[0].sentAt)
+    || (recipient.historyStartsAt && recipient.historyStartsAt >= message[0].sentAt)
     || !envelopeIncludesRecipient(message[0].body, sessionWallet)
     || recipientKey.length === 0
   ) {
@@ -1690,7 +1777,10 @@ router.post("/conversations/:conversationId/read", async (req, res) => {
     const { conversationId } = MarkConversationReadParams.parse(req.params);
     const input = MarkConversationReadBody.parse(req.body);
     const membership = await db
-      .select({ walletAddress: conversationMembersTable.walletAddress })
+      .select({
+        walletAddress: conversationMembersTable.walletAddress,
+        historyStartsAt: conversationMembersTable.historyStartsAt,
+      })
       .from(conversationMembersTable)
       .where(and(
         eq(conversationMembersTable.conversationId, conversationId),
@@ -1710,13 +1800,20 @@ router.post("/conversations/:conversationId/read", async (req, res) => {
       res.status(403).json({ error: "This private-message request is no longer available." });
       return;
     }
+    const readMessageFilter = membership[0].historyStartsAt
+      ? and(
+        eq(messagesTable.id, input.messageId),
+        eq(messagesTable.conversationId, conversationId),
+        gt(messagesTable.sentAt, membership[0].historyStartsAt),
+      )
+      : and(
+        eq(messagesTable.id, input.messageId),
+        eq(messagesTable.conversationId, conversationId),
+      );
     const message = await db
       .select({ sentAt: messagesTable.sentAt })
       .from(messagesTable)
-      .where(and(
-        eq(messagesTable.id, input.messageId),
-        eq(messagesTable.conversationId, conversationId),
-      ))
+      .where(readMessageFilter)
       .limit(1);
     if (!message[0]) {
       res.status(404).json({ error: "Message not found in this conversation." });

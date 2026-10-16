@@ -253,6 +253,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /wallet/keys/reset:
+    post:
+      operationId: resetWalletEncryptionKey
+      tags: [wallet]
+      summary: Replace this wallet's encryption key and start chat history fresh
+      description: Resets only the authenticated wallet's access to existing encrypted chat history; shared messages remain for other participants.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalletEncryptionResetInput"
+      responses:
+        "200":
+          description: The key was replaced and this wallet's chat history was reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletEncryptionResetResult"
+        "400":
+          description: Invalid public encryption key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Encryption reset could not be completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /wallet/blocks:
     get:
       operationId: listBlockedWallets
@@ -1385,6 +1422,20 @@ components:
           type: string
           maxLength: 2048
       required: [publicKey]
+    WalletEncryptionResetInput:
+      type: object
+      properties:
+        publicKey:
+          type: string
+          maxLength: 2048
+      required: [publicKey]
+    WalletEncryptionResetResult:
+      type: object
+      properties:
+        resetAt:
+          type: string
+          format: date-time
+      required: [resetAt]
     ConversationKey:
       type: object
       properties:

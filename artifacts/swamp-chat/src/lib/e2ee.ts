@@ -1,4 +1,8 @@
-import { getWalletEncryptionKey, registerWalletEncryptionKey } from '@workspace/api-client-react';
+import {
+  getWalletEncryptionKey,
+  registerWalletEncryptionKey,
+  resetWalletEncryptionKey,
+} from '@workspace/api-client-react';
 import {
   createEncryptedIdentityBackupFile,
   decryptEncryptedIdentityBackupFile,
@@ -25,6 +29,13 @@ export type LocalIdentityKey = {
   publicKey: CryptoKey;
   publicJwk: JsonWebKey;
 };
+
+export class IdentityKeyRecoveryRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'IdentityKeyRecoveryRequiredError';
+  }
+}
 
 function openKeyDatabase(): Promise<IDBDatabase> {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -86,10 +97,10 @@ export async function ensureIdentityKey(walletAddress: string): Promise<LocalIde
 
   if (serverKey) {
     if (!localKey) {
-      throw new Error('This wallet already has an encryption key on another device. Restore its Frogtown encrypted backup before continuing.');
+      throw new IdentityKeyRecoveryRequiredError('This wallet already has an encryption key on another device. Restore its Frogtown encrypted backup before continuing.');
     }
     if (canonicalKey(localKey.publicJwk) !== serverKey) {
-      throw new Error('The local encryption key does not match the registered wallet key. We did not replace it, to protect access to older messages.');
+      throw new IdentityKeyRecoveryRequiredError('The local encryption key does not match the registered wallet key. We did not replace it, to protect access to older messages.');
     }
     return localKey;
   }
@@ -103,9 +114,17 @@ export async function ensureIdentityKey(walletAddress: string): Promise<LocalIde
     if (getStatus(error) !== 409) throw error;
     const racedKey = await getWalletEncryptionKey(walletAddress);
     if (racedKey.publicKey !== publicKey) {
-      throw new Error('A different encryption key was registered for this wallet. Restore its Frogtown encrypted backup before continuing.');
+      throw new IdentityKeyRecoveryRequiredError('A different encryption key was registered for this wallet. Restore its Frogtown encrypted backup before continuing.');
     }
   }
+  return key;
+}
+
+export async function resetIdentityKey(walletAddress: string): Promise<LocalIdentityKey> {
+  const key = await generateIdentityKey();
+  const publicKey = canonicalKey(key.publicJwk);
+  await resetWalletEncryptionKey({ publicKey });
+  await storeLocalKey(walletAddress, key);
   return key;
 }
 

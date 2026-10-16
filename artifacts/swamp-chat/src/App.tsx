@@ -86,6 +86,7 @@ import {
   findPendingEncryptedMessage,
   removePendingEncryptedMessage,
   savePendingEncryptedMessage,
+  clearPendingEncryptedMessages,
   type PendingEncryptedMessage,
 } from '@/lib/message-outbox';
 import {
@@ -93,8 +94,10 @@ import {
   decryptForConversation,
   encryptForConversation,
   ensureIdentityKey,
+  IdentityKeyRecoveryRequiredError,
   getConversationKeyChanges,
   getLocalIdentityKey,
+  resetIdentityKey,
   trustConversationKeyChange,
   getEncryptedMessageRecipients,
   type ConversationKeyChange,
@@ -1438,29 +1441,61 @@ function EncryptionRecoveryRoute() {
 
 function KeyBootstrapGate({ children }: { children: ReactNode }) {
   const { walletAddress, disconnect } = useWallet();
+  const client = useQueryClient();
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [canStartFresh, setCanStartFresh] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
 
   useEffect(() => {
     if (!walletAddress) {
       setStatus('idle');
       setError('');
+      setCanStartFresh(false);
       return;
     }
     let cancelled = false;
     setStatus('loading');
     setError('');
+    setCanStartFresh(false);
     void ensureIdentityKey(walletAddress).then(() => {
       if (!cancelled) setStatus('ready');
     }).catch((cause: unknown) => {
       if (!cancelled) {
         setError(errorMessage(cause, 'Could not initialize this device’s encryption key.'));
+        setCanStartFresh(cause instanceof IdentityKeyRecoveryRequiredError);
         setStatus('error');
       }
     });
     return () => { cancelled = true; };
   }, [walletAddress, attempt]);
+
+  const startFresh = async () => {
+    const confirmed = window.confirm(
+      'This creates a new encryption key and permanently hides this wallet’s existing chat history. You will stay in your groups, but old messages will not be restored. Other members’ messages are not deleted. Continue?',
+    );
+    if (!confirmed) return;
+    setResetBusy(true);
+    setError('');
+    try {
+      clearPendingEncryptedMessages(walletAddress);
+      await resetIdentityKey(walletAddress);
+      try {
+        window.sessionStorage.removeItem(`swamp-selected-conversation:${walletAddress}`);
+      } catch {
+        // The server cutoff and fresh key are authoritative; selection state is only a UI preference.
+      }
+      client.clear();
+      setCanStartFresh(false);
+      setStatus('loading');
+      setAttempt((value) => value + 1);
+    } catch (cause) {
+      setError(errorMessage(cause, 'Could not reset this wallet’s encrypted chat history.'));
+    } finally {
+      setResetBusy(false);
+    }
+  };
 
   if (!walletAddress || status === 'ready') return <>{children}</>;
   return (
@@ -1486,6 +1521,22 @@ function KeyBootstrapGate({ children }: { children: ReactNode }) {
                 onRestored={() => { setStatus('loading'); setAttempt((value) => value + 1); }}
               />
             </div>
+            {canStartFresh && (
+              <section className="mt-4 rounded-xl border border-[hsl(var(--destructive)/.25)] bg-[hsl(var(--destructive)/.06)] p-4" data-testid="panel-forget-encryption-backup">
+                <h2 className="text-sm font-semibold">No backup? Start with fresh chats</h2>
+                <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">
+                  This replaces the wallet’s encryption key and clears its old private chats and message history. You’ll remain in your groups, but previous encrypted messages won’t be available. Messages are not deleted for other participants.
+                </p>
+                <button
+                  onClick={() => void startFresh()}
+                  disabled={resetBusy}
+                  className="mt-3 rounded-lg border border-[hsl(var(--destructive)/.35)] px-3 py-2 text-xs font-medium text-[hsl(var(--destructive))] hover:bg-[hsl(var(--destructive)/.1)] disabled:opacity-50"
+                  data-testid="button-forget-encryption-backup"
+                >
+                  {resetBusy ? 'Resetting encrypted chats…' : 'Forget backup and clear my chats'}
+                </button>
+              </section>
+            )}
           </>
         )}
       </section>

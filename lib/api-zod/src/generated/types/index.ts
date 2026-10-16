@@ -83,6 +83,8 @@ export * from './timelineReportInputSubjectType';
 export * from './timelineReportResult';
 export * from './timelineReportResultSubjectType';
 export * from './walletAddressParameter';
+export * from './walletEncryptionResetInput';
+export * from './walletEncryptionResetResult';
 export * from './walletHermitTick';
 export * from './walletHermitTickCheckStatus';
 export * from './walletHermitTickTick';

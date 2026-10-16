@@ -95,3 +95,10 @@ export function removePendingEncryptedMessage(
   }
   storage.setItem(keyForWallet(walletAddress), JSON.stringify(remaining));
 }
+
+export function clearPendingEncryptedMessages(
+  walletAddress: string,
+  storage: StorageLike = getSessionStorage(),
+): void {
+  storage.removeItem(keyForWallet(walletAddress));
+}

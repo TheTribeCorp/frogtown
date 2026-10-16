@@ -252,6 +252,7 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/events", "GET"],
     ["/api/wallet/keys/" + walletA, "GET"],
     ["/api/wallet/keys", "PUT", { publicKey: "not-a-key" }],
+    ["/api/wallet/keys/reset", "POST", { publicKey: "not-a-key" }],
     ["/api/wallets/" + walletA + "/hermit-tick?refresh=true", "GET"],
     ["/api/groups?walletAddress=" + walletA, "GET"],
     ["/api/groups", "POST", { name: "test", description: "", creatorAddress: walletA }],
@@ -818,6 +819,205 @@ test("group history shares are limited to new members and remain recipient-only"
     cookie: sessionCookie(outsider),
   });
   assert.equal(outsiderWork.status, 403);
+});
+
+test("forgetting an encrypted backup resets only that wallet's history and preserves group access", async () => {
+  const owner = randomWalletAddress();
+  const member = randomWalletAddress();
+  await registerWalletKey(owner);
+
+  const groupResponse = await request("/api/groups", {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: { name: `Fresh history test ${randomUUID()}`, description: "", creatorAddress: owner },
+  });
+  assert.equal(groupResponse.status, 201);
+  const group = await groupResponse.json();
+
+  const firstMessageId = randomUUID();
+  const firstMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: {
+      messageId: firstMessageId,
+      senderAddress: owner,
+      body: recipientEnvelope([owner]),
+    },
+  });
+  assert.equal(firstMessage.status, 201);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const memberKey = JSON.stringify({
+    kty: "EC",
+    crv: "P-256",
+    x: Buffer.alloc(32, 3).toString("base64url"),
+    y: Buffer.alloc(32, 4).toString("base64url"),
+    ext: true,
+    key_ops: [],
+  });
+  const registered = await request("/api/wallet/keys", {
+    method: "PUT",
+    cookie: sessionCookie(member),
+    body: { publicKey: memberKey },
+  });
+  assert.equal(registered.status, 201);
+  const joined = await request(`/api/groups/${group.id}/join`, {
+    method: "POST",
+    cookie: sessionCookie(member),
+    body: { walletAddress: member },
+  });
+  assert.equal(joined.status, 200);
+
+  const share = await request(`/api/conversations/${group.conversationId}/history-shares`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: {
+      messageId: firstMessageId,
+      recipientAddress: member,
+      body: recipientEnvelope([member]),
+    },
+  });
+  assert.equal(share.status, 201, "new member receives the old encrypted history before reset");
+
+  const secondMessageId = randomUUID();
+  const secondMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: {
+      messageId: secondMessageId,
+      senderAddress: owner,
+      body: recipientEnvelope([owner, member]),
+    },
+  });
+  assert.equal(secondMessage.status, 201);
+
+  const directResponse = await request("/api/conversations", {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: { walletAddress: member, fromWalletAddress: owner },
+  });
+  assert.equal(directResponse.status, 201);
+  const directConversation = await directResponse.json();
+  const oldPrivateMessageId = randomUUID();
+  const oldPrivateMessage = await request(`/api/conversations/${directConversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: {
+      messageId: oldPrivateMessageId,
+      senderAddress: owner,
+      body: recipientEnvelope([owner, member]),
+    },
+  });
+  assert.equal(oldPrivateMessage.status, 201);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const freshPublicKey = JSON.stringify({
+    kty: "EC",
+    crv: "P-256",
+    x: Buffer.alloc(32, 5).toString("base64url"),
+    y: Buffer.alloc(32, 6).toString("base64url"),
+    ext: true,
+    key_ops: [],
+  });
+  const reset = await request("/api/wallet/keys/reset", {
+    method: "POST",
+    cookie: sessionCookie(member),
+    body: { publicKey: freshPublicKey },
+  });
+  assert.equal(reset.status, 200);
+  const updatedKey = await request(`/api/wallet/keys/${member}`, {
+    cookie: sessionCookie(member),
+  });
+  assert.equal((await updatedKey.json()).publicKey, freshPublicKey);
+
+  const memberMessages = await request(
+    `/api/conversations/${group.conversationId}/messages?walletAddress=${member}`,
+    { cookie: sessionCookie(member) },
+  );
+  assert.equal(memberMessages.status, 200, "the member retains access to their group");
+  assert.deepEqual(await memberMessages.json(), [], "the reset member cannot read messages sent before the cutoff");
+  const memberShares = await request(`/api/conversations/${group.conversationId}/history-shares`, {
+    cookie: sessionCookie(member),
+  });
+  assert.deepEqual(await memberShares.json(), [], "the member's old encrypted history copies are removed");
+
+  const conversationList = await request(`/api/conversations?walletAddress=${member}`, {
+    cookie: sessionCookie(member),
+  });
+  const resetConversations = await conversationList.json();
+  const resetConversation = resetConversations.find((row) => row.id === group.conversationId);
+  assert.ok(resetConversation, "the group remains in the member's conversation list");
+  assert.equal(resetConversation.lastMessage, null, "old message previews are hidden after reset");
+  assert.equal(resetConversation.unreadCount, 0, "old messages do not return as unread");
+  assert.ok(
+    !resetConversations.some((row) => row.id === directConversation.id),
+    "private chats with only pre-reset messages are cleared from the inbox",
+  );
+
+  const ownerMessages = await request(
+    `/api/conversations/${group.conversationId}/messages?walletAddress=${owner}`,
+    { cookie: sessionCookie(owner) },
+  );
+  assert.deepEqual(
+    (await ownerMessages.json()).map((row) => row.id),
+    [firstMessageId, secondMessageId],
+    "resetting one wallet does not delete messages for other participants",
+  );
+
+  const historyWork = await request(
+    `/api/conversations/${group.conversationId}/history-share-work`,
+    { cookie: sessionCookie(owner) },
+  );
+  assert.deepEqual(await historyWork.json(), [], "pre-reset group history is not shared again");
+
+  const newMessageId = randomUUID();
+  const newMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: {
+      messageId: newMessageId,
+      senderAddress: owner,
+      body: recipientEnvelope([owner, member]),
+    },
+  });
+  assert.equal(newMessage.status, 201);
+  const afterReset = await request(
+    `/api/conversations/${group.conversationId}/messages?walletAddress=${member}`,
+    { cookie: sessionCookie(member) },
+  );
+  assert.deepEqual(
+    (await afterReset.json()).map((row) => row.id),
+    [newMessageId],
+    "the member can receive new group messages after resetting",
+  );
+
+  const newPrivateMessageId = randomUUID();
+  const newPrivateMessage = await request(`/api/conversations/${directConversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: {
+      messageId: newPrivateMessageId,
+      senderAddress: owner,
+      body: recipientEnvelope([owner, member]),
+    },
+  });
+  assert.equal(newPrivateMessage.status, 201);
+  const privateConversationList = await request(`/api/conversations?walletAddress=${member}`, {
+    cookie: sessionCookie(member),
+  });
+  assert.ok(
+    (await privateConversationList.json()).some((row) => row.id === directConversation.id),
+    "a private chat appears again when a new message arrives",
+  );
+  const afterPrivateReset = await request(
+    `/api/conversations/${directConversation.id}/messages?walletAddress=${member}`,
+    { cookie: sessionCookie(member) },
+  );
+  assert.deepEqual(
+    (await afterPrivateReset.json()).map((row) => row.id),
+    [newPrivateMessageId],
+    "only new private messages are visible after reset",
+  );
 });
 
 test("message events reach private-chat and group recipients with sender metadata", async () => {

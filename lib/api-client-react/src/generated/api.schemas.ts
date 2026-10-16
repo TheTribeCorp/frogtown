@@ -109,6 +109,15 @@ export interface WalletKeyInput {
   publicKey: string;
 }
 
+export interface WalletEncryptionResetInput {
+  /** @maxLength 2048 */
+  publicKey: string;
+}
+
+export interface WalletEncryptionResetResult {
+  resetAt: string;
+}
+
 export interface ConversationKey {
   walletAddress: string;
   /** @nullable */
