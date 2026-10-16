@@ -83,6 +83,12 @@ import { HermitTick } from '@/components/hermit-tick';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { notifyIncomingMessage } from '@/lib/browser-notifications';
 import {
+  findPendingEncryptedMessage,
+  removePendingEncryptedMessage,
+  savePendingEncryptedMessage,
+  type PendingEncryptedMessage,
+} from '@/lib/message-outbox';
+import {
   conversationSafetyCode,
   decryptForConversation,
   encryptForConversation,
@@ -119,6 +125,30 @@ function RealtimeBridge({ children }: { children: ReactNode }) {
   const client = useQueryClient();
   const [, setLocation] = useLocation();
   const [status, setStatus] = useState<RealtimeStatus>('reconnecting');
+
+  useEffect(() => {
+    const openConversation = (conversationId: string) => {
+      if (!conversationId) return;
+      try {
+        window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, conversationId);
+      } catch {
+        // The inbox remains available if this browser blocks tab storage.
+      }
+      setLocation('/');
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: conversationId }));
+      }, 0);
+    };
+    const onServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'frogtown:open-conversation' && typeof event.data.conversationId === 'string') {
+        openConversation(event.data.conversationId);
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', onServiceWorkerMessage);
+    const requestedConversation = new URL(window.location.href).searchParams.get('conversation');
+    if (requestedConversation) openConversation(requestedConversation);
+    return () => navigator.serviceWorker?.removeEventListener('message', onServiceWorkerMessage);
+  }, [walletAddress, setLocation]);
 
   useEffect(() => {
     if (!walletAddress) {
@@ -687,6 +717,8 @@ function MessagePane({
   const client = useQueryClient();
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState('');
+  const [outboxError, setOutboxError] = useState('');
+  const [pendingRetry, setPendingRetry] = useState<PendingEncryptedMessage | null>(null);
   const [requestError, setRequestError] = useState('');
   const [encrypting, setEncrypting] = useState(false);
   const messageAttempt = useRef<{
@@ -789,9 +821,51 @@ function MessagePane({
     setDraft('');
     setSendError('');
     messageAttempt.current = null;
+    setPendingRetry(null);
+    setOutboxError('');
     lastMarkedMessageId.current = null;
     pendingReadMessageId.current = null;
   }, [conversation?.id]);
+
+  useEffect(() => {
+    if (!walletAddress || !conversation?.id) {
+      setPendingRetry(null);
+      return;
+    }
+    try {
+      setPendingRetry(findPendingEncryptedMessage(walletAddress, conversation.id));
+      setOutboxError('');
+    } catch (error) {
+      setPendingRetry(null);
+      setOutboxError(errorMessage(error, 'This browser could not read the encrypted retry copy.'));
+    }
+  }, [walletAddress, conversation?.id]);
+
+  useEffect(() => {
+    if (
+      !walletAddress
+      || !conversation?.id
+      || !pendingRetry
+      || pendingRetry.conversationId !== conversation.id
+      || messagesQuery.isLoading
+      || messagesQuery.isError
+      || !messagesQuery.data
+    ) return;
+    const alreadyConfirmed = messagesQuery.data.some((message) =>
+      message.id === pendingRetry.messageId
+      && message.senderAddress === walletAddress
+      && message.body === pendingRetry.encryptedBody);
+    if (!alreadyConfirmed) return;
+    try {
+      removePendingEncryptedMessage(walletAddress, pendingRetry.messageId);
+      setPendingRetry(null);
+      setOutboxError('');
+      setSendError('');
+      if (messageAttempt.current?.messageId === pendingRetry.messageId) messageAttempt.current = null;
+    } catch (error) {
+      setOutboxError(errorMessage(error, 'The message was delivered, but its local retry copy could not be cleared.'));
+    }
+  }, [walletAddress, conversation?.id, pendingRetry, messagesQuery.data, messagesQuery.isLoading, messagesQuery.isError]);
 
   useEffect(() => {
     const updateVisibility = () => setPageVisible(document.visibilityState === 'visible');
@@ -810,11 +884,18 @@ function MessagePane({
         messageAttempt.current = null;
         setDraft('');
         setSendError('');
+        try {
+          removePendingEncryptedMessage(walletAddress, payload.messageId);
+          setPendingRetry((current) => current?.messageId === payload.messageId ? null : current);
+          setOutboxError('');
+        } catch (error) {
+          setOutboxError(errorMessage(error, 'The message was delivered, but its local retry copy could not be cleared.'));
+        }
       }
     };
     window.addEventListener('swamp-message-created', handleMessageCreated);
     return () => window.removeEventListener('swamp-message-created', handleMessageCreated);
-  }, []);
+  }, [walletAddress]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1016,6 +1097,8 @@ function MessagePane({
     if (
       !conversation
       || !draft.trim()
+      || pendingRetry
+      || outboxError
       || !keysQuery.data
       || sendBlockedByMissingKeys
       || keyChanges.length > 0
@@ -1046,10 +1129,27 @@ function MessagePane({
           conversation.type === 'group',
         );
       }
+      const retryCopy: PendingEncryptedMessage = {
+        conversationId: conversation.id,
+        messageId: attempt.messageId,
+        encryptedBody: attempt.encryptedBody,
+        createdAt: new Date().toISOString(),
+      };
+      savePendingEncryptedMessage(walletAddress, retryCopy);
+      setPendingRetry(retryCopy);
+      setOutboxError('');
       setDraft('');
       sendMessage.mutate({ conversationId: conversation.id, data: { messageId: attempt.messageId, senderAddress: walletAddress, body: attempt.encryptedBody } }, {
         onSuccess: () => {
           if (messageAttempt.current?.messageId === attempt.messageId) messageAttempt.current = null;
+          try {
+            removePendingEncryptedMessage(walletAddress, attempt.messageId);
+            setPendingRetry((current) => current?.messageId === attempt.messageId ? null : current);
+            setOutboxError('');
+          } catch (error) {
+            setOutboxError(errorMessage(error, 'The message was delivered, but its local retry copy could not be cleared.'));
+          }
+          setDraft('');
           client.invalidateQueries({ queryKey: getListConversationMessagesQueryKey(conversation.id, params) });
           client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
           void client.invalidateQueries({ queryKey: getGetGamificationSummaryQueryKey() });
@@ -1058,13 +1158,56 @@ function MessagePane({
         onError: (error) => {
           if (messageAttempt.current?.messageId !== attempt.messageId) return;
           setDraft(body);
-          setSendError(errorMessage(error, 'Could not confirm delivery. Retrying this draft is safe.'));
+          setSendError(errorMessage(error, 'Could not confirm delivery. Retry the saved encrypted message below.'));
         },
       });
     } catch (error) {
       setSendError(errorMessage(error, 'The message could not be encrypted on this device.'));
     } finally {
       setEncrypting(false);
+    }
+  };
+  const retryPendingMessage = () => {
+    if (!conversation || !pendingRetry || pendingRetry.conversationId !== conversation.id || sendMessage.isPending) return;
+    setSendError('');
+    sendMessage.mutate({
+      conversationId: pendingRetry.conversationId,
+      data: {
+        messageId: pendingRetry.messageId,
+        senderAddress: walletAddress,
+        body: pendingRetry.encryptedBody,
+      },
+    }, {
+      onSuccess: () => {
+        if (messageAttempt.current?.messageId === pendingRetry.messageId) messageAttempt.current = null;
+        try {
+          removePendingEncryptedMessage(walletAddress, pendingRetry.messageId);
+          setPendingRetry(null);
+          setOutboxError('');
+        } catch (error) {
+          setOutboxError(errorMessage(error, 'The message was delivered, but its local retry copy could not be cleared.'));
+        }
+        setDraft('');
+        setSendError('');
+        void client.invalidateQueries({ queryKey: getListConversationMessagesQueryKey(conversation.id, params) });
+        void client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
+        void client.invalidateQueries({ queryKey: getGetGamificationSummaryQueryKey() });
+        void client.invalidateQueries({ queryKey: getGetGamificationLeaderboardQueryKey() });
+      },
+      onError: (error) => setSendError(errorMessage(error, 'Delivery is still unconfirmed. The exact encrypted message is saved for another retry.')),
+    });
+  };
+  const discardPendingRetry = () => {
+    if (!pendingRetry || !window.confirm('Discard this saved encrypted message? It will not be sent unless you write it again.')) return;
+    try {
+      removePendingEncryptedMessage(walletAddress, pendingRetry.messageId);
+      setPendingRetry(null);
+      setSendError('');
+      setOutboxError('');
+      if (messageAttempt.current?.messageId === pendingRetry.messageId) messageAttempt.current = null;
+      setDraft('');
+    } catch (error) {
+      setOutboxError(errorMessage(error, 'Frogtown could not remove the saved encrypted message.'));
     }
   };
   if (!conversation) return <div className="hidden min-w-0 flex-1 items-center justify-center p-8 md:flex"><div className="max-w-sm text-center"><div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[hsl(var(--secondary)/.35)] text-[hsl(var(--foreground))]"><MessageCircle className="size-6" /></div><h2 className="mt-5 text-2xl font-semibold tracking-[-.05em]">Pick a conversation</h2><p className="mt-2 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Your private lines live here. Start one with any XRPL address.</p></div></div>;
@@ -1083,6 +1226,15 @@ function MessagePane({
       <div className="flex items-center gap-3 border-b border-[hsl(var(--border))] px-4 py-4 md:px-7"><button onClick={onBack} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] md:hidden" aria-label="Back to conversations" data-testid="button-back-conversations"><ArrowLeft className="size-4" /></button><div className="flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]">{conversation.type === 'group' ? <Hash className="size-4" /> : <AtSign className="size-4" />}</div><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{conversation.title}</h2><button onClick={() => setShowSafetyCode(true)} className="flex items-center gap-1 text-[10px] text-[hsl(var(--primary))] hover:underline" data-testid="button-show-safety-code"><LockKeyhole className="size-3" /> end-to-end</button></div><p className="mono mt-0.5 truncate text-[10px] text-[hsl(var(--muted-foreground))]">{conversation.participantLabel} {conversation.memberCount > 1 ? `· ${conversation.memberCount} members` : ''}</p></div>{conversation.type === 'direct' && otherWalletAddress && !incomingRequest && (blockedByMe ? <button type="button" onClick={() => onUnblock(otherWalletAddress)} disabled={blockPending} className="ml-auto rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-[10px] font-medium hover:border-[hsl(var(--primary))] disabled:opacity-50" data-testid="button-unblock-chat-wallet">Unblock</button> : <button type="button" onClick={() => onBlock(otherWalletAddress)} disabled={blockPending} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-[10px] font-medium text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--destructive))] hover:text-[hsl(var(--destructive))] disabled:opacity-50" data-testid="button-block-chat-wallet"><Ban className="size-3" /> Block</button>)}</div>
        <div className="chat-wallpaper soft-scrollbar relative flex flex-1 flex-col gap-4 overflow-auto px-4 py-6 md:px-10" data-testid="chat-message-history">{(messagesQuery.isLoading || keysQuery.isLoading) && [1, 2, 3].map((item) => <div key={item} className={`flex animate-pulse ${item % 2 ? 'justify-start' : 'justify-end'}`}><div className="h-14 w-44 rounded-2xl bg-[hsl(var(--muted))]" /></div>)}{(messagesQuery.isError || keysQuery.isError) && <div className="m-auto max-w-sm rounded-2xl border border-[hsl(var(--destructive)/.16)] bg-[hsl(var(--card)/.92)] p-5 text-center text-sm text-[hsl(var(--muted-foreground))] shadow-sm" data-testid="status-messages-error"><CircleAlert className="mx-auto mb-3 size-5 text-[hsl(var(--destructive))]" />Messages or encryption keys could not be loaded. Refresh to try again.</div>}{!messagesQuery.isLoading && !messagesQuery.isError && messagesQuery.data?.length === 0 && <div className="m-auto max-w-sm rounded-2xl border border-[hsl(var(--border)/.8)] bg-[hsl(var(--card)/.92)] p-5 text-center shadow-sm"><div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"><LockKeyhole className="size-5" /></div><p className="mt-4 text-sm font-medium">This line is quiet.</p><p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send the first end-to-end encrypted message.</p></div>}{decryptedMessages.map((message) => <div key={message.id} className={`flex ${message.isMine ? 'justify-end' : 'justify-start'}`} data-testid={`message-${message.id}`}><div className={`max-w-[min(75%,520px)] ${message.isMine ? 'items-end' : 'items-start'} flex flex-col`}><div className={`rounded-2xl px-4 py-3 text-sm leading-6 shadow-[0_2px_7px_rgba(25,55,34,.06)] ${message.isMine ? 'rounded-br-md bg-[hsl(var(--foreground))] text-[hsl(var(--card))]' : 'rounded-bl-md border border-[hsl(var(--border))] bg-[hsl(var(--card))]'}`}><p>{message.body}</p></div><div className="mono mt-1.5 flex flex-wrap items-center gap-2 px-1 text-[9px] text-[hsl(var(--muted-foreground))]"><span className="inline-flex items-center gap-1">{message.isMine ? 'you' : <>{shortAddress(message.senderAddress)}<HermitTick walletAddress={message.senderAddress} className="size-3.5" /></>}</span><span>{formatClock(message.sentAt)}</span>{message.encrypted && <LockKeyhole className="size-2.5" />}{message.isMine && <span title={message.isRead ? 'Read' : 'Sent'} aria-label={message.isRead ? 'Read' : 'Sent'} data-testid={`message-delivery-status-${message.id}`}>{message.isRead ? <CheckCheck className="size-3 text-[hsl(var(--primary))]" /> : <Check className="size-3" />}</span>}{message.historyShared && <span className="rounded-full bg-[hsl(var(--primary)/.1)] px-2 py-0.5 text-[hsl(var(--primary))]" data-testid={`message-history-shared-${message.id}`} title={`Shared by ${message.historySharedByAddress ?? 'a room member'}`}>history shared with you</span>}{message.historyPending && <span className="rounded-full bg-[hsl(var(--accent)/.12)] px-2 py-0.5 text-[hsl(var(--muted-foreground))]" data-testid={`message-history-pending-${message.id}`}>waiting for history share</span>}{conversation.type === 'group' && message.recipientAddresses.length > 0 && !message.historyShared && <details className="relative"><summary className="cursor-pointer list-none rounded-full bg-[hsl(var(--muted)/.7)] px-2 py-0.5 hover:bg-[hsl(var(--muted))]" aria-label={`Show ${message.recipientAddresses.length} encrypted message recipients`} data-testid={`message-recipients-${message.id}`}>to {message.recipientAddresses.length} wallet{message.recipientAddresses.length === 1 ? '' : 's'}</summary><div className="absolute bottom-full left-0 z-20 mb-1 min-w-48 max-w-72 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-[10px] shadow-lg" role="note"><p className="mb-2 font-semibold">Encrypted for these wallets</p><ul className="space-y-1">{message.recipientAddresses.map((address) => <li key={address} className="mono">{shortAddress(address)}</li>)}</ul></div></details>}</div></div></div>)}</div>
       <div className="border-t border-[hsl(var(--border))] bg-[hsl(var(--card)/.45)] p-4 md:px-7">
+        {outboxError && <p className="mb-3 rounded-lg border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.05)] px-3 py-2 text-xs leading-5 text-[hsl(var(--destructive))]" role="alert" data-testid="status-message-outbox-error">{outboxError}</p>}
+        {pendingRetry?.conversationId === conversation.id && <div className="mb-3 rounded-xl border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] p-4" role="status" data-testid="status-pending-encrypted-message">
+          <p className="text-sm font-semibold">Message delivery is not confirmed</p>
+          <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">This tab saved the exact encrypted message before sending, so a reload will not change it or create a duplicate. Only encrypted content is saved; retry to check delivery, or discard this saved send.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={retryPendingMessage} disabled={sendMessage.isPending} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[hsl(var(--primary))] px-3 text-xs font-semibold text-[hsl(var(--primary-foreground))] hover:bg-[hsl(var(--foreground))] disabled:opacity-50" data-testid="button-retry-encrypted-message">{sendMessage.isPending ? <RefreshCw className="size-3 animate-spin" /> : <RefreshCw className="size-3" />} Retry encrypted message</button>
+            <button type="button" onClick={discardPendingRetry} disabled={sendMessage.isPending} className="min-h-9 rounded-lg border border-[hsl(var(--border))] px-3 text-xs font-medium hover:border-[hsl(var(--destructive))] disabled:opacity-50" data-testid="button-discard-encrypted-message">Discard saved send</button>
+          </div>
+        </div>}
         {missingMembers.length > 0 && <p className="mb-3 rounded-lg border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] px-3 py-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="status-missing-member-keys">{conversation.type === 'group' ? <>Encrypted messages will go only to members with registered keys. These members will not receive messages until they set up encryption: {missingMembers.map((member) => shortAddress(member.walletAddress)).join(', ')}.</> : <>Encrypted sending is paused until the other member registers a device key: {missingMembers.map((member) => shortAddress(member.walletAddress)).join(', ')}.</>}</p>}
         {keyChanges.length > 0 && <p className="mb-3 rounded-lg border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] px-3 py-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="status-key-change-send-paused">Sending is paused until you verify the changed encryption key above.</p>}
         {keyTrustError && <p className="mb-3 rounded-lg border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.05)] px-3 py-2 text-xs leading-5 text-[hsl(var(--destructive))]" data-testid="status-key-trust-send-paused">{keyTrustError}</p>}
@@ -1103,8 +1255,8 @@ function MessagePane({
           <p className="text-sm font-semibold">Introduction sent</p>
           <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Your encrypted message is waiting in their requests. You can send another message after they accept.</p>
         </div> : <form onSubmit={submit} className="relative">
-          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(event as unknown as FormEvent); } }} rows={1} disabled={!keysQuery.data || sendBlockedByMissingKeys || keyChanges.length > 0 || Boolean(keyTrustError) || sendMessage.isPending || encrypting || requestWaitingForReply} placeholder={outgoingRequest ? 'Write your encrypted introduction…' : keyChanges.length > 0 ? 'Verify the changed encryption key before sending…' : sendBlockedByMissingKeys ? 'Waiting for the other member to enable encryption…' : 'Write something unbothered…'} className="soft-scrollbar min-h-[52px] w-full resize-none rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] py-4 pl-4 pr-14 text-sm outline-none transition placeholder:text-[hsl(var(--muted-foreground)/.7)] focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary)/.13)] disabled:opacity-60" data-testid="input-message" />
-          <button type="submit" disabled={!draft.trim() || sendMessage.isPending || encrypting || !keysQuery.data || sendBlockedByMissingKeys || keyChanges.length > 0 || Boolean(keyTrustError) || requestWaitingForReply} className="absolute bottom-2.5 right-2.5 flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] transition hover:bg-[hsl(var(--foreground))] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Send encrypted message" data-testid="button-send-message">{sendMessage.isPending || encrypting ? <RefreshCw className="size-4 animate-spin" /> : <Send className="size-4" />}</button>
+           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(event as unknown as FormEvent); } }} rows={1} disabled={!keysQuery.data || sendBlockedByMissingKeys || keyChanges.length > 0 || Boolean(keyTrustError) || sendMessage.isPending || encrypting || requestWaitingForReply || Boolean(pendingRetry) || Boolean(outboxError)} placeholder={pendingRetry ? 'Retry or discard the saved encrypted message above…' : outgoingRequest ? 'Write your encrypted introduction…' : keyChanges.length > 0 ? 'Verify the changed encryption key before sending…' : sendBlockedByMissingKeys ? 'Waiting for the other member to enable encryption…' : 'Write something unbothered…'} className="soft-scrollbar min-h-[52px] w-full resize-none rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] py-4 pl-4 pr-14 text-sm outline-none transition placeholder:text-[hsl(var(--muted-foreground)/.7)] focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary)/.13)] disabled:opacity-60" data-testid="input-message" />
+           <button type="submit" disabled={!draft.trim() || sendMessage.isPending || encrypting || !keysQuery.data || sendBlockedByMissingKeys || keyChanges.length > 0 || Boolean(keyTrustError) || requestWaitingForReply || Boolean(pendingRetry) || Boolean(outboxError)} className="absolute bottom-2.5 right-2.5 flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] transition hover:bg-[hsl(var(--foreground))] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Send encrypted message" data-testid="button-send-message">{sendMessage.isPending || encrypting ? <RefreshCw className="size-4 animate-spin" /> : <Send className="size-4" />}</button>
         </form>}
         {sendError && <p className="mt-2 flex items-center gap-1 text-xs text-[hsl(var(--destructive))]" data-testid="text-send-error"><CircleAlert className="size-3" />{sendError}</p>}
         <p className="mt-2 flex items-center gap-1.5 px-1 text-[10px] text-[hsl(var(--muted-foreground))]"><ShieldCheck className="size-3 text-[hsl(var(--primary))]" /> Message content is encrypted on your device; verify the safety code with members.</p>

@@ -66,6 +66,17 @@ export const groupsTable = pgTable("swamp_groups", {
   creatorAddress: text("creator_address").notNull(),
 });
 
+export const pushSubscriptionsTable = pgTable("swamp_push_subscriptions", {
+  endpoint: text("endpoint").primaryKey(),
+  walletAddress: text("wallet_address").notNull(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("swamp_push_subscriptions_wallet_idx").on(table.walletAddress),
+]);
+
 export const groupMembersTable = pgTable("swamp_group_members", {
   groupId: text("group_id").notNull(),
   walletAddress: text("wallet_address").notNull(),

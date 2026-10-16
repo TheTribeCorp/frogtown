@@ -44,6 +44,8 @@ import {
   messageHistorySharesTable,
   walletKeysTable,
 } from "@workspace/db";
+import { pushSubscriptionsTable } from "@workspace/db/schema";
+import { isWebPushConfigured, sendNewMessagePush } from "../lib/web-push";
 
 const router: IRouter = Router();
 
@@ -52,8 +54,128 @@ let groupSeedPromise: Promise<void> | undefined;
 // environment secrets. Existing browsers must connect their wallet again.
 const AUTH_COOKIE = "swamp_session_v2";
 const AUTH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_PUSH_SUBSCRIPTIONS_PER_WALLET = 8;
 
 const isWalletAddress = (value: string) => /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(value);
+
+function parsePushSubscription(value: unknown): {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+} | null {
+  if (!value || typeof value !== "object") return null;
+  const subscription = value as {
+    endpoint?: unknown;
+    keys?: { p256dh?: unknown; auth?: unknown };
+  };
+  if (
+    typeof subscription.endpoint !== "string"
+    || subscription.endpoint.length > 2048
+    || typeof subscription.keys?.p256dh !== "string"
+    || typeof subscription.keys.auth !== "string"
+    || subscription.keys.p256dh.length > 256
+    || subscription.keys.auth.length > 256
+    || !/^[A-Za-z0-9_-]+$/.test(subscription.keys.p256dh)
+    || !/^[A-Za-z0-9_-]+$/.test(subscription.keys.auth)
+  ) return null;
+
+  try {
+    const endpoint = new URL(subscription.endpoint);
+    const host = endpoint.hostname.toLowerCase();
+    const allowedPushHost = host === "fcm.googleapis.com"
+      || host === "push.services.mozilla.com"
+      || host.endsWith(".push.services.mozilla.com")
+      || host === "web.push.apple.com"
+      || host.endsWith(".notify.windows.com");
+    if (
+      endpoint.protocol !== "https:"
+      || endpoint.username
+      || endpoint.password
+      || !allowedPushHost
+    ) return null;
+  } catch {
+    return null;
+  }
+
+  return {
+    endpoint: subscription.endpoint,
+    p256dh: subscription.keys.p256dh,
+    auth: subscription.keys.auth,
+  };
+}
+
+router.get("/push/vapid-public-key", (_req, res): void => {
+  const publicKey = process.env.FROGTOWN_VAPID_PUBLIC_KEY;
+  if (!isWebPushConfigured() || !publicKey) {
+    res.json({ enabled: false });
+    return;
+  }
+  res.json({ enabled: true, publicKey });
+});
+
+router.post("/push/subscriptions", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  if (!isWebPushConfigured()) {
+    res.status(503).json({ error: "Background notifications are not configured for this Frogtown deployment." });
+    return;
+  }
+  const subscription = parsePushSubscription(req.body);
+  if (!subscription) {
+    res.status(400).json({ error: "This browser push subscription is invalid or unsupported." });
+    return;
+  }
+
+  try {
+    const existing = await db
+      .select({ endpoint: pushSubscriptionsTable.endpoint })
+      .from(pushSubscriptionsTable)
+      .where(eq(pushSubscriptionsTable.walletAddress, walletAddress));
+    if (
+      !existing.some((item) => item.endpoint === subscription.endpoint)
+      && existing.length >= MAX_PUSH_SUBSCRIPTIONS_PER_WALLET
+    ) {
+      res.status(429).json({ error: "This wallet already has the maximum number of notification devices." });
+      return;
+    }
+    await db.insert(pushSubscriptionsTable)
+      .values({ ...subscription, walletAddress })
+      .onConflictDoUpdate({
+        target: pushSubscriptionsTable.endpoint,
+        set: {
+          walletAddress,
+          p256dh: subscription.p256dh,
+          auth: subscription.auth,
+          updatedAt: new Date(),
+        },
+      });
+    res.status(201).json({ registered: true });
+  } catch (error) {
+    req.log.error({ err: error }, "Could not save a browser push subscription");
+    res.status(500).json({ error: "This device could not be registered for notifications." });
+  }
+});
+
+router.delete("/push/subscriptions", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const endpoint = typeof req.body?.endpoint === "string" ? req.body.endpoint : "";
+  if (!endpoint || endpoint.length > 2048) {
+    res.status(400).json({ error: "The browser push subscription is invalid." });
+    return;
+  }
+  try {
+    await db.delete(pushSubscriptionsTable)
+      .where(and(
+        eq(pushSubscriptionsTable.walletAddress, walletAddress),
+        eq(pushSubscriptionsTable.endpoint, endpoint),
+      ));
+    res.status(204).send();
+  } catch (error) {
+    req.log.error({ err: error }, "Could not remove a browser push subscription");
+    res.status(500).json({ error: "This device could not be removed from notifications." });
+  }
+});
 
 type EventCursor = {
   messageAt: string;
@@ -1765,6 +1887,12 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
           senderAddress: outcome.message.senderAddress,
           isRequest: outcome.isRequest,
         },
+      );
+      await sendNewMessagePush(
+        memberships.map((member) => member.walletAddress),
+        input.senderAddress,
+        conversationId,
+        outcome.message.id,
       );
     }
     const readState = await db

@@ -2,67 +2,96 @@ import { useEffect, useState } from 'react';
 import { Bell, BellOff, CircleAlert, ShieldCheck } from 'lucide-react';
 import {
   browserNotificationsEnabled,
+  backgroundNotificationsConfigured,
+  disableBackgroundNotifications,
+  enableBackgroundNotifications,
   getBrowserNotificationStatus,
-  requestBrowserNotificationPermission,
-  setBrowserNotificationsEnabled,
+  hasActiveBackgroundSubscription,
   type BrowserNotificationStatus,
 } from '@/lib/browser-notifications';
 
 export function BrowserNotificationSettings({ walletAddress }: { walletAddress: string }) {
   const [permission, setPermission] = useState<BrowserNotificationStatus>(() => getBrowserNotificationStatus());
   const [enabled, setEnabled] = useState(false);
+  const [configured, setConfigured] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
+    let active = true;
     const currentPermission = getBrowserNotificationStatus();
     setPermission(currentPermission);
-    setEnabled(currentPermission === 'granted' && browserNotificationsEnabled(walletAddress));
+    setChecking(true);
     setNotice('');
+    void Promise.all([
+      backgroundNotificationsConfigured().catch(() => false),
+      hasActiveBackgroundSubscription(),
+    ]).then(([pushConfigured, subscriptionActive]) => {
+      if (!active) return;
+      setConfigured(pushConfigured);
+      setEnabled(currentPermission === 'granted'
+        && browserNotificationsEnabled(walletAddress)
+        && subscriptionActive);
+      setChecking(false);
+    });
+    return () => { active = false; };
   }, [walletAddress]);
 
   const toggleNotifications = async () => {
     setNotice('');
     if (enabled) {
-      const saved = setBrowserNotificationsEnabled(walletAddress, false);
-      if (!saved) {
-        setNotice('This browser could not save your notification setting.');
-        return;
+      setBusy(true);
+      try {
+        await disableBackgroundNotifications(walletAddress);
+        setEnabled(false);
+        setNotice('Background message notifications are off for this device.');
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : 'This device could not be removed from notifications.');
+      } finally {
+        setBusy(false);
       }
-      setEnabled(false);
       return;
     }
 
     setBusy(true);
-    const result = await requestBrowserNotificationPermission();
-    setPermission(result);
-    if (result === 'granted') {
-      const saved = setBrowserNotificationsEnabled(walletAddress, true);
-      if (saved) {
+    try {
+      const result = await enableBackgroundNotifications(walletAddress);
+      setPermission(getBrowserNotificationStatus());
+      if (result === 'enabled') {
         setEnabled(true);
-        setNotice('Browser notifications are on for this wallet on this device.');
+        setConfigured(true);
+        setNotice('Background message notifications are on for this wallet on this device.');
+      } else if (result === 'not-configured') {
+        setConfigured(false);
+        setNotice('Background notifications are not configured for this Frogtown deployment yet.');
+      } else if (result === 'unsupported') {
+        setNotice('This browser or connection does not support background push notifications.');
       } else {
-        setNotice('Permission was granted, but this browser could not save your preference.');
+        setEnabled(false);
+        setNotice(getBrowserNotificationStatus() === 'denied'
+          ? 'Notifications are blocked by your browser. Change this site’s permission in browser settings.'
+          : 'Notification permission was not granted.');
       }
-    } else if (result === 'denied') {
-      setEnabled(false);
-      setNotice('Notifications are blocked by your browser. Change this site’s permission in browser settings.');
-    } else if (result === 'unsupported') {
-      setNotice('Browser notifications are not supported in this browser or connection.');
-    } else {
-      setNotice('Notification permission was not granted.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'This device could not be registered for notifications.');
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
-  const unavailable = permission === 'unsupported' || permission === 'denied';
+  const unavailable = checking || !configured || permission === 'unsupported' || permission === 'denied';
   const description = permission === 'unsupported'
     ? 'This browser or connection does not support browser notifications.'
     : permission === 'denied'
       ? 'Notifications are blocked in browser settings. You can change the site permission there.'
+      : checking
+        ? 'Checking background notification support for this device…'
+        : !configured
+          ? 'Background notifications have not been configured for this Frogtown deployment yet.'
       : enabled
-        ? 'Enabled for this wallet in this browser. Alerts appear when Frogtown is in the background.'
-        : 'Opt in to alerts when Frogtown is in the background. Message text is never shown in the notification.';
+        ? 'Enabled on this device, including when Frogtown is closed. Message contents are never sent in a notification.'
+        : 'Opt in to encrypted-message alerts even when Frogtown is closed. Message contents are never sent in a notification.';
 
   return (
     <section className="mt-5 rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6" data-testid="section-browser-notifications">
@@ -72,7 +101,7 @@ export function BrowserNotificationSettings({ walletAddress }: { walletAddress: 
         </div>
         <div className="min-w-0 flex-1">
           <p className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">message alerts</p>
-          <h3 className="mt-1 font-semibold">Browser notifications</h3>
+          <h3 className="mt-1 font-semibold">Background message notifications</h3>
           <p className="mt-1 max-w-xl text-sm leading-5 text-[hsl(var(--muted-foreground))]" data-testid="text-browser-notification-description">{description}</p>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[hsl(var(--border))] pt-4">
             <p className="flex items-start gap-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]">

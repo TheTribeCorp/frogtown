@@ -4,11 +4,13 @@ import { createHmac, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { after, before, test } from "node:test";
 import pg from "pg";
+import webPush from "web-push";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const { Client } = pg;
 const testSecret = "swamp-auth-regression-only-local-test-key-not-a-real-secret";
+const testVapidKeys = webPush.generateVAPIDKeys();
 const walletA = "r123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const walletB = "r987654321ZYXWVUTSRQPNMLKJHGFEDCBA";
 const apiDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -139,6 +141,8 @@ before(async () => {
       NODE_ENV: "test",
       PORT: String(port),
       SESSION_SECRET: testSecret,
+      FROGTOWN_VAPID_PUBLIC_KEY: testVapidKeys.publicKey,
+      FROGTOWN_VAPID_PRIVATE_KEY: testVapidKeys.privateKey,
       FROGTOWN_MODERATOR_WALLETS: walletB,
       VERCEL: "1",
     },
@@ -1455,4 +1459,67 @@ test("the first 100-point balance earns the permanent Frog badge", async () => {
   });
   assert.equal(flip.status, 200);
   assert.equal((await flip.json()).frogBadgeEarned, true);
+});
+
+test("browser push subscriptions are configured, wallet-scoped, and reject unsafe endpoints", async () => {
+  const configResponse = await request("/api/push/vapid-public-key");
+  assert.equal(configResponse.status, 200);
+  const config = await configResponse.json();
+  assert.equal(config.enabled, true);
+  assert.equal(config.publicKey, testVapidKeys.publicKey);
+
+  const subscription = {
+    endpoint: `https://fcm.googleapis.com/fcm/send/${randomUUID()}`,
+    keys: { p256dh: "a".repeat(80), auth: "b".repeat(22) },
+  };
+  const unauthenticated = await request("/api/push/subscriptions", {
+    method: "POST",
+    body: subscription,
+  });
+  assert.equal(unauthenticated.status, 401);
+
+  const unsafeEndpoint = await request("/api/push/subscriptions", {
+    method: "POST",
+    cookie: sessionCookie(walletA),
+    body: { ...subscription, endpoint: "https://127.0.0.1/admin" },
+  });
+  assert.equal(unsafeEndpoint.status, 400);
+
+  const registered = await request("/api/push/subscriptions", {
+    method: "POST",
+    cookie: sessionCookie(walletA),
+    body: subscription,
+  });
+  assert.equal(registered.status, 201);
+
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    const afterRegistration = await client.query(
+      "SELECT wallet_address FROM swamp_push_subscriptions WHERE endpoint = $1",
+      [subscription.endpoint],
+    );
+    assert.equal(afterRegistration.rows[0]?.wallet_address, walletA);
+
+    const wrongWalletDelete = await request("/api/push/subscriptions", {
+      method: "DELETE",
+      cookie: sessionCookie(walletB),
+      body: { endpoint: subscription.endpoint },
+    });
+    assert.equal(wrongWalletDelete.status, 204);
+    const afterWrongWalletDelete = await client.query(
+      "SELECT wallet_address FROM swamp_push_subscriptions WHERE endpoint = $1",
+      [subscription.endpoint],
+    );
+    assert.equal(afterWrongWalletDelete.rows[0]?.wallet_address, walletA);
+  } finally {
+    await client.end();
+  }
+
+  const removed = await request("/api/push/subscriptions", {
+    method: "DELETE",
+    cookie: sessionCookie(walletA),
+    body: { endpoint: subscription.endpoint },
+  });
+  assert.equal(removed.status, 204);
 });
