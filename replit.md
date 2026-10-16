@@ -35,6 +35,7 @@ SWAMP is a wallet-native XRPL chat platform where Xaman-connected wallet address
 - Message bodies are encrypted end-to-end on the sender's device; the API stores ciphertext and does not decrypt it. `SESSION_SECRET` signs wallet session cookies, while Vercel Preview uses the separate `PREVIEW_SESSION_SECRET`.
 - Group history is automatically re-encrypted on an existing member's device for a newcomer; the server stores only ciphertext addressed to that recipient. Apply `lib/db/migrations/0001_group_message_history_shares.sql` to external Neon databases before deploying this feature.
 - The frontend uses generated OpenAPI hooks so chat and wallet polling stay aligned with the server contract.
+- Background message alerts use Web Push. Keep notification payloads generic (never include message plaintext), keep the VAPID private key in deployment secrets, and preserve the VAPID key pair across deployments; rotating it requires devices to subscribe again. External Neon requires `lib/db/migrations/0003_browser_push_subscriptions.sql`.
 
 ## Product
 
