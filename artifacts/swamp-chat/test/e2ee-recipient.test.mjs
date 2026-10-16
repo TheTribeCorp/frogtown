@@ -80,7 +80,58 @@ test('only a message recipient can decrypt its recipient-only ciphertext', async
       outsider.identity,
       members,
     ),
-    'This message was sent before this wallet joined the room.',
+    'This message was not encrypted for this device.',
+  );
+});
+
+test('group messages can be encrypted for key-ready members while omitting members without device keys', async () => {
+  const sender = await createIdentity();
+  const readyMember = await createIdentity();
+  const keylessMember = await createIdentity();
+  const members = [
+    { walletAddress: senderAddress, publicKey: sender.publicKey },
+    { walletAddress: recipientAddress, publicKey: readyMember.publicKey },
+    { walletAddress: outsiderAddress, publicKey: null },
+  ];
+  const plaintext = 'the room is ready to talk';
+  const encryptedBody = await encryptForConversation(
+    plaintext,
+    conversationId,
+    senderAddress,
+    sender.identity,
+    members,
+    true,
+  );
+  const envelope = JSON.parse(
+    new TextDecoder().decode(Buffer.from(encryptedBody.slice('e2ee:v1:'.length), 'base64url')),
+  );
+  assert.deepEqual(Object.keys(envelope.entries).sort(), [senderAddress, recipientAddress].sort());
+  assert.equal(
+    await decryptForConversation(
+      encryptedBody,
+      conversationId,
+      senderAddress,
+      recipientAddress,
+      readyMember.identity,
+      members,
+    ),
+    plaintext,
+  );
+  assert.equal(
+    await decryptForConversation(
+      encryptedBody,
+      conversationId,
+      senderAddress,
+      outsiderAddress,
+      keylessMember.identity,
+      members,
+    ),
+    'This message was not encrypted for this device.',
+  );
+  await assert.rejects(
+    encryptForConversation(plaintext, conversationId, senderAddress, sender.identity, members),
+    /Every member must connect/,
+    'one-to-one/default encryption must continue rejecting a missing member key',
   );
 });
 

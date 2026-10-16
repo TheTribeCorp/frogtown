@@ -1109,6 +1109,15 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
       return;
     }
 
+    const [conversation] = await db
+      .select({ type: conversationsTable.type })
+      .from(conversationsTable)
+      .where(eq(conversationsTable.id, conversationId))
+      .limit(1);
+    if (!conversation) {
+      res.status(404).json({ error: "Conversation not found." });
+      return;
+    }
     const memberships = await db
       .select({ walletAddress: conversationMembersTable.walletAddress })
       .from(conversationMembersTable)
@@ -1117,15 +1126,26 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
       res.status(403).json({ error: "You are not a member of this conversation." });
       return;
     }
-    if (!hasValidRecipientEnvelope(input.body, memberships.map((member) => member.walletAddress))) {
-      res.status(400).json({ error: "Encrypted message recipients must match the conversation members." });
+    const recipientWallets = conversation.type === "group"
+      ? (await db
+        .select({ walletAddress: conversationMembersTable.walletAddress })
+        .from(conversationMembersTable)
+        .innerJoin(walletKeysTable, eq(walletKeysTable.walletAddress, conversationMembersTable.walletAddress))
+        .where(eq(conversationMembersTable.conversationId, conversationId)))
+        .map((member) => member.walletAddress)
+      : memberships.map((member) => member.walletAddress);
+    if (!recipientWallets.includes(input.senderAddress)) {
+      res.status(403).json({ error: "Register this device’s encryption key before sending to the room." });
       return;
     }
-    const [conversation] = await db
-      .select({ type: conversationsTable.type })
-      .from(conversationsTable)
-      .where(eq(conversationsTable.id, conversationId))
-      .limit(1);
+    if (!hasValidRecipientEnvelope(input.body, recipientWallets)) {
+      res.status(400).json({
+        error: conversation.type === "group"
+          ? "Encrypted message recipients must match the group members with registered encryption keys."
+          : "Encrypted message recipients must match the conversation members.",
+      });
+      return;
+    }
 
     const message = {
       id: input.messageId,

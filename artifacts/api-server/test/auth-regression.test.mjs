@@ -49,6 +49,23 @@ function recipientEnvelope(walletAddresses) {
   return `e2ee:v1:${Buffer.from(JSON.stringify({ version: 1, entries })).toString("base64url")}`;
 }
 
+async function registerWalletKey(walletAddress) {
+  const publicKey = JSON.stringify({
+    kty: "EC",
+    crv: "P-256",
+    x: Buffer.alloc(32, 1).toString("base64url"),
+    y: Buffer.alloc(32, 2).toString("base64url"),
+    ext: true,
+    key_ops: [],
+  });
+  const response = await request("/api/wallet/keys", {
+    method: "PUT",
+    cookie: sessionCookie(walletAddress),
+    body: { publicKey },
+  });
+  assert.ok([200, 201].includes(response.status), `wallet key registration should succeed, got ${response.status}`);
+}
+
 async function request(pathname, { method = "GET", cookie, body, origin } = {}) {
   const headers = {};
   if (cookie) headers.cookie = cookie;
@@ -379,10 +396,64 @@ test("only current conversation members can fetch messages and keys, and message
   assert.equal(leakedEnvelope.status, 400, "the API must reject envelopes addressed to non-members");
 });
 
+test("group messages reach registered-key members without waiting for keyless members", async () => {
+  const sender = randomWalletAddress();
+  const keylessMember = randomWalletAddress();
+  await registerWalletKey(sender);
+  const groupResponse = await request("/api/groups", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { name: `Key-ready room ${randomUUID()}`, description: "", creatorAddress: sender },
+  });
+  assert.equal(groupResponse.status, 201);
+  const group = await groupResponse.json();
+  const joinResponse = await request(`/api/groups/${group.id}/join`, {
+    method: "POST",
+    cookie: sessionCookie(keylessMember),
+    body: { walletAddress: keylessMember },
+  });
+  assert.equal(joinResponse.status, 200);
+
+  const partialRecipientSend = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: {
+      senderAddress: sender,
+      messageId: randomUUID(),
+      body: recipientEnvelope([sender]),
+    },
+  });
+  assert.equal(partialRecipientSend.status, 201, "a keyless group member must not block sending to key-ready recipients");
+
+  const incorrectlyIncludedKeylessMember = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: {
+      senderAddress: sender,
+      messageId: randomUUID(),
+      body: recipientEnvelope([sender, keylessMember]),
+    },
+  });
+  assert.equal(incorrectlyIncludedKeylessMember.status, 400, "the server must reject envelopes including unregistered keys");
+
+  await registerWalletKey(keylessMember);
+  const fullyEncryptedSend = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: {
+      senderAddress: sender,
+      messageId: randomUUID(),
+      body: recipientEnvelope([sender, keylessMember]),
+    },
+  });
+  assert.equal(fullyEncryptedSend.status, 201, "new sends should include the member after their key is registered");
+});
+
 test("group history shares are limited to new members and remain recipient-only", async () => {
   const owner = randomWalletAddress();
   const lateJoiner = randomWalletAddress();
   const outsider = randomWalletAddress();
+  await registerWalletKey(owner);
   const publicKey = JSON.stringify({
     kty: "EC",
     crv: "P-256",
@@ -516,6 +587,8 @@ test("message events reach private-chat and group recipients with sender metadat
     });
     assert.equal(joinResponse.status, 200);
 
+    await registerWalletKey(walletA);
+    await registerWalletKey(walletB);
     const groupMessageId = randomUUID();
     const groupMessageResponse = await request(`/api/conversations/${group.conversationId}/messages`, {
       method: "POST",
@@ -830,6 +903,7 @@ test("daily quests, points, and coin flips are authenticated, idempotent, and se
   });
   assert.equal(groupResponse.status, 201);
   const group = await groupResponse.json();
+  await registerWalletKey(wallet);
   const messageId = randomUUID();
   const groupMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
     method: "POST",

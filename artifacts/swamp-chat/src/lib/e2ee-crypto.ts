@@ -67,13 +67,15 @@ export async function encryptForConversation(
   senderAddress: string,
   identity: IdentityCryptoKey,
   members: ConversationPublicKey[],
+  allowMissingMemberKeys = false,
 ): Promise<string> {
-  if (members.some((member) => !member.publicKey)) {
+  if (!allowMissingMemberKeys && members.some((member) => !member.publicKey)) {
     throw new Error('Every member must connect Frogtown on a device with an encryption key before this room can receive encrypted messages.');
   }
+  const recipients = members.filter((member): member is ConversationPublicKey & { publicKey: string } => Boolean(member.publicKey));
   const entries: Record<string, CipherEntry> = {};
-  for (const member of members) {
-    const publicJwk = JSON.parse(member.publicKey!) as JsonWebKey;
+  for (const member of recipients) {
+    const publicJwk = JSON.parse(member.publicKey) as JsonWebKey;
     const key = await deriveConversationKey(
       identity.privateKey,
       publicJwk,
@@ -109,7 +111,7 @@ export async function decryptForConversation(
     throw new Error('This encrypted message has an unsupported format.');
   }
   const entry = envelope.entries[recipientAddress];
-  if (!entry) return 'This message was sent before this wallet joined the room.';
+  if (!entry) return 'This message was not encrypted for this device.';
   const senderKey = members.find((member) => member.walletAddress === senderAddress)?.publicKey;
   if (!senderKey) throw new Error('The sender’s public encryption key is unavailable.');
   const key = await deriveConversationKey(
