@@ -48,7 +48,9 @@ import {
 const router: IRouter = Router();
 
 let groupSeedPromise: Promise<void> | undefined;
-const AUTH_COOKIE = "swamp_session";
+// A cookie-name version bump invalidates stateless sessions without rotating
+// environment secrets. Existing browsers must connect their wallet again.
+const AUTH_COOKIE = "swamp_session_v2";
 const AUTH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const isWalletAddress = (value: string) => /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(value);

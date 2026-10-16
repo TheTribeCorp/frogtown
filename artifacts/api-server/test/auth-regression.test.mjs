@@ -31,7 +31,7 @@ async function freePort() {
 function sessionCookie(walletAddress, expiresAt = Date.now() + 60_000, secret = testSecret) {
   const payload = Buffer.from(JSON.stringify({ walletAddress, expiresAt })).toString("base64url");
   const signature = createHmac("sha256", secret).update(payload).digest("base64url");
-  return `swamp_session=${payload}.${signature}`;
+  return `swamp_session_v2=${payload}.${signature}`;
 }
 
 function randomWalletAddress() {
@@ -210,7 +210,8 @@ test("preview deployments use a separate session signing secret", async () => {
 test("wallet authentication and ownership guards reject unauthenticated or mismatched callers", async () => {
   const invalidSessions = [
     undefined,
-    "swamp_session=not-a-signed-session",
+    "swamp_session_v2=not-a-signed-session",
+    sessionCookie(walletA).replace("swamp_session_v2=", "swamp_session="),
     sessionCookie(walletA, Date.now() - 1),
   ];
   for (const cookie of invalidSessions) {
