@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --color-background: hsl(var(--background));
@@ -28,6 +29,7 @@
 }
 
 :root {
+  color-scheme: light;
   --background: 140 25% 97%;
   --foreground: 147 28% 12%;
   --card: 0 0% 100%;
@@ -53,6 +55,30 @@
   --radius: 0.7rem;
 }
 
+.dark {
+  color-scheme: dark;
+  --background: 148 27% 8%;
+  --foreground: 140 20% 94%;
+  --card: 149 23% 12%;
+  --card-foreground: 140 20% 94%;
+  --border: 146 18% 24%;
+  --input: 146 18% 22%;
+  --ring: 145 52% 58%;
+  --primary: 145 50% 55%;
+  --primary-foreground: 150 35% 9%;
+  --secondary: 355 63% 49%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 146 19% 16%;
+  --muted-foreground: 140 12% 68%;
+  --accent: 350 62% 55%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 62% 58%;
+  --destructive-foreground: 0 0% 100%;
+  --sidebar: 150 34% 7%;
+  --sidebar-foreground: 0 0% 96%;
+  --sidebar-accent: 2 90% 72%;
+}
+
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; }
 body {
@@ -61,6 +87,7 @@ body {
   color: hsl(var(--foreground));
   font-family: var(--app-font-sans);
   -webkit-font-smoothing: antialiased;
+  transition: background-color .18s ease, color .18s ease;
 }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -141,6 +168,29 @@ button { cursor: pointer; }
   color: var(--ft-ink);
   background: #f4f4e9;
 }
+.dark .ft-entry {
+  --ft-forest: #102b1d;
+  --ft-deep: #091c12;
+  --ft-paper: #13241a;
+  --ft-ink: #e9f2e7;
+  --ft-muted: #adbaac;
+  background: #09130d;
+}
+.dark .ft-entry-access { background: var(--ft-paper); }
+.dark .ft-entry-access-copy,
+.dark .ft-entry-access-foot,
+.dark .ft-entry-open-access { color: var(--ft-muted); }
+.dark .ft-entry-overline { color: #a7b9a7; }
+.dark .ft-entry-help-link { color: #b3d6b5; }
+.dark .ft-entry-welcome { color: #c0e2b6; background: #1d3927; }
+.dark .ft-entry-connect-card {
+  border-color: #345440;
+  background: #192d20;
+  box-shadow: 0 13px 34px rgba(0, 0, 0, .24);
+}
+.dark .ft-entry-connect-intro span,
+.dark .ft-entry-promise-list { color: #b2c0b2; }
+.dark .ft-entry-promise { border-color: #304838; }
 .ft-entry * { box-sizing: border-box; }
 .ft-entry-shell {
   width: min(100%, 1540px);

@@ -80,6 +80,7 @@ import { EncryptionRecoveryPanel } from '@/components/encryption-recovery';
 import { TimelinePage } from '@/components/timeline-page';
 import { DailyQuestsPage } from '@/components/daily-quests-page';
 import { HermitTick } from '@/components/hermit-tick';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { notifyIncomingMessage } from '@/lib/browser-notifications';
 import {
   conversationSafetyCode,
@@ -327,8 +328,9 @@ function Header({ title, eyebrow, onMenu }: { title: string; eyebrow: string; on
           <h1 className="mt-0.5 text-xl font-semibold tracking-[-.04em] md:text-2xl" data-testid="text-page-title">{title}</h1>
         </div>
       </div>
-      <div className="hidden items-center gap-2 sm:flex">
-        <span className="flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--card)/.6)] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))]"><span className="size-1.5 rounded-full bg-[hsl(var(--primary))] pulse-dot" /> XRPL mainnet</span>
+      <div className="flex items-center gap-2">
+        <ThemeToggle />
+        <span className="hidden items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--card)/.6)] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] sm:flex"><span className="size-1.5 rounded-full bg-[hsl(var(--primary))] pulse-dot" /> XRPL mainnet</span>
       </div>
     </header>
   );
@@ -466,7 +468,10 @@ function WalletEntry() {
         <section className="ft-entry-access" aria-labelledby="frogtown-entry-title">
           <div className="ft-entry-access-top">
             <span className="ft-entry-overline">YOUR FRONT DOOR</span>
-            <a className="ft-entry-help-link" href="#frogtown-entry-promises">How it works <span aria-hidden="true">↗</span></a>
+            <div className="flex items-center gap-3">
+              <ThemeToggle />
+              <a className="ft-entry-help-link" href="#frogtown-entry-promises">How it works <span aria-hidden="true">↗</span></a>
+            </div>
           </div>
           <div className="ft-entry-access-body">
             <div className="ft-entry-welcome"><span /> Welcome in</div>

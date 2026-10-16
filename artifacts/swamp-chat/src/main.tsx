@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import { ThemeProvider } from 'next-themes';
 
 import App from './App';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -11,7 +12,9 @@ createRoot(document.getElementById('root')!, {
     console.error(error, errorInfo.componentStack);
   },
 }).render(
-  <ErrorBoundary>
-    <App />
-  </ErrorBoundary>,
+  <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="frogtown-theme">
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  </ThemeProvider>,
 );
