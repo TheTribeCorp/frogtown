@@ -8,13 +8,15 @@ export function isWebPushConfigured(): boolean {
   return Boolean(process.env.FROGTOWN_VAPID_PUBLIC_KEY && process.env.FROGTOWN_VAPID_PRIVATE_KEY);
 }
 
-function configureWebPush(): boolean {
+function configureWebPush(subject: string): boolean {
   const publicKey = process.env.FROGTOWN_VAPID_PUBLIC_KEY;
   const privateKey = process.env.FROGTOWN_VAPID_PRIVATE_KEY;
   if (!publicKey || !privateKey) return false;
   try {
+    const parsedSubject = new URL(subject);
+    if (parsedSubject.protocol !== "https:" && parsedSubject.protocol !== "mailto:") return false;
     webPush.setVapidDetails(
-      process.env.FROGTOWN_VAPID_SUBJECT || "https://frogtown-sooty.vercel.app",
+      process.env.FROGTOWN_VAPID_SUBJECT || subject,
       publicKey,
       privateKey,
     );
@@ -30,8 +32,9 @@ export async function sendNewMessagePush(
   senderAddress: string,
   conversationId: string,
   messageId: string,
+  requestSubject: string,
 ): Promise<void> {
-  if (!configureWebPush()) return;
+  if (!configureWebPush(requestSubject)) return;
   const recipients = [...new Set(recipientWallets.filter((wallet) => wallet !== senderAddress))];
   if (recipients.length === 0) return;
 

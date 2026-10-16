@@ -1893,6 +1893,9 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
         input.senderAddress,
         conversationId,
         outcome.message.id,
+        req.get("origin")?.startsWith("https://")
+          ? req.get("origin")!
+          : `https://${req.get("host") ?? "localhost"}`,
       );
     }
     const readState = await db
