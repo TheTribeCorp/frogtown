@@ -718,31 +718,60 @@ router.post("/conversations", async (req, res) => {
       return;
     }
 
-    const memberships = await db
-      .select()
+    const requestedParticipants = new Set([input.walletAddress, input.fromWalletAddress]);
+    const sharedMemberships = await db
+      .select({
+        conversationId: conversationMembersTable.conversationId,
+        walletAddress: conversationMembersTable.walletAddress,
+      })
       .from(conversationMembersTable)
-      .where(
-        and(
-          inArray(conversationMembersTable.walletAddress, [input.walletAddress, input.fromWalletAddress]),
-        ),
-      );
-    const existingIds = new Map<string, number>();
-    for (const membership of memberships) {
-      existingIds.set(
-        membership.conversationId,
-        (existingIds.get(membership.conversationId) ?? 0) + 1,
-      );
+      .where(inArray(conversationMembersTable.walletAddress, [...requestedParticipants]));
+    const sharedWalletsByConversation = new Map<string, Set<string>>();
+    for (const membership of sharedMemberships) {
+      const wallets = sharedWalletsByConversation.get(membership.conversationId) ?? new Set<string>();
+      wallets.add(membership.walletAddress);
+      sharedWalletsByConversation.set(membership.conversationId, wallets);
     }
-    const existingId = [...existingIds.entries()].find(([, count]) => count === 2)?.[0];
-    if (existingId) {
-      const existing = await db
+    const sharedConversationIds = [...sharedWalletsByConversation.entries()]
+      .filter(([, wallets]) => wallets.size === requestedParticipants.size)
+      .map(([conversationId]) => conversationId);
+
+    if (sharedConversationIds.length > 0) {
+      const directCandidates = await db
         .select()
         .from(conversationsTable)
-        .where(eq(conversationsTable.id, existingId))
-        .limit(1);
-      if (existing[0]) {
-        res.status(201).json(serializeConversation(existing[0]));
-        return;
+        .where(and(
+          eq(conversationsTable.type, "direct"),
+          inArray(conversationsTable.id, sharedConversationIds),
+        ));
+      if (directCandidates.length > 0) {
+        const candidateMemberships = await db
+          .select({
+            conversationId: conversationMembersTable.conversationId,
+            walletAddress: conversationMembersTable.walletAddress,
+          })
+          .from(conversationMembersTable)
+          .where(inArray(
+            conversationMembersTable.conversationId,
+            directCandidates.map((conversation) => conversation.id),
+          ));
+        const membersByConversation = new Map<string, string[]>();
+        for (const membership of candidateMemberships) {
+          const wallets = membersByConversation.get(membership.conversationId) ?? [];
+          wallets.push(membership.walletAddress);
+          membersByConversation.set(membership.conversationId, wallets);
+        }
+        const existingDirect = directCandidates.find((conversation) => {
+          const wallets = membersByConversation.get(conversation.id) ?? [];
+          const uniqueWallets = new Set(wallets);
+          return wallets.length === 2
+            && uniqueWallets.size === 2
+            && [...requestedParticipants].every((wallet) => uniqueWallets.has(wallet));
+        });
+        if (existingDirect) {
+          res.status(201).json(serializeConversation(existingDirect));
+          return;
+        }
       }
     }
 

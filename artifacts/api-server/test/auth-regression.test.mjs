@@ -396,6 +396,65 @@ test("only current conversation members can fetch messages and keys, and message
   assert.equal(leakedEnvelope.status, 400, "the API must reject envelopes addressed to non-members");
 });
 
+test("starting a private chat never reuses a shared group conversation", async () => {
+  const sender = randomWalletAddress();
+  const recipient = randomWalletAddress();
+  const groupObserver = randomWalletAddress();
+  await Promise.all([sender, recipient, groupObserver].map(registerWalletKey));
+
+  const groupResponse = await request("/api/groups", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { name: `Private chat isolation ${randomUUID()}`, description: "", creatorAddress: sender },
+  });
+  assert.equal(groupResponse.status, 201);
+  const group = await groupResponse.json();
+
+  for (const walletAddress of [recipient, groupObserver]) {
+    const joined = await request(`/api/groups/${group.id}/join`, {
+      method: "POST",
+      cookie: sessionCookie(walletAddress),
+      body: { walletAddress },
+    });
+    assert.equal(joined.status, 200);
+  }
+
+  const directResponse = await request("/api/conversations", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { walletAddress: recipient, fromWalletAddress: sender },
+  });
+  assert.equal(directResponse.status, 201);
+  const directConversation = await directResponse.json();
+  assert.equal(directConversation.type, "direct");
+  assert.notEqual(directConversation.id, group.conversationId);
+
+  const messageId = randomUUID();
+  const send = await request(`/api/conversations/${directConversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: {
+      senderAddress: sender,
+      messageId,
+      body: recipientEnvelope([sender, recipient]),
+    },
+  });
+  assert.equal(send.status, 201);
+
+  const recipientMessages = await request(
+    `/api/conversations/${directConversation.id}/messages?walletAddress=${recipient}`,
+    { cookie: sessionCookie(recipient) },
+  );
+  assert.equal(recipientMessages.status, 200);
+  assert.ok((await recipientMessages.json()).some((message) => message.id === messageId));
+
+  const groupObserverMessages = await request(
+    `/api/conversations/${directConversation.id}/messages?walletAddress=${groupObserver}`,
+    { cookie: sessionCookie(groupObserver) },
+  );
+  assert.equal(groupObserverMessages.status, 403);
+});
+
 test("group messages reach registered-key members without waiting for keyless members", async () => {
   const sender = randomWalletAddress();
   const keylessMember = randomWalletAddress();
