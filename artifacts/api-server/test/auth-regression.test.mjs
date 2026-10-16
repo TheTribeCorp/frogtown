@@ -78,10 +78,12 @@ async function request(pathname, { method = "GET", cookie, body, origin } = {}) 
   });
 }
 
-async function openMessageEvents(walletAddress) {
+async function openMessageEvents(walletAddress, lastEventId) {
   const controller = new AbortController();
+  const headers = { cookie: sessionCookie(walletAddress) };
+  if (lastEventId) headers["last-event-id"] = lastEventId;
   const response = await fetch(`${baseUrl}/api/events`, {
-    headers: { cookie: sessionCookie(walletAddress) },
+    headers,
     signal: controller.signal,
   });
   assert.equal(response.status, 200);
@@ -95,16 +97,20 @@ async function openMessageEvents(walletAddress) {
       const timeout = setTimeout(() => controller.abort(), 5_000);
       try {
         while (true) {
-          const start = buffer.indexOf("data: ");
-          if (start >= 0) {
-            const end = buffer.indexOf("\n", start);
-            if (end >= 0) {
-              const data = buffer.slice(start + 6, end).trim();
-              buffer = buffer.slice(end + 1);
-              const event = JSON.parse(data);
-              if (event.type !== "ready") return event;
-              continue;
-            }
+          const frameEnd = buffer.indexOf("\n\n");
+          if (frameEnd >= 0) {
+            const frame = buffer.slice(0, frameEnd);
+            buffer = buffer.slice(frameEnd + 2);
+            const lines = frame.split(/\r?\n/);
+            const data = lines
+              .filter((line) => line.startsWith("data: "))
+              .map((line) => line.slice(6))
+              .join("\n");
+            if (!data) continue;
+            const lastEventId = lines.find((line) => line.startsWith("id: "))?.slice(4);
+            const event = JSON.parse(data);
+            if (event.type !== "ready") return { ...event, lastEventId };
+            continue;
           }
           const { value, done } = await reader.read();
           if (done) throw new Error("Event stream closed before the message notification arrived.");
@@ -134,6 +140,7 @@ before(async () => {
       PORT: String(port),
       SESSION_SECRET: testSecret,
       FROGTOWN_MODERATOR_WALLETS: walletB,
+      VERCEL: "1",
     },
     stdio: "ignore",
   });
@@ -879,6 +886,89 @@ test("message events reach private-chat and group recipients with sender metadat
   } finally {
     stream.close();
   }
+});
+
+test("Vercel message streams resume after disconnect and recover late same-timestamp commits", async () => {
+  const sender = randomWalletAddress();
+  const recipient = randomWalletAddress();
+  const groupResponse = await request("/api/groups", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { name: `Resume test ${randomUUID()}`, description: "", creatorAddress: sender },
+  });
+  assert.equal(groupResponse.status, 201);
+  const group = await groupResponse.json();
+  const joinResponse = await request(`/api/groups/${group.id}/join`, {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+    body: { walletAddress: recipient },
+  });
+  assert.equal(joinResponse.status, 200);
+  await registerWalletKey(sender);
+  await registerWalletKey(recipient);
+  const conversationId = group.conversationId;
+  const firstId = `f${randomUUID().slice(1)}`;
+  const lateId = `0${randomUUID().slice(1)}`;
+  const firstBody = recipientEnvelope([sender, recipient]);
+  const firstStream = await openMessageEvents(recipient);
+  let resumeCursor;
+
+  try {
+    const firstResponse = await request(`/api/conversations/${conversationId}/messages`, {
+      method: "POST",
+      cookie: sessionCookie(sender),
+      body: { senderAddress: sender, messageId: firstId, body: firstBody },
+    });
+    assert.equal(firstResponse.status, 201);
+    const firstMessage = await firstResponse.json();
+    const firstEvent = await firstStream.nextEvent();
+    assert.equal(firstEvent.messageId, firstId);
+    assert.equal(typeof firstEvent.lastEventId, "string");
+    resumeCursor = firstEvent.lastEventId;
+
+    const retry = await request(`/api/conversations/${conversationId}/messages`, {
+      method: "POST",
+      cookie: sessionCookie(sender),
+      body: { senderAddress: sender, messageId: firstId, body: firstBody },
+    });
+    assert.equal(retry.status, 200, "retrying the exact encrypted payload should return the original message");
+
+    const lateMessage = await request(`/api/conversations/${conversationId}/messages`, {
+      method: "POST",
+      cookie: sessionCookie(sender),
+      body: { senderAddress: sender, messageId: lateId, body: recipientEnvelope([sender, recipient]) },
+    });
+    assert.equal(lateMessage.status, 201);
+
+    const database = new Client({ connectionString: process.env.DATABASE_URL });
+    await database.connect();
+    try {
+      await database.query("UPDATE swamp_messages SET sent_at = $1 WHERE id = $2", [firstMessage.sentAt, lateId]);
+    } finally {
+      await database.end();
+    }
+  } finally {
+    firstStream.close();
+  }
+
+  const resumedStream = await openMessageEvents(recipient, resumeCursor);
+  try {
+    const recovered = await resumedStream.nextEvent();
+    assert.equal(recovered.type, "message.created");
+    assert.equal(recovered.messageId, lateId);
+    assert.equal(recovered.conversationId, conversationId);
+  } finally {
+    resumedStream.close();
+  }
+
+  const history = await request(
+    `/api/conversations/${conversationId}/messages?walletAddress=${recipient}`,
+    { cookie: sessionCookie(recipient) },
+  );
+  assert.equal(history.status, 200);
+  const ids = (await history.json()).map((message) => message.id);
+  assert.equal(ids.filter((id) => id === firstId).length, 1);
+  assert.equal(ids.filter((id) => id === lateId).length, 1);
 });
 
 test("timeline paging rejects invalid cursors and reports require an existing subject", async () => {

@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   AcceptConversationRequestParams,
@@ -59,6 +59,7 @@ type EventCursor = {
   messageAt: string;
   messageId: string;
   readAt: string;
+  readConversationId: string;
 };
 
 function decodeEventCursor(value: string | undefined): EventCursor | null {
@@ -70,7 +71,8 @@ function decodeEventCursor(value: string | undefined): EventCursor | null {
       !Number.isFinite(Date.parse(parsed.messageAt)) ||
       typeof parsed.messageId !== "string" ||
       typeof parsed.readAt !== "string" ||
-      !Number.isFinite(Date.parse(parsed.readAt))
+      !Number.isFinite(Date.parse(parsed.readAt)) ||
+      (parsed.readConversationId !== undefined && typeof parsed.readConversationId !== "string")
     ) {
       return null;
     }
@@ -78,6 +80,7 @@ function decodeEventCursor(value: string | undefined): EventCursor | null {
       messageAt: parsed.messageAt,
       messageId: parsed.messageId,
       readAt: parsed.readAt,
+      readConversationId: parsed.readConversationId ?? "",
     };
   } catch {
     return null;
@@ -586,11 +589,28 @@ router.get("/events", (req, res): void => {
   res.write("retry: 2000\n\n");
 
   if (process.env.VERCEL) {
-    const now = new Date().toISOString();
+    const now = new Date();
+    const hasResumeCursor = Boolean(req.get("Last-Event-ID"));
     const cursor = decodeEventCursor(req.get("Last-Event-ID")) ?? {
-      messageAt: now,
+      messageAt: now.toISOString(),
       messageId: "",
-      readAt: now,
+      readAt: now.toISOString(),
+      readConversationId: "",
+    };
+    const overlapFloor = hasResumeCursor
+      ? new Date(Date.parse(cursor.messageAt) - 5_000)
+      : new Date(now.getTime() - 5_000);
+    const seenMessageIds = new Set<string>();
+    const seenMessageOrder: string[] = [];
+    const rememberMessage = (messageId: string): boolean => {
+      if (seenMessageIds.has(messageId)) return false;
+      seenMessageIds.add(messageId);
+      seenMessageOrder.push(messageId);
+      if (seenMessageOrder.length > 2_000) {
+        const expiredId = seenMessageOrder.shift();
+        if (expiredId) seenMessageIds.delete(expiredId);
+      }
+      return true;
     };
     let pollInFlight = false;
     let cleanedUp = false;
@@ -605,6 +625,16 @@ router.get("/events", (req, res): void => {
       pollInFlight = true;
       try {
         const messageAt = new Date(cursor.messageAt);
+        const overlapAt = new Date(Math.max(overlapFloor.getTime(), messageAt.getTime() - 5_000));
+        const messageCursorCondition = or(
+          gt(messagesTable.sentAt, messageAt),
+          and(
+            eq(messagesTable.sentAt, messageAt),
+            gt(messagesTable.id, cursor.messageId),
+          ),
+          gte(messagesTable.sentAt, overlapAt),
+        );
+        const knownMessageIds = [...seenMessageIds];
         const messages = await db
           .select({
             id: messagesTable.id,
@@ -626,21 +656,20 @@ router.get("/events", (req, res): void => {
               eq(conversationMembersTable.walletAddress, walletAddress),
             ),
           )
-          .where(
-            or(
-              gt(messagesTable.sentAt, messageAt),
-              and(
-                eq(messagesTable.sentAt, messageAt),
-                gt(messagesTable.id, cursor.messageId),
-              ),
-            ),
-          )
+          .where(knownMessageIds.length > 0
+            ? and(messageCursorCondition, notInArray(messagesTable.id, knownMessageIds))
+            : messageCursorCondition)
           .orderBy(asc(messagesTable.sentAt), asc(messagesTable.id))
           .limit(100);
 
         for (const message of messages) {
-          cursor.messageAt = message.sentAt.toISOString();
-          cursor.messageId = message.id;
+          if (!rememberMessage(message.id)) continue;
+          const sentAt = message.sentAt.getTime();
+          const currentCursorAt = Date.parse(cursor.messageAt);
+          if (sentAt > currentCursorAt || (sentAt === currentCursorAt && message.id > cursor.messageId)) {
+            cursor.messageAt = message.sentAt.toISOString();
+            cursor.messageId = message.id;
+          }
           send({
             type: "message.created",
             conversationId: message.conversationId,
@@ -664,7 +693,13 @@ router.get("/events", (req, res): void => {
             and(
               inArray(conversationMembersTable.conversationId, myConversations),
               ne(conversationMembersTable.walletAddress, walletAddress),
-              gt(conversationMembersTable.lastReadAt, new Date(cursor.readAt)),
+              or(
+                gt(conversationMembersTable.lastReadAt, new Date(cursor.readAt)),
+                and(
+                  eq(conversationMembersTable.lastReadAt, new Date(cursor.readAt)),
+                  gt(conversationMembersTable.conversationId, cursor.readConversationId),
+                ),
+              ),
             ),
           )
           .orderBy(asc(conversationMembersTable.lastReadAt), asc(conversationMembersTable.conversationId))
@@ -672,7 +707,15 @@ router.get("/events", (req, res): void => {
 
         for (const receipt of readReceipts) {
           if (!receipt.lastReadAt) continue;
-          cursor.readAt = receipt.lastReadAt.toISOString();
+          const readAt = receipt.lastReadAt.getTime();
+          const currentReadAt = Date.parse(cursor.readAt);
+          if (
+            readAt > currentReadAt
+            || (readAt === currentReadAt && receipt.conversationId > cursor.readConversationId)
+          ) {
+            cursor.readAt = receipt.lastReadAt.toISOString();
+            cursor.readConversationId = receipt.conversationId;
+          }
           send({ type: "message.read", conversationId: receipt.conversationId });
         }
       } catch (error) {

@@ -689,7 +689,12 @@ function MessagePane({
   const [sendError, setSendError] = useState('');
   const [requestError, setRequestError] = useState('');
   const [encrypting, setEncrypting] = useState(false);
-  const messageAttempt = useRef<{ conversationId: string; body: string; messageId: string } | null>(null);
+  const messageAttempt = useRef<{
+    conversationId: string;
+    body: string;
+    messageId: string;
+    encryptedBody?: string;
+  } | null>(null);
   const [showSafetyCode, setShowSafetyCode] = useState(false);
   const [safetyCode, setSafetyCode] = useState('');
   const [keyChanges, setKeyChanges] = useState<ConversationKeyChange[]>([]);
@@ -1023,32 +1028,35 @@ function MessagePane({
     ) return;
     setSendError('');
     const body = draft.trim();
-    const messageId = messageAttempt.current?.conversationId === conversation.id && messageAttempt.current.body === body
-      ? messageAttempt.current.messageId
-      : crypto.randomUUID();
-    messageAttempt.current = { conversationId: conversation.id, body, messageId };
+    const existingAttempt = messageAttempt.current;
+    const attempt = existingAttempt?.conversationId === conversation.id && existingAttempt.body === body
+      ? existingAttempt
+      : { conversationId: conversation.id, body, messageId: crypto.randomUUID() };
+    messageAttempt.current = attempt;
     setEncrypting(true);
     try {
-      const identity = await getLocalIdentityKey(walletAddress);
-      const encryptedBody = await encryptForConversation(
-        body,
-        conversation.id,
-        walletAddress,
-        identity,
-        keysQuery.data,
-        conversation.type === 'group',
-      );
+      if (!attempt.encryptedBody) {
+        const identity = await getLocalIdentityKey(walletAddress);
+        attempt.encryptedBody = await encryptForConversation(
+          body,
+          conversation.id,
+          walletAddress,
+          identity,
+          keysQuery.data,
+          conversation.type === 'group',
+        );
+      }
       setDraft('');
-      sendMessage.mutate({ conversationId: conversation.id, data: { messageId, senderAddress: walletAddress, body: encryptedBody } }, {
+      sendMessage.mutate({ conversationId: conversation.id, data: { messageId: attempt.messageId, senderAddress: walletAddress, body: attempt.encryptedBody } }, {
         onSuccess: () => {
-          if (messageAttempt.current?.messageId === messageId) messageAttempt.current = null;
+          if (messageAttempt.current?.messageId === attempt.messageId) messageAttempt.current = null;
           client.invalidateQueries({ queryKey: getListConversationMessagesQueryKey(conversation.id, params) });
           client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
           void client.invalidateQueries({ queryKey: getGetGamificationSummaryQueryKey() });
           void client.invalidateQueries({ queryKey: getGetGamificationLeaderboardQueryKey() });
         },
         onError: (error) => {
-          if (messageAttempt.current?.messageId !== messageId) return;
+          if (messageAttempt.current?.messageId !== attempt.messageId) return;
           setDraft(body);
           setSendError(errorMessage(error, 'Could not confirm delivery. Retrying this draft is safe.'));
         },
