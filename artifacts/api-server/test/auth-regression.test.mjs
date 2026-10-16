@@ -1477,6 +1477,8 @@ test("browser push subscriptions are configured, wallet-scoped, and reject unsaf
     body: subscription,
   });
   assert.equal(unauthenticated.status, 401);
+  const unauthenticatedList = await request("/api/push/subscriptions");
+  assert.equal(unauthenticatedList.status, 401);
 
   const unsafeEndpoint = await request("/api/push/subscriptions", {
     method: "POST",
@@ -1492,6 +1494,32 @@ test("browser push subscriptions are configured, wallet-scoped, and reject unsaf
   });
   assert.equal(registered.status, 201);
 
+  const walletADevicesResponse = await request("/api/push/subscriptions", {
+    cookie: sessionCookie(walletA),
+  });
+  assert.equal(walletADevicesResponse.status, 200);
+  const walletADevices = await walletADevicesResponse.json();
+  assert.equal(walletADevices.subscriptions.length, 1);
+  const deviceId = walletADevices.subscriptions[0].id;
+  assert.match(deviceId, /^[a-f0-9]{64}$/);
+  assert.ok(walletADevices.subscriptions[0].createdAt);
+  assert.ok(walletADevices.subscriptions[0].updatedAt);
+  assert.equal(JSON.stringify(walletADevices).includes(subscription.endpoint), false);
+  assert.equal("p256dh" in walletADevices.subscriptions[0], false);
+  assert.equal("auth" in walletADevices.subscriptions[0], false);
+
+  const walletBDevicesResponse = await request("/api/push/subscriptions", {
+    cookie: sessionCookie(walletB),
+  });
+  assert.equal(walletBDevicesResponse.status, 200);
+  assert.deepEqual((await walletBDevicesResponse.json()).subscriptions, []);
+
+  const invalidIdDelete = await request("/api/push/subscriptions/not-a-device-id", {
+    method: "DELETE",
+    cookie: sessionCookie(walletA),
+  });
+  assert.equal(invalidIdDelete.status, 400);
+
   const client = new Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
   try {
@@ -1500,6 +1528,17 @@ test("browser push subscriptions are configured, wallet-scoped, and reject unsaf
       [subscription.endpoint],
     );
     assert.equal(afterRegistration.rows[0]?.wallet_address, walletA);
+
+    const wrongWalletDeviceRevoke = await request(`/api/push/subscriptions/${deviceId}`, {
+      method: "DELETE",
+      cookie: sessionCookie(walletB),
+    });
+    assert.equal(wrongWalletDeviceRevoke.status, 204);
+    const afterWrongWalletDeviceRevoke = await client.query(
+      "SELECT wallet_address FROM swamp_push_subscriptions WHERE endpoint = $1",
+      [subscription.endpoint],
+    );
+    assert.equal(afterWrongWalletDeviceRevoke.rows[0]?.wallet_address, walletA);
 
     const wrongWalletDelete = await request("/api/push/subscriptions", {
       method: "DELETE",
@@ -1512,14 +1551,40 @@ test("browser push subscriptions are configured, wallet-scoped, and reject unsaf
       [subscription.endpoint],
     );
     assert.equal(afterWrongWalletDelete.rows[0]?.wallet_address, walletA);
+
+    const removed = await request(`/api/push/subscriptions/${deviceId}`, {
+      method: "DELETE",
+      cookie: sessionCookie(walletA),
+    });
+    assert.equal(removed.status, 204);
+    const afterRemoval = await client.query(
+      "SELECT endpoint FROM swamp_push_subscriptions WHERE endpoint = $1",
+      [subscription.endpoint],
+    );
+    assert.equal(afterRemoval.rowCount, 0);
+
+    const legacySubscription = {
+      endpoint: `https://fcm.googleapis.com/fcm/send/${randomUUID()}`,
+      keys: { p256dh: "c".repeat(80), auth: "d".repeat(22) },
+    };
+    const legacyRegistered = await request("/api/push/subscriptions", {
+      method: "POST",
+      cookie: sessionCookie(walletA),
+      body: legacySubscription,
+    });
+    assert.equal(legacyRegistered.status, 201);
+    const legacyRemoved = await request("/api/push/subscriptions", {
+      method: "DELETE",
+      cookie: sessionCookie(walletA),
+      body: { endpoint: legacySubscription.endpoint },
+    });
+    assert.equal(legacyRemoved.status, 204);
+    const afterLegacyRemoval = await client.query(
+      "SELECT endpoint FROM swamp_push_subscriptions WHERE endpoint = $1",
+      [legacySubscription.endpoint],
+    );
+    assert.equal(afterLegacyRemoval.rowCount, 0);
   } finally {
     await client.end();
   }
-
-  const removed = await request("/api/push/subscriptions", {
-    method: "DELETE",
-    cookie: sessionCookie(walletA),
-    body: { endpoint: subscription.endpoint },
-  });
-  assert.equal(removed.status, 204);
 });

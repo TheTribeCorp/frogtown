@@ -20,6 +20,8 @@ tags:
     description: Public member timeline posts, likes, and comments
   - name: gamification
     description: Daily quests, points, streaks, and coin flips
+  - name: notifications
+    description: Private management of browser message-alert devices
 paths:
   /healthz:
     get:
@@ -40,6 +42,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /push/subscriptions:
+    get:
+      operationId: listPushSubscriptions
+      tags: [notifications]
+      summary: List notification devices for the signed-in wallet
+      description: Returns opaque identifiers and dates only; push endpoints and encryption keys are never exposed.
+      responses:
+        "200":
+          description: The signed-in wallet's notification devices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushSubscriptionList"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Notification devices could not be loaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /push/subscriptions/{subscriptionId}:
+    delete:
+      operationId: revokePushSubscription
+      tags: [notifications]
+      summary: Revoke a notification device for the signed-in wallet
+      parameters:
+        - $ref: "#/components/parameters/PushSubscriptionId"
+      responses:
+        "204":
+          description: Device revoked, or the identifier did not belong to this wallet
+        "400":
+          description: Invalid notification-device identifier
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Notification device could not be revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /wallet/sessions:
     post:
       operationId: createWalletSession
@@ -1220,6 +1275,13 @@ components:
       schema:
         type: string
         minLength: 25
+    PushSubscriptionId:
+      name: subscriptionId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-f0-9]{64}$"
   schemas:
     HealthStatus:
       type: object
@@ -1240,6 +1302,27 @@ components:
         error:
           type: string
       required: [error]
+    PushSubscriptionDevice:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, createdAt, updatedAt]
+    PushSubscriptionList:
+      type: object
+      properties:
+        subscriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PushSubscriptionDevice"
+      required: [subscriptions]
     WalletSession:
       type: object
       properties:

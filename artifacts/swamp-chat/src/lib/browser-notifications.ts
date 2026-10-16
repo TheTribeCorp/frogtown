@@ -83,6 +83,21 @@ export async function hasActiveBackgroundSubscription(): Promise<boolean> {
   }
 }
 
+export async function getActiveBackgroundSubscriptionId(): Promise<string | null> {
+  try {
+    const registration = await getAppServiceWorkerRegistration();
+    const subscription = await registration?.pushManager.getSubscription();
+    if (!subscription) return null;
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(subscription.endpoint),
+    );
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return null;
+  }
+}
+
 export async function enableBackgroundNotifications(
   walletAddress: string,
 ): Promise<BackgroundNotificationSetup> {

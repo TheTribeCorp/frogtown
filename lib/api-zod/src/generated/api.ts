@@ -19,6 +19,35 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * Returns opaque identifiers and dates only; push endpoints and encryption keys are never exposed.
+ * @summary List notification devices for the signed-in wallet
+ */
+export const listPushSubscriptionsResponseSubscriptionsItemIdRegExp = new RegExp('^[a-f0-9]{64}$');
+
+
+export const ListPushSubscriptionsResponse = zod.object({
+  "subscriptions": zod.array(zod.object({
+  "id": zod.string().regex(listPushSubscriptionsResponseSubscriptionsItemIdRegExp),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Revoke a notification device for the signed-in wallet
+ */
+export const revokePushSubscriptionPathSubscriptionIdRegExp = new RegExp('^[a-f0-9]{64}$');
+
+
+export const RevokePushSubscriptionParams = zod.object({
+  "subscriptionId": zod.coerce.string().regex(revokePushSubscriptionPathSubscriptionIdRegExp)
+})
+
+export const RevokePushSubscriptionResponse = zod.void()
+
+
+/**
  * @summary Create an Xaman wallet sign-in session
  */
 export const CreateWalletSessionResponse = zod.object({

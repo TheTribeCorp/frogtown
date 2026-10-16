@@ -49,6 +49,8 @@ export * from './listTimelineModerationHistoryParams';
 export * from './listTimelinePostsParams';
 export * from './message';
 export * from './messageInput';
+export * from './pushSubscriptionDevice';
+export * from './pushSubscriptionList';
 export * from './readReceipt';
 export * from './readReceiptInput';
 export * from './timelineComment';

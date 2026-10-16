@@ -54,6 +54,7 @@ import type {
   ListTimelinePostsParams,
   Message,
   MessageInput,
+  PushSubscriptionList,
   ReadReceipt,
   ReadReceiptInput,
   TimelineComment,
@@ -207,6 +208,182 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
 
 
+
+export const getListPushSubscriptionsUrl = () => {
+
+
+
+
+  return `/api/push/subscriptions`
+}
+
+/**
+ * Returns opaque identifiers and dates only; push endpoints and encryption keys are never exposed.
+ * @summary List notification devices for the signed-in wallet
+ */
+export const listPushSubscriptions = async ( options?: Parameters<typeof customFetch>[1]): Promise<PushSubscriptionList> => {
+
+  return customFetch<PushSubscriptionList>(getListPushSubscriptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPushSubscriptionsQueryKey = () => {
+    return [
+    `/api/push/subscriptions`
+    ] as const;
+    }
+
+
+export const getListPushSubscriptionsQueryOptions = <TData = Awaited<ReturnType<typeof listPushSubscriptions>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPushSubscriptions>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPushSubscriptionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPushSubscriptions>>> = ({ signal }) => listPushSubscriptions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPushSubscriptions>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListPushSubscriptionsQueryResult = NonNullable<Awaited<ReturnType<typeof listPushSubscriptions>>>
+export type ListPushSubscriptionsQueryError = ErrorType<ErrorResponse>
+
+
+export function useListPushSubscriptions<TData = Awaited<ReturnType<typeof listPushSubscriptions>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPushSubscriptions>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPushSubscriptions>>,
+          TError,
+          Awaited<ReturnType<typeof listPushSubscriptions>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPushSubscriptions<TData = Awaited<ReturnType<typeof listPushSubscriptions>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPushSubscriptions>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPushSubscriptions>>,
+          TError,
+          Awaited<ReturnType<typeof listPushSubscriptions>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPushSubscriptions<TData = Awaited<ReturnType<typeof listPushSubscriptions>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPushSubscriptions>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List notification devices for the signed-in wallet
+ */
+
+export function useListPushSubscriptions<TData = Awaited<ReturnType<typeof listPushSubscriptions>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPushSubscriptions>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListPushSubscriptionsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRevokePushSubscriptionUrl = (subscriptionId: string,) => {
+
+
+
+
+  return `/api/push/subscriptions/${subscriptionId}`
+}
+
+/**
+ * @summary Revoke a notification device for the signed-in wallet
+ */
+export const revokePushSubscription = async (subscriptionId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRevokePushSubscriptionUrl(subscriptionId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokePushSubscriptionMutationKey = () => ['revokePushSubscription'] as const;
+
+export const getRevokePushSubscriptionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePushSubscription>>, TError,RevokePushSubscriptionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokePushSubscription>>, TError,RevokePushSubscriptionMutationVariables, TContext> => {
+
+const mutationKey = getRevokePushSubscriptionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokePushSubscription>>, RevokePushSubscriptionMutationVariables> = (props) => {
+          const {subscriptionId} = props ?? {};
+
+          return  revokePushSubscription(subscriptionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokePushSubscriptionMutationResult = NonNullable<Awaited<ReturnType<typeof revokePushSubscription>>>
+
+    export type RevokePushSubscriptionMutationError = ErrorType<ErrorResponse>
+    export type RevokePushSubscriptionMutationVariables = {subscriptionId: string}
+
+    /**
+ * @summary Revoke a notification device for the signed-in wallet
+ */
+export const useRevokePushSubscription = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePushSubscription>>, TError,RevokePushSubscriptionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokePushSubscription>>,
+        TError,
+        RevokePushSubscriptionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokePushSubscriptionMutationOptions(options), queryClient);
+    }
 
 export const getCreateWalletSessionUrl = () => {
 

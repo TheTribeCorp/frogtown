@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm";
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   AcceptConversationRequestParams,
   BlockWalletBody,
@@ -25,7 +25,9 @@ import {
   ListConversationHistorySharesParams,
   ListConversationsQueryParams,
   ListGroupsQueryParams,
+  ListPushSubscriptionsResponse,
   RegisterWalletEncryptionKeyBody,
+  RevokePushSubscriptionParams,
   SendMessageBody,
   SendMessageParams,
   UnblockWalletParams,
@@ -113,6 +115,32 @@ router.get("/push/vapid-public-key", (_req, res): void => {
   res.json({ enabled: true, publicKey });
 });
 
+router.get("/push/subscriptions", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  try {
+    const subscriptions = await db
+      .select({
+        endpoint: pushSubscriptionsTable.endpoint,
+        createdAt: pushSubscriptionsTable.createdAt,
+        updatedAt: pushSubscriptionsTable.updatedAt,
+      })
+      .from(pushSubscriptionsTable)
+      .where(eq(pushSubscriptionsTable.walletAddress, walletAddress))
+      .orderBy(desc(pushSubscriptionsTable.updatedAt), desc(pushSubscriptionsTable.createdAt));
+    res.json(ListPushSubscriptionsResponse.parse({
+      subscriptions: subscriptions.map((subscription) => ({
+        id: createHash("sha256").update(subscription.endpoint).digest("hex"),
+        createdAt: subscription.createdAt,
+        updatedAt: subscription.updatedAt,
+      })),
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not list notification devices");
+    res.status(500).json({ error: "Notification devices could not be loaded." });
+  }
+});
+
 router.post("/push/subscriptions", async (req, res): Promise<void> => {
   const walletAddress = requireAuth(req, res);
   if (!walletAddress) return;
@@ -173,6 +201,37 @@ router.delete("/push/subscriptions", async (req, res): Promise<void> => {
     res.status(204).send();
   } catch (error) {
     req.log.error({ err: error }, "Could not remove a browser push subscription");
+    res.status(500).json({ error: "This device could not be removed from notifications." });
+  }
+});
+
+router.delete("/push/subscriptions/:subscriptionId", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const params = RevokePushSubscriptionParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "The notification-device identifier is invalid." });
+    return;
+  }
+  try {
+    const ownedSubscriptions = await db
+      .select({ endpoint: pushSubscriptionsTable.endpoint })
+      .from(pushSubscriptionsTable)
+      .where(eq(pushSubscriptionsTable.walletAddress, walletAddress));
+    const ownedDevice = ownedSubscriptions.find(
+      (subscription) => createHash("sha256").update(subscription.endpoint).digest("hex") === params.data.subscriptionId,
+    );
+    if (ownedDevice) {
+      await db.delete(pushSubscriptionsTable)
+        .where(and(
+          eq(pushSubscriptionsTable.walletAddress, walletAddress),
+          eq(pushSubscriptionsTable.endpoint, ownedDevice.endpoint),
+        ));
+    }
+    // Do not reveal whether an unknown id belongs to another wallet.
+    res.status(204).send();
+  } catch (error) {
+    req.log.error({ err: error }, "Could not revoke a notification device");
     res.status(500).json({ error: "This device could not be removed from notifications." });
   }
 });

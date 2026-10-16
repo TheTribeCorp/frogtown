@@ -33,6 +33,17 @@ export interface ErrorResponse {
   error: string;
 }
 
+export interface PushSubscriptionDevice {
+  /** @pattern ^[a-f0-9]{64}$ */
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PushSubscriptionList {
+  subscriptions: PushSubscriptionDevice[];
+}
+
 export interface WalletSession {
   sessionId: string;
   qrUrl: string;

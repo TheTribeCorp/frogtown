@@ -1,38 +1,66 @@
 import { useEffect, useState } from 'react';
-import { Bell, BellOff, CircleAlert, ShieldCheck } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Bell, BellOff, CircleAlert, ShieldCheck, Trash2 } from 'lucide-react';
+import {
+  getListPushSubscriptionsQueryKey,
+  useListPushSubscriptions,
+  useRevokePushSubscription,
+} from '@workspace/api-client-react';
 import {
   browserNotificationsEnabled,
   backgroundNotificationsConfigured,
   disableBackgroundNotifications,
   enableBackgroundNotifications,
+  getActiveBackgroundSubscriptionId,
   getBrowserNotificationStatus,
   hasActiveBackgroundSubscription,
   type BrowserNotificationStatus,
 } from '@/lib/browser-notifications';
 
+function formatDeviceDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Date unavailable';
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date);
+}
+
 export function BrowserNotificationSettings({ walletAddress }: { walletAddress: string }) {
+  const queryClient = useQueryClient();
   const [permission, setPermission] = useState<BrowserNotificationStatus>(() => getBrowserNotificationStatus());
   const [enabled, setEnabled] = useState(false);
   const [configured, setConfigured] = useState(false);
   const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [currentSubscriptionId, setCurrentSubscriptionId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
+  const subscriptionsQuery = useListPushSubscriptions({
+    query: {
+      enabled: Boolean(walletAddress),
+      queryKey: [...getListPushSubscriptionsQueryKey(), walletAddress],
+      refetchOnWindowFocus: true,
+      staleTime: 30_000,
+    },
+  });
+  const revokeSubscription = useRevokePushSubscription();
 
   useEffect(() => {
     let active = true;
     const currentPermission = getBrowserNotificationStatus();
     setPermission(currentPermission);
+    setCurrentSubscriptionId(null);
     setChecking(true);
     setNotice('');
     void Promise.all([
       backgroundNotificationsConfigured().catch(() => false),
       hasActiveBackgroundSubscription(),
-    ]).then(([pushConfigured, subscriptionActive]) => {
+      getActiveBackgroundSubscriptionId(),
+    ]).then(([pushConfigured, subscriptionActive, activeSubscriptionId]) => {
       if (!active) return;
       setConfigured(pushConfigured);
       setEnabled(currentPermission === 'granted'
         && browserNotificationsEnabled(walletAddress)
         && subscriptionActive);
+      setCurrentSubscriptionId(activeSubscriptionId);
       setChecking(false);
     });
     return () => { active = false; };
@@ -45,6 +73,8 @@ export function BrowserNotificationSettings({ walletAddress }: { walletAddress: 
       try {
         await disableBackgroundNotifications(walletAddress);
         setEnabled(false);
+        setCurrentSubscriptionId(null);
+        await subscriptionsQuery.refetch();
         setNotice('Background message notifications are off for this device.');
       } catch (error) {
         setNotice(error instanceof Error ? error.message : 'This device could not be removed from notifications.');
@@ -61,6 +91,8 @@ export function BrowserNotificationSettings({ walletAddress }: { walletAddress: 
       if (result === 'enabled') {
         setEnabled(true);
         setConfigured(true);
+        setCurrentSubscriptionId(await getActiveBackgroundSubscriptionId());
+        await subscriptionsQuery.refetch();
         setNotice('Background message notifications are on for this wallet on this device.');
       } else if (result === 'not-configured') {
         setConfigured(false);
@@ -77,6 +109,26 @@ export function BrowserNotificationSettings({ walletAddress }: { walletAddress: 
       setNotice(error instanceof Error ? error.message : 'This device could not be registered for notifications.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const revokeDevice = async (subscriptionId: string) => {
+    setNotice('');
+    setRevokingId(subscriptionId);
+    try {
+      if (subscriptionId === currentSubscriptionId) {
+        await disableBackgroundNotifications(walletAddress);
+        setEnabled(false);
+        setCurrentSubscriptionId(null);
+      } else {
+        await revokeSubscription.mutateAsync({ subscriptionId });
+      }
+      await subscriptionsQuery.refetch();
+      setNotice('That device can no longer receive Frogtown message alerts.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'That device could not be removed from notifications.');
+    } finally {
+      setRevokingId(null);
     }
   };
 
@@ -127,6 +179,73 @@ export function BrowserNotificationSettings({ walletAddress }: { walletAddress: 
               {notice}
             </p>
           )}
+          <div className="mt-5 border-t border-[hsl(var(--border))] pt-4" data-testid="notification-devices">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold">Devices receiving alerts</h4>
+                <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                  Revoke a device to stop it receiving new message alerts.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void subscriptionsQuery.refetch()}
+                disabled={subscriptionsQuery.isFetching || revokingId !== null}
+                className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-medium hover:bg-[hsl(var(--muted)/.6)] disabled:opacity-50"
+                data-testid="button-refresh-notification-devices"
+              >
+                Refresh
+              </button>
+            </div>
+            {subscriptionsQuery.isLoading ? (
+              <p className="mt-3 text-xs text-[hsl(var(--muted-foreground))]" role="status">Loading devices…</p>
+            ) : subscriptionsQuery.isError ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                <p className="text-[hsl(var(--destructive))]" role="alert">Notification devices could not be loaded.</p>
+                <button
+                  type="button"
+                  onClick={() => void subscriptionsQuery.refetch()}
+                  className="font-semibold text-[hsl(var(--primary))] underline underline-offset-2"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : subscriptionsQuery.data?.subscriptions.length ? (
+              <ul className="mt-3 divide-y divide-[hsl(var(--border))] rounded-xl border border-[hsl(var(--border))]">
+                {subscriptionsQuery.data.subscriptions.map((device, index) => {
+                  const isCurrentDevice = device.id === currentSubscriptionId;
+                  return (
+                    <li key={device.id} className="flex items-center justify-between gap-3 p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {isCurrentDevice ? 'This device' : `Notification device ${index + 1}`}
+                          {isCurrentDevice && <span className="ml-2 text-xs font-normal text-[hsl(var(--primary))]">Current</span>}
+                        </p>
+                        <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                          Added {formatDeviceDate(device.createdAt)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void revokeDevice(device.id)}
+                        disabled={busy || revokingId !== null}
+                        aria-label={`Revoke ${isCurrentDevice ? 'this device' : `notification device ${index + 1}`}`}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[hsl(var(--destructive)/.35)] px-3 py-2 text-xs font-medium text-[hsl(var(--destructive))] hover:bg-[hsl(var(--destructive)/.08)] disabled:opacity-50"
+                        data-testid={`button-revoke-notification-device-${index + 1}`}
+                      >
+                        <Trash2 className="size-3.5" />
+                        {revokingId === device.id ? 'Removing…' : 'Revoke'}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="mt-3 rounded-xl border border-dashed border-[hsl(var(--border))] px-4 py-3 text-xs text-[hsl(var(--muted-foreground))]">
+                No notification-enabled devices are registered for this wallet.
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </section>
