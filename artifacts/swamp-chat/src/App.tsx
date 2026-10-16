@@ -5,6 +5,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   AtSign,
+  Ban,
   BadgeCheck,
   Bell,
   Check,
@@ -47,9 +48,12 @@ import {
   getListConversationMessagesQueryKey,
   getListConversationHistoryShareWorkQueryKey,
   getListConversationHistorySharesQueryKey,
+  getListBlockedWalletsQueryKey,
   getListConversationsQueryKey,
   getListGroupsQueryKey,
   useCreateDirectConversation,
+  useAcceptConversationRequest,
+  useBlockWallet,
   useCreateConversationHistoryShare,
   useCreateGroup,
   useCreateWalletSession,
@@ -61,11 +65,14 @@ import {
   useListConversationMessages,
   useListConversationHistoryShareWork,
   useListConversationHistoryShares,
+  useListBlockedWallets,
   useListConversations,
   useListGroups,
   useMarkConversationRead,
   useLogoutWallet,
+  useDeclineConversationRequest,
   useSendMessage,
+  useUnblockWallet,
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { BrowserNotificationSettings } from '@/components/browser-notification-settings';
@@ -142,15 +149,20 @@ function RealtimeBridge({ children }: { children: ReactNode }) {
           conversationId?: string;
           messageId?: string;
           senderAddress?: string;
+          isRequest?: boolean;
         };
         if (!payload.conversationId) return;
+        if (payload.type === 'conversation.updated') {
+          refreshConversationData();
+          return;
+        }
         if (payload.type === 'message.created') {
           void client.invalidateQueries({ queryKey: getListConversationsQueryKey({ walletAddress }) });
           void client.invalidateQueries({
             queryKey: getListConversationMessagesQueryKey(payload.conversationId, { walletAddress }),
           });
           window.dispatchEvent(new CustomEvent('swamp-message-created', { detail: payload }));
-          if (payload.senderAddress && payload.senderAddress !== walletAddress && payload.messageId) {
+          if (!payload.isRequest && payload.senderAddress && payload.senderAddress !== walletAddress && payload.messageId) {
             notifyIncomingMessage(walletAddress, {
               conversationId: payload.conversationId,
               messageId: payload.messageId,
@@ -542,9 +554,9 @@ function DirectChatDialog({ onClose, onCreated }: { onClose: () => void; onCreat
     <form onSubmit={submit}>
       <label className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]" htmlFor="xrpl-address">XRPL wallet address</label>
       <div className="relative mt-2"><AtSign className="absolute left-3 top-3.5 size-4 text-[hsl(var(--muted-foreground))]" /><input id="xrpl-address" autoFocus value={address} onChange={(event) => setAddress(event.target.value)} placeholder="r… recipient address" className="mono w-full rounded-xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] py-3 pl-10 pr-3 text-sm outline-none transition placeholder:text-[hsl(var(--muted-foreground)/.6)] focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary)/.13)]" data-testid="input-direct-address" /></div>
-      <p className="mt-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Addresses are names here. No handle, avatar, or contact upload required.</p>
+      <p className="mt-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]">This starts a private-message request. They can read your encrypted introduction, then accept, decline, or block you.</p>
       {error && <p className="mt-3 flex items-center gap-2 text-xs text-[hsl(var(--destructive))]" data-testid="text-direct-error"><CircleAlert className="size-3.5" />{error}</p>}
-      <button disabled={createDirect.isPending} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] transition hover:bg-[hsl(var(--primary))] disabled:opacity-60" data-testid="button-start-direct-chat">{createDirect.isPending ? <RefreshCw className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} {createDirect.isPending ? 'Opening line…' : 'Open conversation'}</button>
+      <button disabled={createDirect.isPending} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] transition hover:bg-[hsl(var(--primary))] disabled:opacity-60" data-testid="button-start-direct-chat">{createDirect.isPending ? <RefreshCw className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} {createDirect.isPending ? 'Sending request…' : 'Send message request'}</button>
     </form>
   </Modal>;
 }
@@ -553,13 +565,86 @@ function Modal({ title, eyebrow, onClose, children }: { title: string; eyebrow: 
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[hsl(var(--foreground)/.35)] p-0 backdrop-blur-sm sm:items-center sm:p-5" role="dialog" aria-modal="true" data-testid="dialog-modal"><div className="w-full max-w-[480px] rounded-t-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl sm:rounded-[1.5rem] sm:p-7"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">{eyebrow}</p><h2 className="mt-2 text-2xl font-semibold tracking-[-.05em]">{title}</h2></div><button onClick={onClose} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]" aria-label="Close dialog" data-testid="button-close-dialog"><X className="size-5" /></button></div><div className="mt-6">{children}</div></div></div>;
 }
 
-function ChatList({ conversations, selectedId, onSelect, onNewChat, loading, error }: { conversations: Array<{ id: string; title: string; participantLabel: string; lastMessage: string | null; lastMessageAt: string | null; unreadCount: number; encrypted: boolean; type: string }>; selectedId: string; onSelect: (id: string) => void; onNewChat: () => void; loading: boolean; error: unknown }) {
+type ChatConversation = {
+  id: string;
+  title: string;
+  participantLabel: string;
+  lastMessage: string | null;
+  lastMessageAt: string | null;
+  unreadCount: number;
+  encrypted: boolean;
+  type: string;
+  memberCount: number;
+  directStatus: 'pending' | 'accepted' | 'declined';
+  requesterAddress: string | null;
+  otherWalletAddress: string | null;
+  directMessagingBlocked: boolean;
+};
+
+type BlockedWalletView = { walletAddress: string; blockedWalletAddress: string; createdAt: string | Date };
+
+function ChatList({
+  conversations,
+  selectedId,
+  walletAddress,
+  blockedWallets,
+  onSelect,
+  onNewChat,
+  onUnblock,
+  loading,
+  error,
+  unblocking,
+}: {
+  conversations: ChatConversation[];
+  selectedId: string;
+  walletAddress: string;
+  blockedWallets: BlockedWalletView[];
+  onSelect: (id: string) => void;
+  onNewChat: () => void;
+  onUnblock: (address: string) => void;
+  loading: boolean;
+  error: unknown;
+  unblocking: boolean;
+}) {
   const [search, setSearch] = useState('');
-  const filteredConversations = conversations.filter((conversation) => {
+  const matchingConversations = conversations.filter((conversation) => {
     const query = search.trim().toLowerCase();
     if (!query) return true;
     return `${conversation.title} ${conversation.participantLabel}`.toLowerCase().includes(query);
   });
+  const incomingRequests = matchingConversations.filter((conversation) => (
+    conversation.type === 'direct'
+    && conversation.directStatus === 'pending'
+    && conversation.requesterAddress !== walletAddress
+  ));
+  const chats = matchingConversations.filter((conversation) => !incomingRequests.includes(conversation));
+  const renderConversation = (conversation: ChatConversation, request = false) => (
+    <button
+      key={conversation.id}
+      onClick={() => onSelect(conversation.id)}
+      className={`group w-full rounded-xl px-3 py-3 text-left transition ${selectedId === conversation.id ? 'bg-[hsl(var(--primary)/.1)]' : 'hover:bg-[hsl(var(--muted)/.7)]'}`}
+      data-testid={`button-conversation-${conversation.id}`}
+    >
+      <div className="flex items-start gap-3">
+        <div className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl ${conversation.type === 'group' ? 'bg-[hsl(var(--accent)/.18)] text-[hsl(var(--accent))]' : 'bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]'}`}>
+          {conversation.type === 'group' ? <Hash className="size-4" /> : <AtSign className="size-4" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium">{conversation.title || conversation.participantLabel}</span>
+            {conversation.encrypted && <LockKeyhole className="size-3 shrink-0 text-[hsl(var(--primary))]" />}
+            {conversation.unreadCount > 0 && <span className="ml-auto flex size-4 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--accent))] text-[9px] font-bold text-[hsl(var(--accent-foreground))]">{conversation.unreadCount}</span>}
+          </div>
+          <p className="mt-1 truncate text-xs text-[hsl(var(--muted-foreground))]">
+            {request ? 'Encrypted message request' : conversation.lastMessage || 'No messages yet'}
+          </p>
+          {conversation.directStatus === 'pending' && !request && <span className="mt-1 inline-flex rounded-full bg-[hsl(var(--accent)/.14)] px-2 py-0.5 text-[9px] font-medium text-[hsl(var(--accent-foreground))]">Request sent · awaiting reply</span>}
+          {conversation.directMessagingBlocked && <span className="mt-1 inline-flex rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-[9px] text-[hsl(var(--muted-foreground))]">Messaging paused</span>}
+        </div>
+        <span className="mono shrink-0 text-[9px] text-[hsl(var(--muted-foreground)/.7)]">{relativeTime(conversation.lastMessageAt)}</span>
+      </div>
+    </button>
+  );
   return <section className="flex w-full shrink-0 flex-col border-b border-[hsl(var(--border))] bg-[hsl(var(--card)/.36)] md:w-[340px] md:border-b-0 md:border-r" data-testid="conversation-list">
     <div className="flex items-center justify-between px-4 pb-3 pt-5"><div><p className="mono text-[10px] uppercase tracking-[.17em] text-[hsl(var(--muted-foreground))]">inbox</p><h2 className="mt-1 text-lg font-semibold tracking-[-.04em]">Chats</h2></div><button onClick={onNewChat} className="flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--foreground))] text-[hsl(var(--card))] transition hover:bg-[hsl(var(--primary))]" aria-label="Start new conversation" data-testid="button-new-chat"><Plus className="size-4" /></button></div>
     <div className="px-4 pb-4"><label className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background)/.55)] px-3 py-2.5 text-xs text-[hsl(var(--muted-foreground))] focus-within:border-[hsl(var(--primary))]"><Search className="size-3.5 shrink-0" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search chats or paste an address" className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[hsl(var(--muted-foreground)/.72)]" aria-label="Search chats" data-testid="input-search-chats" /><span className="mono text-[9px] opacity-50">/</span></label></div>
@@ -567,18 +652,37 @@ function ChatList({ conversations, selectedId, onSelect, onNewChat, loading, err
       {loading && [1, 2, 3].map((item) => <div key={item} className="mx-2 animate-pulse rounded-xl px-3 py-3"><div className="h-3 w-2/5 rounded bg-[hsl(var(--muted))]" /><div className="mt-2 h-2 w-3/4 rounded bg-[hsl(var(--muted))]" /></div>)}
       {!loading && Boolean(error) && <div className="m-2 rounded-xl border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.06)] p-3 text-xs leading-5 text-[hsl(var(--destructive))]" data-testid="status-conversations-error">Unable to load your conversations. Try refreshing the page.</div>}
       {!loading && !error && conversations.length === 0 && <div className="m-2 rounded-xl border border-dashed border-[hsl(var(--border))] p-4 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="empty-conversations"><MessageCircle className="mb-3 size-4 text-[hsl(var(--primary))]" /><p>No conversations yet.</p><p className="mt-1">Start a private line or find a group room.</p><div className="mt-4 flex flex-wrap gap-2"><button onClick={onNewChat} className="rounded-lg bg-[hsl(var(--foreground))] px-3 py-2 font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))]" data-testid="button-empty-new-chat">New direct chat</button><Link href="/groups" className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 font-medium text-[hsl(var(--foreground))] hover:border-[hsl(var(--primary))]" data-testid="button-empty-browse-groups">Browse groups</Link></div></div>}
-      {!loading && !error && conversations.length > 0 && filteredConversations.length === 0 && <div className="m-2 rounded-xl border border-dashed border-[hsl(var(--border))] p-4 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="empty-search-chats"><Search className="mb-3 size-4 text-[hsl(var(--primary))]" /><p>No chats match “{search}”.</p><button onClick={() => setSearch('')} className="mt-2 font-medium text-[hsl(var(--primary))] hover:underline">Clear search</button></div>}
-      {filteredConversations.map((conversation) => <button key={conversation.id} onClick={() => onSelect(conversation.id)} className={`group w-full rounded-xl px-3 py-3 text-left transition ${selectedId === conversation.id ? 'bg-[hsl(var(--primary)/.1)]' : 'hover:bg-[hsl(var(--muted)/.7)]'}`} data-testid={`button-conversation-${conversation.id}`}><div className="flex items-start gap-3"><div className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl ${conversation.type === 'group' ? 'bg-[hsl(var(--accent)/.18)] text-[hsl(var(--accent))]' : 'bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]'}`}>{conversation.type === 'group' ? <Hash className="size-4" /> : <AtSign className="size-4" />}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{conversation.title || conversation.participantLabel}</span>{conversation.encrypted && <LockKeyhole className="size-3 shrink-0 text-[hsl(var(--primary))]" />}{conversation.unreadCount > 0 && <span className="ml-auto flex size-4 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--accent))] text-[9px] font-bold text-[hsl(var(--accent-foreground))]">{conversation.unreadCount}</span>}</div><p className="mt-1 truncate text-xs text-[hsl(var(--muted-foreground))]">{conversation.lastMessage || 'No messages yet'}</p></div><span className="mono shrink-0 text-[9px] text-[hsl(var(--muted-foreground)/.7)]">{relativeTime(conversation.lastMessageAt)}</span></div></button>)}
+      {!loading && !error && conversations.length > 0 && matchingConversations.length === 0 && <div className="m-2 rounded-xl border border-dashed border-[hsl(var(--border))] p-4 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="empty-search-chats"><Search className="mb-3 size-4 text-[hsl(var(--primary))]" /><p>No chats match “{search}”.</p><button onClick={() => setSearch('')} className="mt-2 font-medium text-[hsl(var(--primary))] hover:underline">Clear search</button></div>}
+      {!loading && !error && incomingRequests.length > 0 && <div className="pt-2"><p className="px-3 pb-1 mono text-[9px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">Message requests · {incomingRequests.length}</p>{incomingRequests.map((conversation) => renderConversation(conversation, true))}</div>}
+      {!loading && !error && chats.length > 0 && <div className="pt-2"><p className="px-3 pb-1 mono text-[9px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">Your chats</p>{chats.map((conversation) => renderConversation(conversation))}</div>}
+      {!loading && !error && blockedWallets.length > 0 && <div className="mt-4 border-t border-[hsl(var(--border))] px-2 pt-4" data-testid="blocked-wallets-list"><p className="px-3 pb-2 mono text-[9px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">Blocked wallets</p>{blockedWallets.map((item) => <div key={item.blockedWalletAddress} className="flex items-center gap-2 rounded-xl px-3 py-2"><Ban className="size-3.5 shrink-0 text-[hsl(var(--muted-foreground))]" /><span className="mono min-w-0 flex-1 truncate text-[10px]">{shortAddress(item.blockedWalletAddress)}</span><button type="button" disabled={unblocking} onClick={() => onUnblock(item.blockedWalletAddress)} className="rounded-lg border border-[hsl(var(--border))] px-2 py-1 text-[9px] font-medium hover:border-[hsl(var(--primary))] disabled:opacity-50" data-testid={`button-unblock-${item.blockedWalletAddress}`}>Unblock</button></div>)}</div>}
     </div>
   </section>;
 }
 
-function MessagePane({ conversation, onBack, isActive }: { conversation: { id: string; title: string; participantLabel: string; encrypted: boolean; memberCount: number; type: string } | undefined; onBack: () => void; isActive: boolean }) {
+function MessagePane({
+  conversation,
+  onBack,
+  isActive,
+  blockedWalletAddresses,
+  onBlock,
+  onUnblock,
+  blockPending,
+}: {
+  conversation: ChatConversation | undefined;
+  onBack: () => void;
+  isActive: boolean;
+  blockedWalletAddresses: string[];
+  onBlock: (address: string) => void;
+  onUnblock: (address: string) => void;
+  blockPending: boolean;
+}) {
   const { walletAddress } = useWallet();
   const realtimeStatus = useContext(RealtimeContext);
   const client = useQueryClient();
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState('');
+  const [requestError, setRequestError] = useState('');
   const [encrypting, setEncrypting] = useState(false);
   const messageAttempt = useRef<{ conversationId: string; body: string; messageId: string } | null>(null);
   const [showSafetyCode, setShowSafetyCode] = useState(false);
@@ -596,11 +700,53 @@ function MessagePane({ conversation, onBack, isActive }: { conversation: { id: s
   const historySharesQuery = useListConversationHistoryShares(conversation?.id ?? '', { query: { enabled: Boolean(conversation?.id), queryKey: getListConversationHistorySharesQueryKey(conversation?.id ?? ''), refetchInterval: 30000 } });
   const historyWorkQuery = useListConversationHistoryShareWork(conversation?.id ?? '', { query: { enabled: Boolean(conversation?.id && conversation.type === 'group' && isActive && pageVisible), queryKey: getListConversationHistoryShareWorkQueryKey(conversation?.id ?? ''), refetchInterval: 30000 } });
   const sendMessage = useSendMessage();
+  const acceptRequest = useAcceptConversationRequest();
+  const declineRequest = useDeclineConversationRequest();
   const createHistoryShare = useCreateConversationHistoryShare();
   const markConversationRead = useMarkConversationRead();
   const members: ConversationPublicKey[] = keysQuery.data ?? [];
   const missingMembers = members.filter((member) => !member.publicKey);
   const sendBlockedByMissingKeys = conversation?.type !== 'group' && missingMembers.length > 0;
+  const otherWalletAddress = conversation?.type === 'direct' ? conversation.otherWalletAddress : null;
+  const blockedByMe = Boolean(otherWalletAddress && blockedWalletAddresses.includes(otherWalletAddress));
+  const directMessagingBlocked = Boolean(conversation?.type === 'direct' && conversation.directMessagingBlocked);
+  const incomingRequest = Boolean(
+    conversation?.type === 'direct'
+    && conversation.directStatus === 'pending'
+    && conversation.requesterAddress !== walletAddress,
+  );
+  const outgoingRequest = Boolean(
+    conversation?.type === 'direct'
+    && conversation.directStatus === 'pending'
+    && conversation.requesterAddress === walletAddress,
+  );
+  const hasIntroMessage = Boolean(messagesQuery.data?.length);
+  const requestWaitingForReply = outgoingRequest && hasIntroMessage;
+
+  const refreshDirectConversation = () => {
+    if (!conversation) return;
+    void client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
+    void client.invalidateQueries({ queryKey: getListConversationMessagesQueryKey(conversation.id, params) });
+  };
+  const acceptIncomingRequest = () => {
+    if (!conversation) return;
+    setRequestError('');
+    acceptRequest.mutate({ conversationId: conversation.id }, {
+      onSuccess: refreshDirectConversation,
+      onError: (error) => setRequestError(errorMessage(error, 'Could not accept this request.')),
+    });
+  };
+  const declineIncomingRequest = () => {
+    if (!conversation) return;
+    setRequestError('');
+    declineRequest.mutate({ conversationId: conversation.id }, {
+      onSuccess: () => {
+        onBack();
+        void client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
+      },
+      onError: (error) => setRequestError(errorMessage(error, 'Could not decline this request.')),
+    });
+  };
 
   useEffect(() => {
     if (!walletAddress || !keysQuery.data) {
@@ -857,7 +1003,19 @@ function MessagePane({ conversation, onBack, isActive }: { conversation: { id: s
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!conversation || !draft.trim() || !keysQuery.data || sendBlockedByMissingKeys || keyChanges.length > 0 || keyTrustError || sendMessage.isPending || encrypting) return;
+    if (
+      !conversation
+      || !draft.trim()
+      || !keysQuery.data
+      || sendBlockedByMissingKeys
+      || keyChanges.length > 0
+      || keyTrustError
+      || incomingRequest
+      || directMessagingBlocked
+      || requestWaitingForReply
+      || sendMessage.isPending
+      || encrypting
+    ) return;
     setSendError('');
     const body = draft.trim();
     const messageId = messageAttempt.current?.conversationId === conversation.id && messageAttempt.current.body === body
@@ -909,18 +1067,50 @@ function MessagePane({ conversation, onBack, isActive }: { conversation: { id: s
         </div></div>
       </div>}
      <div className="flex justify-end px-4 pt-2 md:px-7"><span className={`inline-flex items-center gap-1.5 text-[10px] ${realtimeStatus === 'live' ? 'text-[hsl(var(--primary))]' : 'text-[hsl(var(--muted-foreground))]'}`} role="status" data-testid="status-realtime"><span className={`size-1.5 rounded-full ${realtimeStatus === 'live' ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--muted-foreground))]'}`} />{realtimeStatus === 'live' ? 'Live updates connected' : 'Reconnecting to live updates'}</span></div>
-     <div className="flex items-center gap-3 border-b border-[hsl(var(--border))] px-4 py-4 md:px-7"><button onClick={onBack} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] md:hidden" aria-label="Back to conversations" data-testid="button-back-conversations"><ArrowLeft className="size-4" /></button><div className="flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]">{conversation.type === 'group' ? <Hash className="size-4" /> : <AtSign className="size-4" />}</div><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{conversation.title}</h2><button onClick={() => setShowSafetyCode(true)} className="flex items-center gap-1 text-[10px] text-[hsl(var(--primary))] hover:underline" data-testid="button-show-safety-code"><LockKeyhole className="size-3" /> end-to-end</button></div><p className="mono mt-0.5 truncate text-[10px] text-[hsl(var(--muted-foreground))]">{conversation.participantLabel} {conversation.memberCount > 1 ? `· ${conversation.memberCount} members` : ''}</p></div><button className="ml-auto rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]" aria-label="Conversation options" data-testid="button-conversation-options"><MoreHorizontal className="size-5" /></button></div>
+      <div className="flex items-center gap-3 border-b border-[hsl(var(--border))] px-4 py-4 md:px-7"><button onClick={onBack} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] md:hidden" aria-label="Back to conversations" data-testid="button-back-conversations"><ArrowLeft className="size-4" /></button><div className="flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]">{conversation.type === 'group' ? <Hash className="size-4" /> : <AtSign className="size-4" />}</div><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{conversation.title}</h2><button onClick={() => setShowSafetyCode(true)} className="flex items-center gap-1 text-[10px] text-[hsl(var(--primary))] hover:underline" data-testid="button-show-safety-code"><LockKeyhole className="size-3" /> end-to-end</button></div><p className="mono mt-0.5 truncate text-[10px] text-[hsl(var(--muted-foreground))]">{conversation.participantLabel} {conversation.memberCount > 1 ? `· ${conversation.memberCount} members` : ''}</p></div>{conversation.type === 'direct' && otherWalletAddress && !incomingRequest && (blockedByMe ? <button type="button" onClick={() => onUnblock(otherWalletAddress)} disabled={blockPending} className="ml-auto rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-[10px] font-medium hover:border-[hsl(var(--primary))] disabled:opacity-50" data-testid="button-unblock-chat-wallet">Unblock</button> : <button type="button" onClick={() => onBlock(otherWalletAddress)} disabled={blockPending} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-[10px] font-medium text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--destructive))] hover:text-[hsl(var(--destructive))] disabled:opacity-50" data-testid="button-block-chat-wallet"><Ban className="size-3" /> Block</button>)}</div>
        <div className="chat-wallpaper soft-scrollbar relative flex flex-1 flex-col gap-4 overflow-auto px-4 py-6 md:px-10" data-testid="chat-message-history">{(messagesQuery.isLoading || keysQuery.isLoading) && [1, 2, 3].map((item) => <div key={item} className={`flex animate-pulse ${item % 2 ? 'justify-start' : 'justify-end'}`}><div className="h-14 w-44 rounded-2xl bg-[hsl(var(--muted))]" /></div>)}{(messagesQuery.isError || keysQuery.isError) && <div className="m-auto max-w-sm rounded-2xl border border-[hsl(var(--destructive)/.16)] bg-[hsl(var(--card)/.92)] p-5 text-center text-sm text-[hsl(var(--muted-foreground))] shadow-sm" data-testid="status-messages-error"><CircleAlert className="mx-auto mb-3 size-5 text-[hsl(var(--destructive))]" />Messages or encryption keys could not be loaded. Refresh to try again.</div>}{!messagesQuery.isLoading && !messagesQuery.isError && messagesQuery.data?.length === 0 && <div className="m-auto max-w-sm rounded-2xl border border-[hsl(var(--border)/.8)] bg-[hsl(var(--card)/.92)] p-5 text-center shadow-sm"><div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"><LockKeyhole className="size-5" /></div><p className="mt-4 text-sm font-medium">This line is quiet.</p><p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send the first end-to-end encrypted message.</p></div>}{decryptedMessages.map((message) => <div key={message.id} className={`flex ${message.isMine ? 'justify-end' : 'justify-start'}`} data-testid={`message-${message.id}`}><div className={`max-w-[min(75%,520px)] ${message.isMine ? 'items-end' : 'items-start'} flex flex-col`}><div className={`rounded-2xl px-4 py-3 text-sm leading-6 shadow-[0_2px_7px_rgba(25,55,34,.06)] ${message.isMine ? 'rounded-br-md bg-[hsl(var(--foreground))] text-[hsl(var(--card))]' : 'rounded-bl-md border border-[hsl(var(--border))] bg-[hsl(var(--card))]'}`}><p>{message.body}</p></div><div className="mono mt-1.5 flex flex-wrap items-center gap-2 px-1 text-[9px] text-[hsl(var(--muted-foreground))]"><span className="inline-flex items-center gap-1">{message.isMine ? 'you' : <>{shortAddress(message.senderAddress)}<HermitTick walletAddress={message.senderAddress} className="size-3.5" /></>}</span><span>{formatClock(message.sentAt)}</span>{message.encrypted && <LockKeyhole className="size-2.5" />}{message.isMine && <span title={message.isRead ? 'Read' : 'Sent'} aria-label={message.isRead ? 'Read' : 'Sent'} data-testid={`message-delivery-status-${message.id}`}>{message.isRead ? <CheckCheck className="size-3 text-[hsl(var(--primary))]" /> : <Check className="size-3" />}</span>}{message.historyShared && <span className="rounded-full bg-[hsl(var(--primary)/.1)] px-2 py-0.5 text-[hsl(var(--primary))]" data-testid={`message-history-shared-${message.id}`} title={`Shared by ${message.historySharedByAddress ?? 'a room member'}`}>history shared with you</span>}{message.historyPending && <span className="rounded-full bg-[hsl(var(--accent)/.12)] px-2 py-0.5 text-[hsl(var(--muted-foreground))]" data-testid={`message-history-pending-${message.id}`}>waiting for history share</span>}{conversation.type === 'group' && message.recipientAddresses.length > 0 && !message.historyShared && <details className="relative"><summary className="cursor-pointer list-none rounded-full bg-[hsl(var(--muted)/.7)] px-2 py-0.5 hover:bg-[hsl(var(--muted))]" aria-label={`Show ${message.recipientAddresses.length} encrypted message recipients`} data-testid={`message-recipients-${message.id}`}>to {message.recipientAddresses.length} wallet{message.recipientAddresses.length === 1 ? '' : 's'}</summary><div className="absolute bottom-full left-0 z-20 mb-1 min-w-48 max-w-72 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-[10px] shadow-lg" role="note"><p className="mb-2 font-semibold">Encrypted for these wallets</p><ul className="space-y-1">{message.recipientAddresses.map((address) => <li key={address} className="mono">{shortAddress(address)}</li>)}</ul></div></details>}</div></div></div>)}</div>
-      <div className="border-t border-[hsl(var(--border))] bg-[hsl(var(--card)/.45)] p-4 md:px-7">{missingMembers.length > 0 && <p className="mb-3 rounded-lg border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] px-3 py-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="status-missing-member-keys">{conversation.type === 'group' ? <>Encrypted messages will go only to members with registered keys. These members will not receive messages until they set up encryption: {missingMembers.map((member) => shortAddress(member.walletAddress)).join(', ')}.</> : <>Encrypted sending is paused until the other member registers a device key: {missingMembers.map((member) => shortAddress(member.walletAddress)).join(', ')}.</>}</p>}{keyChanges.length > 0 && <p className="mb-3 rounded-lg border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] px-3 py-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="status-key-change-send-paused">Sending is paused until you verify the changed encryption key above.</p>}{keyTrustError && <p className="mb-3 rounded-lg border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.05)] px-3 py-2 text-xs leading-5 text-[hsl(var(--destructive))]" data-testid="status-key-trust-send-paused">{keyTrustError}</p>}<form onSubmit={submit} className="relative"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(event as unknown as FormEvent); } }} rows={1} disabled={!keysQuery.data || sendBlockedByMissingKeys || keyChanges.length > 0 || Boolean(keyTrustError) || sendMessage.isPending || encrypting} placeholder={keyChanges.length > 0 ? 'Verify the changed encryption key before sending…' : sendBlockedByMissingKeys ? 'Waiting for the other member to enable encryption…' : 'Write something unbothered…'} className="soft-scrollbar min-h-[52px] w-full resize-none rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] py-4 pl-4 pr-14 text-sm outline-none transition placeholder:text-[hsl(var(--muted-foreground)/.7)] focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary)/.13)] disabled:opacity-60" data-testid="input-message" /><button type="submit" disabled={!draft.trim() || sendMessage.isPending || encrypting || !keysQuery.data || sendBlockedByMissingKeys || keyChanges.length > 0 || Boolean(keyTrustError)} className="absolute bottom-2.5 right-2.5 flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] transition hover:bg-[hsl(var(--foreground))] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Send encrypted message" data-testid="button-send-message">{sendMessage.isPending || encrypting ? <RefreshCw className="size-4 animate-spin" /> : <Send className="size-4" />}</button></form>{sendError && <p className="mt-2 flex items-center gap-1 text-xs text-[hsl(var(--destructive))]" data-testid="text-send-error"><CircleAlert className="size-3" />{sendError}</p>}<p className="mt-2 flex items-center gap-1.5 px-1 text-[10px] text-[hsl(var(--muted-foreground))]"><ShieldCheck className="size-3 text-[hsl(var(--primary))]" /> Message content is encrypted on your device; verify the safety code with members.</p></div>
+      <div className="border-t border-[hsl(var(--border))] bg-[hsl(var(--card)/.45)] p-4 md:px-7">
+        {missingMembers.length > 0 && <p className="mb-3 rounded-lg border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] px-3 py-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="status-missing-member-keys">{conversation.type === 'group' ? <>Encrypted messages will go only to members with registered keys. These members will not receive messages until they set up encryption: {missingMembers.map((member) => shortAddress(member.walletAddress)).join(', ')}.</> : <>Encrypted sending is paused until the other member registers a device key: {missingMembers.map((member) => shortAddress(member.walletAddress)).join(', ')}.</>}</p>}
+        {keyChanges.length > 0 && <p className="mb-3 rounded-lg border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] px-3 py-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="status-key-change-send-paused">Sending is paused until you verify the changed encryption key above.</p>}
+        {keyTrustError && <p className="mb-3 rounded-lg border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.05)] px-3 py-2 text-xs leading-5 text-[hsl(var(--destructive))]" data-testid="status-key-trust-send-paused">{keyTrustError}</p>}
+        {incomingRequest && !directMessagingBlocked ? <div className="rounded-xl border border-[hsl(var(--primary)/.2)] bg-[hsl(var(--primary)/.06)] p-4" data-testid="incoming-message-request">
+          <p className="text-sm font-semibold">Private-message request</p>
+          <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">This wallet sent an encrypted introduction. Accept to allow replies, decline to close the request, or block to prevent future direct messages. Group rooms are not affected.</p>
+          {requestError && <p className="mt-2 text-xs text-[hsl(var(--destructive))]" role="alert">{requestError}</p>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={acceptIncomingRequest} disabled={acceptRequest.isPending || declineRequest.isPending} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[hsl(var(--primary))] px-3 text-xs font-semibold text-[hsl(var(--primary-foreground))] hover:bg-[hsl(var(--foreground))] disabled:opacity-50" data-testid="button-accept-message-request">{acceptRequest.isPending ? <RefreshCw className="size-3 animate-spin" /> : <Check className="size-3" />} Accept</button>
+            <button type="button" onClick={declineIncomingRequest} disabled={acceptRequest.isPending || declineRequest.isPending} className="min-h-9 rounded-lg border border-[hsl(var(--border))] px-3 text-xs font-medium hover:border-[hsl(var(--destructive))] disabled:opacity-50" data-testid="button-decline-message-request">Decline</button>
+            {otherWalletAddress && <button type="button" onClick={() => onBlock(otherWalletAddress)} disabled={blockPending} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[hsl(var(--border))] px-3 text-xs font-medium text-[hsl(var(--destructive))] hover:border-[hsl(var(--destructive))] disabled:opacity-50" data-testid="button-block-message-request"><Ban className="size-3" /> Block</button>}
+          </div>
+        </div> : directMessagingBlocked ? <div className="rounded-xl border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.05)] p-4" role="status" data-testid="direct-messaging-blocked">
+          <p className="text-sm font-semibold">Direct messaging is paused</p>
+          <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Existing encrypted history remains available. Group conversations are unaffected.</p>
+          {blockedByMe && otherWalletAddress && <button type="button" onClick={() => onUnblock(otherWalletAddress)} disabled={blockPending} className="mt-3 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-medium hover:border-[hsl(var(--primary))] disabled:opacity-50" data-testid="button-unblock-paused-chat">Unblock this wallet</button>}
+        </div> : requestWaitingForReply ? <div className="rounded-xl border border-[hsl(var(--accent)/.3)] bg-[hsl(var(--accent)/.08)] p-4" role="status" data-testid="outgoing-request-waiting">
+          <p className="text-sm font-semibold">Introduction sent</p>
+          <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Your encrypted message is waiting in their requests. You can send another message after they accept.</p>
+        </div> : <form onSubmit={submit} className="relative">
+          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(event as unknown as FormEvent); } }} rows={1} disabled={!keysQuery.data || sendBlockedByMissingKeys || keyChanges.length > 0 || Boolean(keyTrustError) || sendMessage.isPending || encrypting || requestWaitingForReply} placeholder={outgoingRequest ? 'Write your encrypted introduction…' : keyChanges.length > 0 ? 'Verify the changed encryption key before sending…' : sendBlockedByMissingKeys ? 'Waiting for the other member to enable encryption…' : 'Write something unbothered…'} className="soft-scrollbar min-h-[52px] w-full resize-none rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] py-4 pl-4 pr-14 text-sm outline-none transition placeholder:text-[hsl(var(--muted-foreground)/.7)] focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary)/.13)] disabled:opacity-60" data-testid="input-message" />
+          <button type="submit" disabled={!draft.trim() || sendMessage.isPending || encrypting || !keysQuery.data || sendBlockedByMissingKeys || keyChanges.length > 0 || Boolean(keyTrustError) || requestWaitingForReply} className="absolute bottom-2.5 right-2.5 flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] transition hover:bg-[hsl(var(--foreground))] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Send encrypted message" data-testid="button-send-message">{sendMessage.isPending || encrypting ? <RefreshCw className="size-4 animate-spin" /> : <Send className="size-4" />}</button>
+        </form>}
+        {sendError && <p className="mt-2 flex items-center gap-1 text-xs text-[hsl(var(--destructive))]" data-testid="text-send-error"><CircleAlert className="size-3" />{sendError}</p>}
+        <p className="mt-2 flex items-center gap-1.5 px-1 text-[10px] text-[hsl(var(--muted-foreground))]"><ShieldCheck className="size-3 text-[hsl(var(--primary))]" /> Message content is encrypted on your device; verify the safety code with members.</p>
+      </div>
      {showSafetyCode && <Modal title="Encryption safety code" eyebrow="verify / out of band" onClose={() => setShowSafetyCode(false)}><p className="text-sm leading-6 text-[hsl(var(--muted-foreground))]">Compare this code with the other member using a separate trusted channel. Matching codes help detect a substituted public key. Until verified, a malicious server could replace keys.</p><div className="mt-5 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4 text-center"><p className="mono break-all text-lg font-semibold tracking-[.08em]" data-testid="text-encryption-safety-code">{safetyCode || 'Loading…'}</p></div><p className="mt-4 text-xs text-[hsl(var(--muted-foreground))]">Encrypted key recovery backups are available in Settings; save one before changing devices. Frogtown’s custom encryption protocol has not been independently audited.</p></Modal>}
   </section>;
 }
 
 function ChatWorkspace({ onNewChat }: { onNewChat: () => void }) {
   const { walletAddress } = useWallet();
+  const client = useQueryClient();
   const params = useMemo(() => ({ walletAddress }), [walletAddress]);
   const query = useListConversations(params, { query: { enabled: Boolean(walletAddress), queryKey: getListConversationsQueryKey(params), refetchInterval: 30000 } });
+  const blocksQuery = useListBlockedWallets({ query: { enabled: Boolean(walletAddress), queryKey: getListBlockedWalletsQueryKey(), refetchInterval: 30000 } });
+  const createBlock = useBlockWallet();
+  const removeBlock = useUnblockWallet();
   const conversations = query.data ?? [];
+  const blockedWallets = blocksQuery.data ?? [];
+  const [blockNotice, setBlockNotice] = useState<{ message: string; tone: 'error' | 'success' } | null>(null);
   const [selectedId, setSelectedId] = useState(() => window.sessionStorage.getItem(`swamp-selected-conversation:${walletAddress}`) ?? '');
   const [mobileList, setMobileList] = useState(true);
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 768px)').matches);
@@ -948,7 +1138,54 @@ function ChatWorkspace({ onNewChat }: { onNewChat: () => void }) {
   }, [selectedId, walletAddress]);
   const selected = conversations.find((conversation) => conversation.id === selectedId);
   const select = (id: string) => { setSelectedId(id); setMobileList(false); };
-  return <div className="flex h-full min-h-0 flex-col md:flex-row">{(mobileList || !selectedId) && <ChatList conversations={conversations} selectedId={selectedId} onSelect={select} onNewChat={onNewChat} loading={query.isLoading} error={query.error} />}<MessagePane conversation={selected} isActive={isDesktop || !mobileList} onBack={() => setMobileList(true)} /></div>;
+  const refreshBlockState = () => {
+    void client.invalidateQueries({ queryKey: getListBlockedWalletsQueryKey() });
+    void client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
+  };
+  const blockWallet = (address: string) => {
+    createBlock.mutate({ data: { blockedWalletAddress: address } }, {
+      onSuccess: () => {
+        setBlockNotice({ message: 'This wallet is blocked from private messaging. Group chats remain unchanged.', tone: 'success' });
+        refreshBlockState();
+      },
+      onError: (error) => setBlockNotice({ message: errorMessage(error, 'Could not block this wallet.'), tone: 'error' }),
+    });
+  };
+  const unblockWallet = (address: string) => {
+    removeBlock.mutate({ blockedWalletAddress: address }, {
+      onSuccess: () => {
+        setBlockNotice({ message: 'Wallet unblocked. A new message request may be sent.', tone: 'success' });
+        refreshBlockState();
+      },
+      onError: (error) => setBlockNotice({ message: errorMessage(error, 'Could not unblock this wallet.'), tone: 'error' }),
+    });
+  };
+  return <>
+    <div className="flex h-full min-h-0 flex-col md:flex-row">
+      {(mobileList || !selectedId) && <ChatList
+        conversations={conversations}
+        selectedId={selectedId}
+        walletAddress={walletAddress}
+        blockedWallets={blockedWallets}
+        onSelect={select}
+        onNewChat={onNewChat}
+        onUnblock={unblockWallet}
+        loading={query.isLoading}
+        error={query.error}
+        unblocking={removeBlock.isPending}
+      />}
+      <MessagePane
+        conversation={selected}
+        isActive={isDesktop || !mobileList}
+        onBack={() => setMobileList(true)}
+        blockedWalletAddresses={blockedWallets.map((item) => item.blockedWalletAddress)}
+        onBlock={blockWallet}
+        onUnblock={unblockWallet}
+        blockPending={createBlock.isPending || removeBlock.isPending}
+      />
+    </div>
+    {blockNotice && <Notice message={blockNotice.message} tone={blockNotice.tone} onClose={() => setBlockNotice(null)} />}
+  </>;
 }
 
 function GroupsPage({ onOpenGroup }: { onOpenGroup: (conversationId: string) => void }) {

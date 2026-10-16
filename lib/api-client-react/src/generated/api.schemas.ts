@@ -139,6 +139,15 @@ export const ConversationType = {
   group: 'group',
 } as const;
 
+export type ConversationDirectStatus = typeof ConversationDirectStatus[keyof typeof ConversationDirectStatus];
+
+
+export const ConversationDirectStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+} as const;
+
 export interface Conversation {
   id: string;
   type: ConversationType;
@@ -151,6 +160,12 @@ export interface Conversation {
   unreadCount: number;
   encrypted: boolean;
   memberCount: number;
+  directStatus: ConversationDirectStatus;
+  /** @nullable */
+  requesterAddress: string | null;
+  /** @nullable */
+  otherWalletAddress: string | null;
+  directMessagingBlocked: boolean;
 }
 
 export interface DirectConversationInput {
@@ -158,6 +173,20 @@ export interface DirectConversationInput {
   walletAddress: string;
   /** @minLength 25 */
   fromWalletAddress: string;
+}
+
+export interface BlockedWallet {
+  walletAddress: string;
+  blockedWalletAddress: string;
+  createdAt: string;
+}
+
+export interface BlockedWalletInput {
+  /**
+     * @minLength 25
+     * @maxLength 35
+     */
+  blockedWalletAddress: string;
 }
 
 export interface Message {

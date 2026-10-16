@@ -6,12 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './blockedWallet';
+export * from './blockedWalletInput';
 export * from './coinFlipInput';
 export * from './coinFlipInputChoice';
 export * from './coinFlipResult';
 export * from './coinFlipResultChoice';
 export * from './coinFlipResultResult';
 export * from './conversation';
+export * from './conversationDirectStatus';
 export * from './conversationHistoryShare';
 export * from './conversationHistoryShareInput';
 export * from './conversationKey';

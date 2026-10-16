@@ -25,6 +25,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  BlockedWallet,
+  BlockedWalletInput,
   CoinFlipInput,
   CoinFlipResult,
   Conversation,
@@ -861,6 +863,269 @@ export const useRegisterWalletEncryptionKey = <TError = ErrorType<ErrorResponse>
       return useMutation(getRegisterWalletEncryptionKeyMutationOptions(options), queryClient);
     }
 
+export const getListBlockedWalletsUrl = () => {
+
+
+
+
+  return `/api/wallet/blocks`
+}
+
+/**
+ * @summary List wallets blocked by the current wallet
+ */
+export const listBlockedWallets = async ( options?: Parameters<typeof customFetch>[1]): Promise<BlockedWallet[]> => {
+
+  return customFetch<BlockedWallet[]>(getListBlockedWalletsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListBlockedWalletsQueryKey = () => {
+    return [
+    `/api/wallet/blocks`
+    ] as const;
+    }
+
+
+export const getListBlockedWalletsQueryOptions = <TData = Awaited<ReturnType<typeof listBlockedWallets>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listBlockedWallets>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListBlockedWalletsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listBlockedWallets>>> = ({ signal }) => listBlockedWallets({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listBlockedWallets>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListBlockedWalletsQueryResult = NonNullable<Awaited<ReturnType<typeof listBlockedWallets>>>
+export type ListBlockedWalletsQueryError = ErrorType<ErrorResponse>
+
+
+export function useListBlockedWallets<TData = Awaited<ReturnType<typeof listBlockedWallets>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listBlockedWallets>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listBlockedWallets>>,
+          TError,
+          Awaited<ReturnType<typeof listBlockedWallets>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListBlockedWallets<TData = Awaited<ReturnType<typeof listBlockedWallets>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listBlockedWallets>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listBlockedWallets>>,
+          TError,
+          Awaited<ReturnType<typeof listBlockedWallets>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListBlockedWallets<TData = Awaited<ReturnType<typeof listBlockedWallets>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listBlockedWallets>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List wallets blocked by the current wallet
+ */
+
+export function useListBlockedWallets<TData = Awaited<ReturnType<typeof listBlockedWallets>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listBlockedWallets>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListBlockedWalletsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getBlockWalletUrl = () => {
+
+
+
+
+  return `/api/wallet/blocks`
+}
+
+/**
+ * @summary Block a wallet from direct messaging
+ */
+export const blockWallet = async (blockedWalletInput: BlockedWalletInput, options?: Parameters<typeof customFetch>[1]): Promise<BlockedWallet> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<BlockedWallet>(getBlockWalletUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(blockedWalletInput)
+  }
+);}
+
+
+
+
+
+export const getBlockWalletMutationKey = () => ['blockWallet'] as const;
+
+export const getBlockWalletMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof blockWallet>>, TError,BlockWalletMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof blockWallet>>, TError,BlockWalletMutationVariables, TContext> => {
+
+const mutationKey = getBlockWalletMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof blockWallet>>, BlockWalletMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  blockWallet(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BlockWalletMutationResult = NonNullable<Awaited<ReturnType<typeof blockWallet>>>
+    export type BlockWalletMutationBody = BodyType<BlockedWalletInput>
+    export type BlockWalletMutationError = ErrorType<ErrorResponse>
+    export type BlockWalletMutationVariables = {data: BodyType<BlockedWalletInput>}
+
+    /**
+ * @summary Block a wallet from direct messaging
+ */
+export const useBlockWallet = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof blockWallet>>, TError,BlockWalletMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof blockWallet>>,
+        TError,
+        BlockWalletMutationVariables,
+        TContext
+      > => {
+      return useMutation(getBlockWalletMutationOptions(options), queryClient);
+    }
+
+export const getUnblockWalletUrl = (blockedWalletAddress: string,) => {
+
+
+
+
+  return `/api/wallet/blocks/${blockedWalletAddress}`
+}
+
+/**
+ * @summary Remove a wallet block
+ */
+export const unblockWallet = async (blockedWalletAddress: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getUnblockWalletUrl(blockedWalletAddress),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getUnblockWalletMutationKey = () => ['unblockWallet'] as const;
+
+export const getUnblockWalletMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unblockWallet>>, TError,UnblockWalletMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unblockWallet>>, TError,UnblockWalletMutationVariables, TContext> => {
+
+const mutationKey = getUnblockWalletMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unblockWallet>>, UnblockWalletMutationVariables> = (props) => {
+          const {blockedWalletAddress} = props ?? {};
+
+          return  unblockWallet(blockedWalletAddress,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnblockWalletMutationResult = NonNullable<Awaited<ReturnType<typeof unblockWallet>>>
+
+    export type UnblockWalletMutationError = ErrorType<ErrorResponse>
+    export type UnblockWalletMutationVariables = {blockedWalletAddress: string}
+
+    /**
+ * @summary Remove a wallet block
+ */
+export const useUnblockWallet = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unblockWallet>>, TError,UnblockWalletMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof unblockWallet>>,
+        TError,
+        UnblockWalletMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUnblockWalletMutationOptions(options), queryClient);
+    }
+
 export const getListConversationsUrl = (params: ListConversationsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -1055,6 +1320,154 @@ export const useCreateDirectConversation = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateDirectConversationMutationOptions(options), queryClient);
+    }
+
+export const getAcceptConversationRequestUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/request/accept`
+}
+
+/**
+ * @summary Accept an incoming private-message request
+ */
+export const acceptConversationRequest = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<Conversation> => {
+
+  return customFetch<Conversation>(getAcceptConversationRequestUrl(conversationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAcceptConversationRequestMutationKey = () => ['acceptConversationRequest'] as const;
+
+export const getAcceptConversationRequestMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptConversationRequest>>, TError,AcceptConversationRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acceptConversationRequest>>, TError,AcceptConversationRequestMutationVariables, TContext> => {
+
+const mutationKey = getAcceptConversationRequestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptConversationRequest>>, AcceptConversationRequestMutationVariables> = (props) => {
+          const {conversationId} = props ?? {};
+
+          return  acceptConversationRequest(conversationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptConversationRequestMutationResult = NonNullable<Awaited<ReturnType<typeof acceptConversationRequest>>>
+
+    export type AcceptConversationRequestMutationError = ErrorType<ErrorResponse>
+    export type AcceptConversationRequestMutationVariables = {conversationId: string}
+
+    /**
+ * @summary Accept an incoming private-message request
+ */
+export const useAcceptConversationRequest = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptConversationRequest>>, TError,AcceptConversationRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof acceptConversationRequest>>,
+        TError,
+        AcceptConversationRequestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAcceptConversationRequestMutationOptions(options), queryClient);
+    }
+
+export const getDeclineConversationRequestUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/request/decline`
+}
+
+/**
+ * @summary Decline an incoming private-message request
+ */
+export const declineConversationRequest = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<Conversation> => {
+
+  return customFetch<Conversation>(getDeclineConversationRequestUrl(conversationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeclineConversationRequestMutationKey = () => ['declineConversationRequest'] as const;
+
+export const getDeclineConversationRequestMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof declineConversationRequest>>, TError,DeclineConversationRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof declineConversationRequest>>, TError,DeclineConversationRequestMutationVariables, TContext> => {
+
+const mutationKey = getDeclineConversationRequestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof declineConversationRequest>>, DeclineConversationRequestMutationVariables> = (props) => {
+          const {conversationId} = props ?? {};
+
+          return  declineConversationRequest(conversationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeclineConversationRequestMutationResult = NonNullable<Awaited<ReturnType<typeof declineConversationRequest>>>
+
+    export type DeclineConversationRequestMutationError = ErrorType<ErrorResponse>
+    export type DeclineConversationRequestMutationVariables = {conversationId: string}
+
+    /**
+ * @summary Decline an incoming private-message request
+ */
+export const useDeclineConversationRequest = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof declineConversationRequest>>, TError,DeclineConversationRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof declineConversationRequest>>,
+        TError,
+        DeclineConversationRequestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeclineConversationRequestMutationOptions(options), queryClient);
     }
 
 export const getListConversationMessagesUrl = (conversationId: string,

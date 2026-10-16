@@ -198,6 +198,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /wallet/blocks:
+    get:
+      operationId: listBlockedWallets
+      tags: [wallet]
+      summary: List wallets blocked by the current wallet
+      responses:
+        "200":
+          description: Blocked wallet addresses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BlockedWallet"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: blockWallet
+      tags: [wallet]
+      summary: Block a wallet from direct messaging
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlockedWalletInput"
+      responses:
+        "201":
+          description: Wallet blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockedWallet"
+        "400":
+          description: Invalid wallet address
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /wallet/blocks/{blockedWalletAddress}:
+    delete:
+      operationId: unblockWallet
+      tags: [wallet]
+      summary: Remove a wallet block
+      parameters:
+        - $ref: "#/components/parameters/BlockedWalletAddress"
+      responses:
+        "204":
+          description: Wallet unblocked
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /conversations:
     get:
       operationId: listConversations
@@ -231,6 +296,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Conversation"
+  /conversations/{conversationId}/request/accept:
+    post:
+      operationId: acceptConversationRequest
+      tags: [conversations]
+      summary: Accept an incoming private-message request
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      responses:
+        "200":
+          description: Accepted direct conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+        "403":
+          description: Caller cannot accept this request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Request is no longer pending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /conversations/{conversationId}/request/decline:
+    post:
+      operationId: declineConversationRequest
+      tags: [conversations]
+      summary: Decline an incoming private-message request
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      responses:
+        "200":
+          description: Declined direct conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+        "403":
+          description: Caller cannot decline this request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Request is no longer pending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /conversations/{conversationId}/messages:
     get:
       operationId: listConversationMessages
@@ -1096,6 +1213,12 @@ components:
       required: true
       schema:
         type: string
+    BlockedWalletAddress:
+      name: blockedWalletAddress
+      in: path
+      required: true
+      schema:
+        type: string
         minLength: 25
   schemas:
     HealthStatus:
@@ -1254,7 +1377,16 @@ components:
           type: boolean
         memberCount:
           type: integer
-      required: [id, type, title, participantLabel, lastMessage, lastMessageAt, unreadCount, encrypted, memberCount]
+        directStatus:
+          type: string
+          enum: [pending, accepted, declined]
+        requesterAddress:
+          type: ["string", "null"]
+        otherWalletAddress:
+          type: ["string", "null"]
+        directMessagingBlocked:
+          type: boolean
+      required: [id, type, title, participantLabel, lastMessage, lastMessageAt, unreadCount, encrypted, memberCount, directStatus, requesterAddress, otherWalletAddress, directMessagingBlocked]
     DirectConversationInput:
       type: object
       properties:
@@ -1265,6 +1397,25 @@ components:
           type: string
           minLength: 25
       required: [walletAddress, fromWalletAddress]
+    BlockedWallet:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        blockedWalletAddress:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [walletAddress, blockedWalletAddress, createdAt]
+    BlockedWalletInput:
+      type: object
+      properties:
+        blockedWalletAddress:
+          type: string
+          minLength: 25
+          maxLength: 35
+      required: [blockedWalletAddress]
     Message:
       type: object
       properties:

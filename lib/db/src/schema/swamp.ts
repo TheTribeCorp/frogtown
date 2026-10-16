@@ -12,6 +12,8 @@ export const conversationsTable = pgTable("swamp_conversations", {
   unreadCount: integer("unread_count").notNull().default(0),
   encrypted: boolean("encrypted").notNull().default(true),
   memberCount: integer("member_count").notNull().default(2),
+  directStatus: text("direct_status").notNull().default("accepted"),
+  requesterAddress: text("requester_address"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -76,14 +78,28 @@ export const walletKeysTable = pgTable("swamp_wallet_keys", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const blockedWalletsTable = pgTable("swamp_blocked_wallets", {
+  walletAddress: text("wallet_address").notNull(),
+  blockedWalletAddress: text("blocked_wallet_address").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({
+    name: "swamp_blocked_wallets_pk",
+    columns: [table.walletAddress, table.blockedWalletAddress],
+  }),
+  index("swamp_blocked_wallets_blocked_idx").on(table.blockedWalletAddress),
+]);
+
 export const insertConversationSchema = createInsertSchema(conversationsTable);
 export const insertMessageSchema = createInsertSchema(messagesTable);
 export const insertGroupSchema = createInsertSchema(groupsTable);
 export const insertGroupMemberSchema = createInsertSchema(groupMembersTable);
 export const insertConversationMemberSchema = createInsertSchema(conversationMembersTable);
 export const insertWalletKeySchema = createInsertSchema(walletKeysTable);
+export const insertBlockedWalletSchema = createInsertSchema(blockedWalletsTable);
 
 export type Conversation = z.infer<typeof insertConversationSchema>;
 export type Message = z.infer<typeof insertMessageSchema>;
 export type Group = z.infer<typeof insertGroupSchema>;
 export type WalletKey = z.infer<typeof insertWalletKeySchema>;
+export type BlockedWallet = z.infer<typeof insertBlockedWalletSchema>;

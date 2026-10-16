@@ -85,12 +85,8 @@ export const LogoutWalletResponse = zod.void()
 /**
  * @summary Get a wallet's registered public encryption key
  */
-export const getWalletEncryptionKeyPathWalletAddressMin = 25;
-
-
-
 export const GetWalletEncryptionKeyParams = zod.object({
-  "walletAddress": zod.coerce.string().min(getWalletEncryptionKeyPathWalletAddressMin)
+  "walletAddress": zod.coerce.string()
 })
 
 export const GetWalletEncryptionKeyResponse = zod.object({
@@ -117,6 +113,50 @@ export const RegisterWalletEncryptionKeyResponse = zod.object({
 
 
 /**
+ * @summary List wallets blocked by the current wallet
+ */
+export const ListBlockedWalletsResponseItem = zod.object({
+  "walletAddress": zod.string(),
+  "blockedWalletAddress": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListBlockedWalletsResponse = zod.array(ListBlockedWalletsResponseItem)
+
+
+/**
+ * @summary Block a wallet from direct messaging
+ */
+export const blockWalletBodyBlockedWalletAddressMin = 25;
+export const blockWalletBodyBlockedWalletAddressMax = 35;
+
+
+
+export const BlockWalletBody = zod.object({
+  "blockedWalletAddress": zod.string().min(blockWalletBodyBlockedWalletAddressMin).max(blockWalletBodyBlockedWalletAddressMax)
+})
+
+export const BlockWalletResponse = zod.object({
+  "walletAddress": zod.string(),
+  "blockedWalletAddress": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Remove a wallet block
+ */
+export const unblockWalletPathBlockedWalletAddressMin = 25;
+
+
+
+export const UnblockWalletParams = zod.object({
+  "blockedWalletAddress": zod.coerce.string().min(unblockWalletPathBlockedWalletAddressMin)
+})
+
+export const UnblockWalletResponse = zod.void()
+
+
+/**
  * @summary List conversations for a wallet address
  */
 export const listConversationsQueryWalletAddressMin = 25;
@@ -136,7 +176,11 @@ export const ListConversationsResponseItem = zod.object({
   "lastMessageAt": zod.coerce.date().nullable(),
   "unreadCount": zod.number().int(),
   "encrypted": zod.boolean(),
-  "memberCount": zod.number().int()
+  "memberCount": zod.number().int(),
+  "directStatus": zod.enum(['pending', 'accepted', 'declined']),
+  "requesterAddress": zod.string().nullable(),
+  "otherWalletAddress": zod.string().nullable(),
+  "directMessagingBlocked": zod.boolean()
 })
 export const ListConversationsResponse = zod.array(ListConversationsResponseItem)
 
@@ -164,7 +208,59 @@ export const CreateDirectConversationResponse = zod.object({
   "lastMessageAt": zod.coerce.date().nullable(),
   "unreadCount": zod.number().int(),
   "encrypted": zod.boolean(),
-  "memberCount": zod.number().int()
+  "memberCount": zod.number().int(),
+  "directStatus": zod.enum(['pending', 'accepted', 'declined']),
+  "requesterAddress": zod.string().nullable(),
+  "otherWalletAddress": zod.string().nullable(),
+  "directMessagingBlocked": zod.boolean()
+})
+
+
+/**
+ * @summary Accept an incoming private-message request
+ */
+export const AcceptConversationRequestParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const AcceptConversationRequestResponse = zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['direct', 'group']),
+  "title": zod.string(),
+  "participantLabel": zod.string(),
+  "lastMessage": zod.string().nullable(),
+  "lastMessageAt": zod.coerce.date().nullable(),
+  "unreadCount": zod.number().int(),
+  "encrypted": zod.boolean(),
+  "memberCount": zod.number().int(),
+  "directStatus": zod.enum(['pending', 'accepted', 'declined']),
+  "requesterAddress": zod.string().nullable(),
+  "otherWalletAddress": zod.string().nullable(),
+  "directMessagingBlocked": zod.boolean()
+})
+
+
+/**
+ * @summary Decline an incoming private-message request
+ */
+export const DeclineConversationRequestParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const DeclineConversationRequestResponse = zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['direct', 'group']),
+  "title": zod.string(),
+  "participantLabel": zod.string(),
+  "lastMessage": zod.string().nullable(),
+  "lastMessageAt": zod.coerce.date().nullable(),
+  "unreadCount": zod.number().int(),
+  "encrypted": zod.boolean(),
+  "memberCount": zod.number().int(),
+  "directStatus": zod.enum(['pending', 'accepted', 'declined']),
+  "requesterAddress": zod.string().nullable(),
+  "otherWalletAddress": zod.string().nullable(),
+  "directMessagingBlocked": zod.boolean()
 })
 
 

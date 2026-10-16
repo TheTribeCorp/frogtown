@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ConversationDirectStatus } from './conversationDirectStatus';
 import type { ConversationType } from './conversationType';
 
 export interface Conversation {
@@ -19,4 +20,10 @@ export interface Conversation {
   unreadCount: number;
   encrypted: boolean;
   memberCount: number;
+  directStatus: ConversationDirectStatus;
+  /** @nullable */
+  requesterAddress: string | null;
+  /** @nullable */
+  otherWalletAddress: string | null;
+  directMessagingBlocked: boolean;
 }

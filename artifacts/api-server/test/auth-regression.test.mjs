@@ -455,6 +455,217 @@ test("starting a private chat never reuses a shared group conversation", async (
   assert.equal(groupObserverMessages.status, 403);
 });
 
+test("simultaneous private-chat starts converge on one pending conversation", async () => {
+  const walletA = randomWalletAddress();
+  const walletB = randomWalletAddress();
+  const start = (fromWalletAddress, walletAddress) => request("/api/conversations", {
+    method: "POST",
+    cookie: sessionCookie(fromWalletAddress),
+    body: { walletAddress, fromWalletAddress },
+  });
+  const [first, second] = await Promise.all([
+    start(walletA, walletB),
+    start(walletB, walletA),
+  ]);
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 201);
+  const [conversationA, conversationB] = await Promise.all([first.json(), second.json()]);
+  assert.equal(conversationA.id, conversationB.id);
+  assert.equal(conversationA.type, "direct");
+  assert.equal(conversationA.directStatus, "pending");
+  assert.ok([walletA, walletB].includes(conversationA.requesterAddress));
+
+  const [listA, listB] = await Promise.all([
+    request(`/api/conversations?walletAddress=${walletA}`, { cookie: sessionCookie(walletA) }),
+    request(`/api/conversations?walletAddress=${walletB}`, { cookie: sessionCookie(walletB) }),
+  ]);
+  assert.equal(listA.status, 200);
+  assert.equal(listB.status, 200);
+  assert.equal((await listA.json()).filter((item) => item.id === conversationA.id).length, 1);
+  assert.equal((await listB.json()).filter((item) => item.id === conversationA.id).length, 1);
+});
+
+test("private-message requests are screened and only recipients can accept or decline", async () => {
+  const sender = randomWalletAddress();
+  const recipient = randomWalletAddress();
+  const outsider = randomWalletAddress();
+  const created = await request("/api/conversations", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { walletAddress: recipient, fromWalletAddress: sender },
+  });
+  assert.equal(created.status, 201);
+  const conversation = await created.json();
+  assert.equal(conversation.directStatus, "pending");
+  assert.equal(conversation.requesterAddress, sender);
+
+  const messageId = randomUUID();
+  const introduction = await request(`/api/conversations/${conversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { senderAddress: sender, messageId, body: recipientEnvelope([sender, recipient]) },
+  });
+  assert.equal(introduction.status, 201);
+
+  const inbox = await request(`/api/conversations?walletAddress=${recipient}`, {
+    cookie: sessionCookie(recipient),
+  });
+  const requestItem = (await inbox.json()).find((item) => item.id === conversation.id);
+  assert.equal(requestItem.directStatus, "pending");
+  assert.equal(requestItem.requesterAddress, sender);
+  assert.equal(requestItem.otherWalletAddress, sender);
+  assert.equal(requestItem.unreadCount, 1);
+
+  const recipientCanReadIntro = await request(
+    `/api/conversations/${conversation.id}/messages?walletAddress=${recipient}`,
+    { cookie: sessionCookie(recipient) },
+  );
+  assert.equal(recipientCanReadIntro.status, 200);
+  assert.equal((await recipientCanReadIntro.json()).find((message) => message.id === messageId).body, recipientEnvelope([sender, recipient]));
+
+  const prematureReply = await request(`/api/conversations/${conversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+    body: { senderAddress: recipient, messageId: randomUUID(), body: recipientEnvelope([sender, recipient]) },
+  });
+  assert.equal(prematureReply.status, 403);
+  const extraIntroduction = await request(`/api/conversations/${conversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { senderAddress: sender, messageId: randomUUID(), body: recipientEnvelope([sender, recipient]) },
+  });
+  assert.equal(extraIntroduction.status, 409);
+
+  for (const action of ["accept", "decline"]) {
+    const outsiderAction = await request(`/api/conversations/${conversation.id}/request/${action}`, {
+      method: "POST",
+      cookie: sessionCookie(outsider),
+    });
+    assert.equal(outsiderAction.status, 403);
+    const senderAction = await request(`/api/conversations/${conversation.id}/request/${action}`, {
+      method: "POST",
+      cookie: sessionCookie(sender),
+    });
+    assert.equal(senderAction.status, 403);
+  }
+  const accepted = await request(`/api/conversations/${conversation.id}/request/accept`, {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+  });
+  assert.equal(accepted.status, 200);
+  assert.equal((await accepted.json()).directStatus, "accepted");
+  const reply = await request(`/api/conversations/${conversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+    body: { senderAddress: recipient, messageId: randomUUID(), body: recipientEnvelope([sender, recipient]) },
+  });
+  assert.equal(reply.status, 201);
+});
+
+test("declining and blocking stop direct messages without deleting old history or affecting groups", async () => {
+  const sender = randomWalletAddress();
+  const recipient = randomWalletAddress();
+  await Promise.all([registerWalletKey(sender), registerWalletKey(recipient)]);
+
+  const pendingResponse = await request("/api/conversations", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { walletAddress: recipient, fromWalletAddress: sender },
+  });
+  const pending = await pendingResponse.json();
+  const declined = await request(`/api/conversations/${pending.id}/request/decline`, {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+  });
+  assert.equal(declined.status, 200);
+  assert.equal((await declined.json()).directStatus, "declined");
+  const noRetryFromDeclinedSender = await request("/api/conversations", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { walletAddress: recipient, fromWalletAddress: sender },
+  });
+  assert.equal(noRetryFromDeclinedSender.status, 403);
+
+  const renewed = await request("/api/conversations", {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+    body: { walletAddress: sender, fromWalletAddress: recipient },
+  });
+  assert.equal(renewed.status, 201);
+  const acceptedConversation = await renewed.json();
+  const accepted = await request(`/api/conversations/${acceptedConversation.id}/request/accept`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+  });
+  assert.equal(accepted.status, 200);
+  const messageId = randomUUID();
+  const historyMessage = await request(`/api/conversations/${acceptedConversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+    body: { senderAddress: recipient, messageId, body: recipientEnvelope([sender, recipient]) },
+  });
+  assert.equal(historyMessage.status, 201);
+
+  const blocked = await request("/api/wallet/blocks", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { blockedWalletAddress: recipient },
+  });
+  assert.equal(blocked.status, 201);
+  const blockedList = await request("/api/wallet/blocks", { cookie: sessionCookie(sender) });
+  assert.equal((await blockedList.json()).some((item) => item.blockedWalletAddress === recipient), true);
+
+  const senderConversations = await request(`/api/conversations?walletAddress=${sender}`, {
+    cookie: sessionCookie(sender),
+  });
+  const blockedConversation = (await senderConversations.json()).find((item) => item.id === acceptedConversation.id);
+  assert.equal(blockedConversation.directMessagingBlocked, true);
+
+  const preservedHistory = await request(
+    `/api/conversations/${acceptedConversation.id}/messages?walletAddress=${sender}`,
+    { cookie: sessionCookie(sender) },
+  );
+  assert.equal(preservedHistory.status, 200);
+  assert.ok((await preservedHistory.json()).some((message) => message.id === messageId));
+  const blockedSend = await request(`/api/conversations/${acceptedConversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+    body: { senderAddress: recipient, messageId: randomUUID(), body: recipientEnvelope([sender, recipient]) },
+  });
+  assert.equal(blockedSend.status, 403);
+
+  const groupResponse = await request("/api/groups", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { name: `Block isolation ${randomUUID()}`, description: "", creatorAddress: sender },
+  });
+  const group = await groupResponse.json();
+  const joined = await request(`/api/groups/${group.id}/join`, {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+    body: { walletAddress: recipient },
+  });
+  assert.equal(joined.status, 200);
+  const groupMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { senderAddress: sender, messageId: randomUUID(), body: recipientEnvelope([sender, recipient]) },
+  });
+  assert.equal(groupMessage.status, 201, "a direct-message block must not restrict shared groups");
+
+  const unblocked = await request(`/api/wallet/blocks/${recipient}`, {
+    method: "DELETE",
+    cookie: sessionCookie(sender),
+  });
+  assert.equal(unblocked.status, 204);
+  const sendAfterUnblock = await request(`/api/conversations/${acceptedConversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { senderAddress: sender, messageId: randomUUID(), body: recipientEnvelope([sender, recipient]) },
+  });
+  assert.equal(sendAfterUnblock.status, 201);
+});
+
 test("group messages reach registered-key members without waiting for keyless members", async () => {
   const sender = randomWalletAddress();
   const keylessMember = randomWalletAddress();
@@ -598,21 +809,23 @@ test("group history shares are limited to new members and remain recipient-only"
 });
 
 test("message events reach private-chat and group recipients with sender metadata", async () => {
+  const sender = randomWalletAddress();
+  const recipient = randomWalletAddress();
   const directResponse = await request("/api/conversations", {
     method: "POST",
-    cookie: sessionCookie(walletA),
-    body: { walletAddress: walletB, fromWalletAddress: walletA },
+    cookie: sessionCookie(sender),
+    body: { walletAddress: recipient, fromWalletAddress: sender },
   });
   assert.equal(directResponse.status, 201);
   const directConversation = await directResponse.json();
 
-  const stream = await openMessageEvents(walletB);
+  const stream = await openMessageEvents(recipient);
   try {
     const plaintextResponse = await request(`/api/conversations/${directConversation.id}/messages`, {
       method: "POST",
-      cookie: sessionCookie(walletA),
+      cookie: sessionCookie(sender),
       body: {
-        senderAddress: walletA,
+        senderAddress: sender,
         messageId: randomUUID(),
         body: "this must never be stored as readable text",
       },
@@ -622,44 +835,46 @@ test("message events reach private-chat and group recipients with sender metadat
     const directMessageId = randomUUID();
     const directMessageResponse = await request(`/api/conversations/${directConversation.id}/messages`, {
       method: "POST",
-      cookie: sessionCookie(walletA),
-      body: { senderAddress: walletA, messageId: directMessageId, body: recipientEnvelope([walletA, walletB]) },
+      cookie: sessionCookie(sender),
+      body: { senderAddress: sender, messageId: directMessageId, body: recipientEnvelope([sender, recipient]) },
     });
     assert.equal(directMessageResponse.status, 201);
     const directEvent = await stream.nextEvent();
     assert.equal(directEvent.type, "message.created");
     assert.equal(directEvent.conversationId, directConversation.id);
     assert.equal(directEvent.messageId, directMessageId);
-    assert.equal(directEvent.senderAddress, walletA);
+    assert.equal(directEvent.senderAddress, sender);
+    assert.equal(directEvent.isRequest, true);
 
     const groupResponse = await request("/api/groups", {
       method: "POST",
-      cookie: sessionCookie(walletA),
-      body: { name: `Notification test ${randomUUID()}`, description: "", creatorAddress: walletA },
+      cookie: sessionCookie(sender),
+      body: { name: `Notification test ${randomUUID()}`, description: "", creatorAddress: sender },
     });
     assert.equal(groupResponse.status, 201);
     const group = await groupResponse.json();
     const joinResponse = await request(`/api/groups/${group.id}/join`, {
       method: "POST",
-      cookie: sessionCookie(walletB),
-      body: { walletAddress: walletB },
+      cookie: sessionCookie(recipient),
+      body: { walletAddress: recipient },
     });
     assert.equal(joinResponse.status, 200);
 
-    await registerWalletKey(walletA);
-    await registerWalletKey(walletB);
+    await registerWalletKey(sender);
+    await registerWalletKey(recipient);
     const groupMessageId = randomUUID();
     const groupMessageResponse = await request(`/api/conversations/${group.conversationId}/messages`, {
       method: "POST",
-      cookie: sessionCookie(walletA),
-      body: { senderAddress: walletA, messageId: groupMessageId, body: recipientEnvelope([walletA, walletB]) },
+      cookie: sessionCookie(sender),
+      body: { senderAddress: sender, messageId: groupMessageId, body: recipientEnvelope([sender, recipient]) },
     });
     assert.equal(groupMessageResponse.status, 201);
     const groupEvent = await stream.nextEvent();
     assert.equal(groupEvent.type, "message.created");
     assert.equal(groupEvent.conversationId, group.conversationId);
     assert.equal(groupEvent.messageId, groupMessageId);
-    assert.equal(groupEvent.senderAddress, walletA);
+    assert.equal(groupEvent.senderAddress, sender);
+    assert.equal(groupEvent.isRequest, false);
   } finally {
     stream.close();
   }

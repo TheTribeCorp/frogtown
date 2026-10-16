@@ -2,9 +2,12 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
+  AcceptConversationRequestParams,
+  BlockWalletBody,
   CreateDirectConversationBody,
   CreateConversationHistoryShareBody,
   CreateConversationHistoryShareParams,
+  DeclineConversationRequestParams,
   CreateGroupBody,
   GetConversationEncryptionKeysParams,
   GetWalletHermitTickParams,
@@ -25,14 +28,16 @@ import {
   RegisterWalletEncryptionKeyBody,
   SendMessageBody,
   SendMessageParams,
+  UnblockWalletParams,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
-import { publishMessageCreated, publishMessageRead, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
+import { publishConversationUpdated, publishMessageCreated, publishMessageRead, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
 import { recordDailyQuestActionInTransaction } from "../lib/gamification";
 import { getWalletHermitTick, hermitTickCacheControl } from "../lib/hermit-tick";
 import {
   conversationMembersTable,
   conversationsTable,
+  blockedWalletsTable,
   groupMembersTable,
   groupsTable,
   messagesTable,
@@ -81,11 +86,30 @@ function encodeEventCursor(cursor: EventCursor): string {
   return Buffer.from(JSON.stringify(cursor)).toString("base64url");
 }
 
-function serializeConversation(row: typeof conversationsTable.$inferSelect) {
+function serializeConversation(
+  row: typeof conversationsTable.$inferSelect,
+  otherWalletAddress: string | null = null,
+  directMessagingBlocked = false,
+) {
+  const title = row.type === "direct" && otherWalletAddress
+    ? otherWalletAddress
+    : row.title;
   return {
     ...row,
+    title,
+    participantLabel: row.type === "direct" && otherWalletAddress
+      ? otherWalletAddress
+      : row.participantLabel,
     lastMessage: row.lastMessage ? "Encrypted message" : null,
+    directStatus: row.directStatus ?? "accepted",
+    requesterAddress: row.requesterAddress ?? null,
+    otherWalletAddress: row.type === "direct" ? otherWalletAddress : null,
+    directMessagingBlocked: row.type === "direct" && directMessagingBlocked,
   };
+}
+
+function directPairLockKey(walletA: string, walletB: string): string {
+  return [walletA, walletB].sort().join(":");
 }
 
 function decodeCanonicalBase64Url(value: unknown): Buffer | null {
@@ -433,6 +457,118 @@ router.post("/wallet/logout", (_req, res) => {
   res.status(204).send();
 });
 
+router.get("/wallet/blocks", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const blocked = await db
+    .select()
+    .from(blockedWalletsTable)
+    .where(eq(blockedWalletsTable.walletAddress, walletAddress))
+    .orderBy(desc(blockedWalletsTable.createdAt));
+  res.json(blocked);
+});
+
+router.post("/wallet/blocks", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const parsed = BlockWalletBody.safeParse(req.body);
+  if (!parsed.success || !isWalletAddress(parsed.data.blockedWalletAddress)) {
+    res.status(400).json({ error: "Enter a valid XRPL wallet address to block." });
+    return;
+  }
+  const blockedWalletAddress = parsed.data.blockedWalletAddress;
+  if (walletAddress === blockedWalletAddress) {
+    res.status(400).json({ error: "You cannot block your own wallet." });
+    return;
+  }
+
+  try {
+    const result = await db.transaction(async (transaction) => {
+      const pairKey = directPairLockKey(walletAddress, blockedWalletAddress);
+      await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${pairKey}, 0))`);
+      const inserted = await transaction
+        .insert(blockedWalletsTable)
+        .values({ walletAddress, blockedWalletAddress })
+        .onConflictDoNothing()
+        .returning();
+      const block = inserted[0] ?? (await transaction
+        .select()
+        .from(blockedWalletsTable)
+        .where(and(
+          eq(blockedWalletsTable.walletAddress, walletAddress),
+          eq(blockedWalletsTable.blockedWalletAddress, blockedWalletAddress),
+        ))
+        .limit(1))[0];
+      if (!block) throw new Error("Block record could not be saved.");
+
+      const candidateRows = await transaction
+        .select({
+          conversationId: conversationsTable.id,
+          walletAddress: conversationMembersTable.walletAddress,
+        })
+        .from(conversationsTable)
+        .innerJoin(
+          conversationMembersTable,
+          eq(conversationsTable.id, conversationMembersTable.conversationId),
+        )
+        .where(and(
+          eq(conversationsTable.type, "direct"),
+          inArray(conversationMembersTable.walletAddress, [walletAddress, blockedWalletAddress]),
+        ));
+      const membersByConversation = new Map<string, Set<string>>();
+      for (const row of candidateRows) {
+        const members = membersByConversation.get(row.conversationId) ?? new Set<string>();
+        members.add(row.walletAddress);
+        membersByConversation.set(row.conversationId, members);
+      }
+      const exactPairIds = [...membersByConversation.entries()]
+        .filter(([, members]) => members.size === 2)
+        .map(([conversationId]) => conversationId);
+      return { block, conversationIds: exactPairIds };
+    });
+
+    for (const conversationId of result.conversationIds) {
+      await publishConversationUpdated(
+        [walletAddress, blockedWalletAddress],
+        { conversationId },
+      );
+    }
+    res.status(201).json(result.block);
+  } catch {
+    res.status(500).json({ error: "This wallet could not be blocked right now." });
+  }
+});
+
+router.delete("/wallet/blocks/:blockedWalletAddress", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const parsed = UnblockWalletParams.safeParse(req.params);
+  if (!parsed.success || !isWalletAddress(parsed.data.blockedWalletAddress)) {
+    res.status(400).json({ error: "Enter a valid XRPL wallet address." });
+    return;
+  }
+  const blockedWalletAddress = parsed.data.blockedWalletAddress;
+  if (walletAddress === blockedWalletAddress) {
+    res.status(400).json({ error: "Invalid blocked wallet." });
+    return;
+  }
+  try {
+    await db.transaction(async (transaction) => {
+      const pairKey = directPairLockKey(walletAddress, blockedWalletAddress);
+      await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${pairKey}, 0))`);
+      await transaction
+        .delete(blockedWalletsTable)
+        .where(and(
+          eq(blockedWalletsTable.walletAddress, walletAddress),
+          eq(blockedWalletsTable.blockedWalletAddress, blockedWalletAddress),
+        ));
+    });
+    res.status(204).send();
+  } catch {
+    res.status(500).json({ error: "This wallet could not be unblocked right now." });
+  }
+});
+
 router.get("/events", (req, res): void => {
   const walletAddress = requireAuth(req, res);
   if (!walletAddress) return;
@@ -473,8 +609,14 @@ router.get("/events", (req, res): void => {
             conversationId: messagesTable.conversationId,
             senderAddress: messagesTable.senderAddress,
             sentAt: messagesTable.sentAt,
+            conversationType: conversationsTable.type,
+            directStatus: conversationsTable.directStatus,
           })
           .from(messagesTable)
+          .innerJoin(
+            conversationsTable,
+            eq(messagesTable.conversationId, conversationsTable.id),
+          )
           .innerJoin(
             conversationMembersTable,
             and(
@@ -502,6 +644,7 @@ router.get("/events", (req, res): void => {
             conversationId: message.conversationId,
             messageId: message.id,
             senderAddress: message.senderAddress,
+            isRequest: message.conversationType === "direct" && message.directStatus === "pending",
           });
         }
 
@@ -676,6 +819,32 @@ router.get("/conversations", async (req, res) => {
       .from(conversationsTable)
       .where(inArray(conversationsTable.id, memberships.map((row) => row.conversationId)))
       .orderBy(desc(conversationsTable.lastMessageAt), desc(conversationsTable.createdAt));
+    const participantRows = await db
+      .select({
+        conversationId: conversationMembersTable.conversationId,
+        walletAddress: conversationMembersTable.walletAddress,
+      })
+      .from(conversationMembersTable)
+      .where(inArray(conversationMembersTable.conversationId, memberships.map((row) => row.conversationId)));
+    const otherWalletByConversation = new Map<string, string>();
+    for (const participant of participantRows) {
+      if (participant.walletAddress !== walletAddress) {
+        otherWalletByConversation.set(participant.conversationId, participant.walletAddress);
+      }
+    }
+    const blockedRows = await db
+      .select({
+        walletAddress: blockedWalletsTable.walletAddress,
+        blockedWalletAddress: blockedWalletsTable.blockedWalletAddress,
+      })
+      .from(blockedWalletsTable)
+      .where(or(
+        eq(blockedWalletsTable.walletAddress, walletAddress),
+        eq(blockedWalletsTable.blockedWalletAddress, walletAddress),
+      ));
+    const blockedCounterparts = new Set(blockedRows.map((row) => (
+      row.walletAddress === walletAddress ? row.blockedWalletAddress : row.walletAddress
+    )));
     const unreadRows = await db
       .select({
         conversationId: messagesTable.conversationId,
@@ -696,10 +865,24 @@ router.get("/conversations", async (req, res) => {
       ))
       .groupBy(messagesTable.conversationId);
     const unreadCounts = new Map(unreadRows.map((row) => [row.conversationId, row.unreadCount]));
-    res.json(rows.map((row) => ({
-      ...serializeConversation(row),
-      unreadCount: unreadCounts.get(row.id) ?? 0,
-    })));
+    res.json(rows
+      .filter((row) => {
+        if (row.directStatus === "declined") return false;
+        const otherWalletAddress = otherWalletByConversation.get(row.id);
+        return !(row.type === "direct" && row.directStatus === "pending"
+          && otherWalletAddress && blockedCounterparts.has(otherWalletAddress));
+      })
+      .map((row) => {
+        const otherWalletAddress = otherWalletByConversation.get(row.id) ?? null;
+        return {
+          ...serializeConversation(
+            row,
+            otherWalletAddress,
+            otherWalletAddress ? blockedCounterparts.has(otherWalletAddress) : false,
+          ),
+          unreadCount: unreadCounts.get(row.id) ?? 0,
+        };
+      }));
   } catch {
     res.status(400).json({ error: "Invalid wallet address." });
   }
@@ -719,33 +902,54 @@ router.post("/conversations", async (req, res) => {
     }
 
     const requestedParticipants = new Set([input.walletAddress, input.fromWalletAddress]);
-    const sharedMemberships = await db
-      .select({
-        conversationId: conversationMembersTable.conversationId,
-        walletAddress: conversationMembersTable.walletAddress,
-      })
-      .from(conversationMembersTable)
-      .where(inArray(conversationMembersTable.walletAddress, [...requestedParticipants]));
-    const sharedWalletsByConversation = new Map<string, Set<string>>();
-    for (const membership of sharedMemberships) {
-      const wallets = sharedWalletsByConversation.get(membership.conversationId) ?? new Set<string>();
-      wallets.add(membership.walletAddress);
-      sharedWalletsByConversation.set(membership.conversationId, wallets);
-    }
-    const sharedConversationIds = [...sharedWalletsByConversation.entries()]
-      .filter(([, wallets]) => wallets.size === requestedParticipants.size)
-      .map(([conversationId]) => conversationId);
+    const outcome = await db.transaction(async (transaction) => {
+      const pairKey = directPairLockKey(input.walletAddress, input.fromWalletAddress);
+      await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${pairKey}, 0))`);
 
-    if (sharedConversationIds.length > 0) {
-      const directCandidates = await db
-        .select()
-        .from(conversationsTable)
-        .where(and(
-          eq(conversationsTable.type, "direct"),
-          inArray(conversationsTable.id, sharedConversationIds),
-        ));
-      if (directCandidates.length > 0) {
-        const candidateMemberships = await db
+      const pairBlock = await transaction
+        .select({ walletAddress: blockedWalletsTable.walletAddress })
+        .from(blockedWalletsTable)
+        .where(or(
+          and(
+            eq(blockedWalletsTable.walletAddress, input.walletAddress),
+            eq(blockedWalletsTable.blockedWalletAddress, input.fromWalletAddress),
+          ),
+          and(
+            eq(blockedWalletsTable.walletAddress, input.fromWalletAddress),
+            eq(blockedWalletsTable.blockedWalletAddress, input.walletAddress),
+          ),
+        ))
+        .limit(1);
+      if (pairBlock.length > 0) return { kind: "blocked" as const };
+
+      const sharedMemberships = await transaction
+        .select({
+          conversationId: conversationMembersTable.conversationId,
+          walletAddress: conversationMembersTable.walletAddress,
+        })
+        .from(conversationMembersTable)
+        .where(inArray(conversationMembersTable.walletAddress, [...requestedParticipants]));
+      const sharedWalletsByConversation = new Map<string, Set<string>>();
+      for (const membership of sharedMemberships) {
+        const wallets = sharedWalletsByConversation.get(membership.conversationId) ?? new Set<string>();
+        wallets.add(membership.walletAddress);
+        sharedWalletsByConversation.set(membership.conversationId, wallets);
+      }
+      const sharedConversationIds = [...sharedWalletsByConversation.entries()]
+        .filter(([, wallets]) => wallets.size === requestedParticipants.size)
+        .map(([conversationId]) => conversationId);
+      const directCandidates = sharedConversationIds.length > 0
+        ? await transaction
+          .select()
+          .from(conversationsTable)
+          .where(and(
+            eq(conversationsTable.type, "direct"),
+            inArray(conversationsTable.id, sharedConversationIds),
+          ))
+          .orderBy(desc(conversationsTable.createdAt))
+        : [];
+      const candidateMemberships = directCandidates.length > 0
+        ? await transaction
           .select({
             conversationId: conversationMembersTable.conversationId,
             walletAddress: conversationMembersTable.walletAddress,
@@ -754,47 +958,238 @@ router.post("/conversations", async (req, res) => {
           .where(inArray(
             conversationMembersTable.conversationId,
             directCandidates.map((conversation) => conversation.id),
-          ));
-        const membersByConversation = new Map<string, string[]>();
-        for (const membership of candidateMemberships) {
-          const wallets = membersByConversation.get(membership.conversationId) ?? [];
-          wallets.push(membership.walletAddress);
-          membersByConversation.set(membership.conversationId, wallets);
-        }
-        const existingDirect = directCandidates.find((conversation) => {
-          const wallets = membersByConversation.get(conversation.id) ?? [];
-          const uniqueWallets = new Set(wallets);
-          return wallets.length === 2
-            && uniqueWallets.size === 2
-            && [...requestedParticipants].every((wallet) => uniqueWallets.has(wallet));
-        });
-        if (existingDirect) {
-          res.status(201).json(serializeConversation(existingDirect));
-          return;
-        }
+          ))
+        : [];
+      const membersByConversation = new Map<string, string[]>();
+      for (const membership of candidateMemberships) {
+        const wallets = membersByConversation.get(membership.conversationId) ?? [];
+        wallets.push(membership.walletAddress);
+        membersByConversation.set(membership.conversationId, wallets);
       }
-    }
+      const exactDirectCandidates = directCandidates.filter((conversation) => {
+        const wallets = membersByConversation.get(conversation.id) ?? [];
+        const uniqueWallets = new Set(wallets);
+        return wallets.length === 2
+          && uniqueWallets.size === 2
+          && [...requestedParticipants].every((wallet) => uniqueWallets.has(wallet));
+      });
+      const activeDirect = exactDirectCandidates.find((conversation) => conversation.directStatus !== "declined");
+      if (activeDirect) return { kind: "conversation" as const, conversation: activeDirect, created: false };
 
-    const conversation = {
-      id: `conversation-${randomUUID()}`,
-      type: "direct",
-      title: input.walletAddress,
-      participantLabel: input.walletAddress,
-      lastMessage: null,
-      lastMessageAt: null,
-      unreadCount: 0,
-      encrypted: true,
-      memberCount: 2,
-      createdAt: new Date(),
-    };
-    await db.insert(conversationsTable).values(conversation);
-    await db.insert(conversationMembersTable).values([
-      { conversationId: conversation.id, walletAddress: input.walletAddress },
-      { conversationId: conversation.id, walletAddress: input.fromWalletAddress },
-    ]);
-    res.status(201).json(serializeConversation(conversation));
+      const lastDeclined = exactDirectCandidates[0];
+      if (lastDeclined?.requesterAddress === sessionWallet) {
+        return { kind: "declined" as const };
+      }
+
+      const conversation = {
+        id: `conversation-${randomUUID()}`,
+        type: "direct",
+        title: input.walletAddress,
+        participantLabel: input.walletAddress,
+        lastMessage: null,
+        lastMessageAt: null,
+        unreadCount: 0,
+        encrypted: true,
+        memberCount: 2,
+        directStatus: "pending",
+        requesterAddress: sessionWallet,
+        createdAt: new Date(),
+      };
+      await transaction.insert(conversationsTable).values(conversation);
+      await transaction.insert(conversationMembersTable).values([
+        { conversationId: conversation.id, walletAddress: input.walletAddress },
+        { conversationId: conversation.id, walletAddress: input.fromWalletAddress },
+      ]);
+      return { kind: "conversation" as const, conversation, created: true };
+    });
+
+    if (outcome.kind === "blocked") {
+      res.status(403).json({ error: "Private messaging is unavailable for this wallet." });
+      return;
+    }
+    if (outcome.kind === "declined") {
+      res.status(403).json({ error: "Private messaging is unavailable for this wallet." });
+      return;
+    }
+    if (outcome.created) {
+      await publishConversationUpdated(
+        [input.walletAddress, input.fromWalletAddress],
+        { conversationId: outcome.conversation.id },
+      );
+    }
+    res.status(201).json(serializeConversation(outcome.conversation, input.walletAddress));
   } catch {
     res.status(400).json({ error: "Enter two valid XRPL wallet addresses." });
+  }
+});
+
+router.post("/conversations/:conversationId/request/accept", async (req, res): Promise<void> => {
+  const sessionWallet = requireAuth(req, res);
+  if (!sessionWallet) return;
+  const parsed = AcceptConversationRequestParams.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid conversation." });
+    return;
+  }
+  const conversationId = parsed.data.conversationId;
+  const [initial] = await db
+    .select()
+    .from(conversationsTable)
+    .where(eq(conversationsTable.id, conversationId))
+    .limit(1);
+  if (!initial || initial.type !== "direct") {
+    res.status(404).json({ error: "Private-message request not found." });
+    return;
+  }
+  const initialMembers = await db
+    .select({ walletAddress: conversationMembersTable.walletAddress })
+    .from(conversationMembersTable)
+    .where(eq(conversationMembersTable.conversationId, conversationId));
+  const otherWalletAddress = initialMembers.find((member) => member.walletAddress !== sessionWallet)?.walletAddress;
+  if (initialMembers.length !== 2 || !initialMembers.some((member) => member.walletAddress === sessionWallet) || !otherWalletAddress) {
+    res.status(403).json({ error: "You cannot accept this request." });
+    return;
+  }
+  if (initial.requesterAddress === sessionWallet) {
+    res.status(403).json({ error: "Only the recipient can accept this request." });
+    return;
+  }
+
+  try {
+    const outcome = await db.transaction(async (transaction) => {
+      const pairKey = directPairLockKey(sessionWallet, otherWalletAddress);
+      await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${pairKey}, 0))`);
+      const [current] = await transaction
+        .select()
+        .from(conversationsTable)
+        .where(eq(conversationsTable.id, conversationId))
+        .limit(1);
+      if (!current || current.type !== "direct") return { kind: "not-found" as const };
+      const blocked = await transaction
+        .select({ walletAddress: blockedWalletsTable.walletAddress })
+        .from(blockedWalletsTable)
+        .where(or(
+          and(
+            eq(blockedWalletsTable.walletAddress, sessionWallet),
+            eq(blockedWalletsTable.blockedWalletAddress, otherWalletAddress),
+          ),
+          and(
+            eq(blockedWalletsTable.walletAddress, otherWalletAddress),
+            eq(blockedWalletsTable.blockedWalletAddress, sessionWallet),
+          ),
+        ))
+        .limit(1);
+      if (blocked.length > 0) return { kind: "blocked" as const };
+      if (current.directStatus === "accepted") return { kind: "accepted" as const, conversation: current };
+      if (current.directStatus !== "pending" || current.requesterAddress === sessionWallet) {
+        return { kind: "conflict" as const };
+      }
+      const [updated] = await transaction
+        .update(conversationsTable)
+        .set({ directStatus: "accepted" })
+        .where(and(
+          eq(conversationsTable.id, conversationId),
+          eq(conversationsTable.directStatus, "pending"),
+        ))
+        .returning();
+      return updated
+        ? { kind: "accepted" as const, conversation: updated }
+        : { kind: "conflict" as const };
+    });
+    if (outcome.kind === "not-found") {
+      res.status(404).json({ error: "Private-message request not found." });
+      return;
+    }
+    if (outcome.kind === "blocked") {
+      res.status(403).json({ error: "Private messaging is unavailable for this wallet." });
+      return;
+    }
+    if (outcome.kind === "conflict") {
+      res.status(409).json({ error: "This request is no longer pending." });
+      return;
+    }
+    await publishConversationUpdated(
+      [sessionWallet, otherWalletAddress],
+      { conversationId },
+    );
+    res.json(serializeConversation(outcome.conversation, otherWalletAddress));
+  } catch {
+    res.status(500).json({ error: "This request could not be accepted right now." });
+  }
+});
+
+router.post("/conversations/:conversationId/request/decline", async (req, res): Promise<void> => {
+  const sessionWallet = requireAuth(req, res);
+  if (!sessionWallet) return;
+  const parsed = DeclineConversationRequestParams.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid conversation." });
+    return;
+  }
+  const conversationId = parsed.data.conversationId;
+  const [initial] = await db
+    .select()
+    .from(conversationsTable)
+    .where(eq(conversationsTable.id, conversationId))
+    .limit(1);
+  if (!initial || initial.type !== "direct") {
+    res.status(404).json({ error: "Private-message request not found." });
+    return;
+  }
+  const initialMembers = await db
+    .select({ walletAddress: conversationMembersTable.walletAddress })
+    .from(conversationMembersTable)
+    .where(eq(conversationMembersTable.conversationId, conversationId));
+  const otherWalletAddress = initialMembers.find((member) => member.walletAddress !== sessionWallet)?.walletAddress;
+  if (initialMembers.length !== 2 || !initialMembers.some((member) => member.walletAddress === sessionWallet) || !otherWalletAddress) {
+    res.status(403).json({ error: "You cannot decline this request." });
+    return;
+  }
+  if (initial.requesterAddress === sessionWallet) {
+    res.status(403).json({ error: "Only the recipient can decline this request." });
+    return;
+  }
+
+  try {
+    const outcome = await db.transaction(async (transaction) => {
+      const pairKey = directPairLockKey(sessionWallet, otherWalletAddress);
+      await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${pairKey}, 0))`);
+      const [current] = await transaction
+        .select()
+        .from(conversationsTable)
+        .where(eq(conversationsTable.id, conversationId))
+        .limit(1);
+      if (!current || current.type !== "direct") return { kind: "not-found" as const };
+      if (current.directStatus !== "pending" || current.requesterAddress === sessionWallet) {
+        return { kind: "conflict" as const };
+      }
+      const [updated] = await transaction
+        .update(conversationsTable)
+        .set({ directStatus: "declined" })
+        .where(and(
+          eq(conversationsTable.id, conversationId),
+          eq(conversationsTable.directStatus, "pending"),
+        ))
+        .returning();
+      return updated
+        ? { kind: "declined" as const, conversation: updated }
+        : { kind: "conflict" as const };
+    });
+    if (outcome.kind === "not-found") {
+      res.status(404).json({ error: "Private-message request not found." });
+      return;
+    }
+    if (outcome.kind === "conflict") {
+      res.status(409).json({ error: "This request is no longer pending." });
+      return;
+    }
+    await publishConversationUpdated(
+      [sessionWallet, otherWalletAddress],
+      { conversationId },
+    );
+    res.json(serializeConversation(outcome.conversation, otherWalletAddress));
+  } catch {
+    res.status(500).json({ error: "This request could not be declined right now." });
   }
 });
 
@@ -815,6 +1210,15 @@ router.get("/conversations/:conversationId/messages", async (req, res) => {
       .where(eq(conversationMembersTable.conversationId, conversationId));
     if (!memberships.some((member) => member.walletAddress === sessionWallet)) {
       res.status(403).json({ error: "You are not a member of this conversation." });
+      return;
+    }
+    const [conversation] = await db
+      .select({ type: conversationsTable.type, directStatus: conversationsTable.directStatus })
+      .from(conversationsTable)
+      .where(eq(conversationsTable.id, conversationId))
+      .limit(1);
+    if (conversation?.type === "direct" && conversation.directStatus === "declined") {
+      res.status(403).json({ error: "This private-message request is no longer available." });
       return;
     }
     const rows = await db
@@ -1071,6 +1475,15 @@ router.post("/conversations/:conversationId/read", async (req, res) => {
       res.status(403).json({ error: "You are not a member of this conversation." });
       return;
     }
+    const [conversation] = await db
+      .select({ type: conversationsTable.type, directStatus: conversationsTable.directStatus })
+      .from(conversationsTable)
+      .where(eq(conversationsTable.id, conversationId))
+      .limit(1);
+    if (conversation?.type === "direct" && conversation.directStatus === "declined") {
+      res.status(403).json({ error: "This private-message request is no longer available." });
+      return;
+    }
     const message = await db
       .select({ sentAt: messagesTable.sentAt })
       .from(messagesTable)
@@ -1139,7 +1552,11 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
     }
 
     const [conversation] = await db
-      .select({ type: conversationsTable.type })
+      .select({
+        type: conversationsTable.type,
+        directStatus: conversationsTable.directStatus,
+        requesterAddress: conversationsTable.requesterAddress,
+      })
       .from(conversationsTable)
       .where(eq(conversationsTable.id, conversationId))
       .limit(1);
@@ -1185,6 +1602,74 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
       encrypted: true,
     };
     const outcome = await db.transaction(async (transaction) => {
+      let isRequest = false;
+      if (conversation.type === "direct") {
+        const pairMembers = [...new Set(memberships.map((member) => member.walletAddress))];
+        if (pairMembers.length !== 2) {
+          return { kind: "unavailable" as const };
+        }
+        const pairKey = directPairLockKey(pairMembers[0], pairMembers[1]);
+        await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${pairKey}, 0))`);
+
+        const blocked = await transaction
+          .select({ walletAddress: blockedWalletsTable.walletAddress })
+          .from(blockedWalletsTable)
+          .where(or(
+            and(
+              eq(blockedWalletsTable.walletAddress, pairMembers[0]),
+              eq(blockedWalletsTable.blockedWalletAddress, pairMembers[1]),
+            ),
+            and(
+              eq(blockedWalletsTable.walletAddress, pairMembers[1]),
+              eq(blockedWalletsTable.blockedWalletAddress, pairMembers[0]),
+            ),
+          ))
+          .limit(1);
+        if (blocked.length > 0) return { kind: "unavailable" as const };
+
+        const [current] = await transaction
+          .select({
+            directStatus: conversationsTable.directStatus,
+            requesterAddress: conversationsTable.requesterAddress,
+          })
+          .from(conversationsTable)
+          .where(eq(conversationsTable.id, conversationId))
+          .limit(1);
+        if (!current || current.directStatus === "declined") {
+          return { kind: "unavailable" as const };
+        }
+        isRequest = current.directStatus === "pending";
+        if (isRequest && current.requesterAddress !== input.senderAddress) {
+          return { kind: "not-accepted" as const };
+        }
+
+        const existingById = await transaction
+          .select()
+          .from(messagesTable)
+          .where(eq(messagesTable.id, input.messageId))
+          .limit(1);
+        if (existingById[0]) {
+          const previous = existingById[0];
+          if (
+            previous.conversationId !== conversationId
+            || previous.senderAddress !== input.senderAddress
+            || previous.body !== input.body
+          ) {
+            throw new Error("Message ID is already in use.");
+          }
+          return { kind: "saved" as const, message: previous, created: false, isRequest };
+        }
+
+        if (isRequest) {
+          const existingRequestMessages = await transaction
+            .select({ id: messagesTable.id })
+            .from(messagesTable)
+            .where(eq(messagesTable.conversationId, conversationId))
+            .limit(1);
+          if (existingRequestMessages.length > 0) return { kind: "request-already-sent" as const };
+        }
+      }
+
       const inserted = await transaction
         .insert(messagesTable)
         .values(message)
@@ -1199,10 +1684,11 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
         const previous = existing[0];
         if (!previous
           || previous.conversationId !== conversationId
-          || previous.senderAddress !== input.senderAddress) {
+          || previous.senderAddress !== input.senderAddress
+          || previous.body !== input.body) {
           throw new Error("Message ID is already in use.");
         }
-        return { message: previous, created: false };
+        return { kind: "saved" as const, message: previous, created: false, isRequest };
       }
       await transaction
         .update(conversationsTable)
@@ -1211,8 +1697,20 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
       if (conversation?.type === "group") {
         await recordDailyQuestActionInTransaction(transaction, input.senderAddress, "room_message", input.messageId);
       }
-      return { message, created: true };
+      return { kind: "saved" as const, message, created: true, isRequest };
     });
+    if (outcome.kind === "unavailable") {
+      res.status(403).json({ error: "Private messaging is unavailable for this wallet." });
+      return;
+    }
+    if (outcome.kind === "not-accepted") {
+      res.status(403).json({ error: "Accept this private-message request before replying." });
+      return;
+    }
+    if (outcome.kind === "request-already-sent") {
+      res.status(409).json({ error: "Only one introductory message can be sent before the request is accepted." });
+      return;
+    }
     if (outcome.created) {
       await publishMessageCreated(
         memberships.map((member) => member.walletAddress),
@@ -1220,6 +1718,7 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
           conversationId,
           messageId: outcome.message.id,
           senderAddress: outcome.message.senderAddress,
+          isRequest: outcome.isRequest,
         },
       );
     }

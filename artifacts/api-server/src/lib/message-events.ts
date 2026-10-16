@@ -7,8 +7,9 @@ const EVENT_CHANNEL = "swamp_message_created";
 const INSTANCE_ID = randomUUID();
 
 export type WalletEvent =
-  | { type: "message.created"; conversationId: string; messageId: string; senderAddress: string }
-  | { type: "message.read"; conversationId: string };
+  | { type: "message.created"; conversationId: string; messageId: string; senderAddress: string; isRequest?: boolean }
+  | { type: "message.read"; conversationId: string }
+  | { type: "conversation.updated"; conversationId: string };
 
 type WalletListener = (event: WalletEvent) => void;
 
@@ -48,7 +49,7 @@ async function relayNotification(payload: string): Promise<void> {
   try {
     const data = JSON.parse(payload) as WalletEvent & { origin?: string };
     if (data.origin === INSTANCE_ID || typeof data.conversationId !== "string") return;
-    if (data.type !== "message.created" && data.type !== "message.read") return;
+    if (data.type !== "message.created" && data.type !== "message.read" && data.type !== "conversation.updated") return;
     if (data.type === "message.created" && typeof data.messageId !== "string") return;
 
     const members = await db
@@ -134,4 +135,11 @@ export function publishMessageRead(
   event: Omit<Extract<WalletEvent, { type: "message.read" }>, "type">,
 ): Promise<void> {
   return publishWalletEvent(walletAddresses, { ...event, type: "message.read" });
+}
+
+export function publishConversationUpdated(
+  walletAddresses: string[],
+  event: Omit<Extract<WalletEvent, { type: "conversation.updated" }>, "type">,
+): Promise<void> {
+  return publishWalletEvent(walletAddresses, { ...event, type: "conversation.updated" });
 }
