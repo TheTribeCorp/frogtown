@@ -229,7 +229,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WalletProfile"
+                $ref: "#/components/schemas/SaveWalletUsernameResult"
         "400":
           description: Username does not meet Frogtown's format requirements
           content:
@@ -244,6 +244,36 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Username is already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /wallet/referral-device:
+    post:
+      operationId: claimReferralDeviceInstallation
+      tags: [wallet]
+      summary: Mark one browser installation as eligible for referral qualification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimReferralDeviceInput"
+      responses:
+        "200":
+          description: Device installation claim result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimReferralDeviceResult"
+        "400":
+          description: Device installation identifier is invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet session missing or expired
           content:
             application/json:
               schema:
@@ -1508,6 +1538,37 @@ components:
           maxLength: 17
           pattern: "^[A-Za-z0-9_]{4,17}$"
       required: [walletAddress, username]
+    SaveWalletUsernameResult:
+      allOf:
+        - $ref: "#/components/schemas/WalletProfile"
+        - type: object
+          properties:
+            referralStatus:
+              type: string
+              enum:
+                - not_referred
+                - pending
+                - rewarded
+                - device_already_used
+                - device_check_unavailable
+                - invalid_referrer
+                - already_recorded
+                - existing_wallet
+          required: [referralStatus]
+    ClaimReferralDeviceInput:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          maxLength: 36
+          pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      required: [deviceId]
+    ClaimReferralDeviceResult:
+      type: object
+      properties:
+        eligible:
+          type: boolean
+      required: [eligible]
     WalletUsernameInput:
       type: object
       properties:
@@ -1520,6 +1581,10 @@ components:
           type: string
           maxLength: 35
           pattern: "^r[1-9A-HJ-NP-Za-km-z]{24,34}$"
+        deviceId:
+          type: string
+          maxLength: 36
+          pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
       required: [username]
     WalletKey:
       type: object
@@ -2091,13 +2156,15 @@ components:
       properties:
         referralCount:
           type: integer
+        pendingReferralCount:
+          type: integer
         rewardPoints:
           type: integer
         leaderboard:
           type: array
           items:
             $ref: "#/components/schemas/ReferralLeaderboardEntry"
-      required: [referralCount, rewardPoints, leaderboard]
+      required: [referralCount, pendingReferralCount, rewardPoints, leaderboard]
     GamificationHistoryItem:
       type: object
       properties:

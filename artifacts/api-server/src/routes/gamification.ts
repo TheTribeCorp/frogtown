@@ -113,6 +113,7 @@ router.get("/gamification/referrals", async (req, res): Promise<void> => {
     const usernamesByWallet = new Map(profiles.map((profile) => [profile.walletAddress, profile.username]));
     res.json(GetGamificationReferralsResponse.parse({
       referralCount: referrals.referralCount,
+      pendingReferralCount: referrals.pendingReferralCount,
       rewardPoints: referrals.rewardPoints,
       leaderboard: referrals.leaderboard.map((item, index) => ({
         ...item,

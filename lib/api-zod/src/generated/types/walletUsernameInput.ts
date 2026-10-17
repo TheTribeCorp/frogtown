@@ -18,4 +18,9 @@ export interface WalletUsernameInput {
      * @pattern ^r[1-9A-HJ-NP-Za-km-z]{24,34}$
      */
   referrerAddress?: string;
+  /**
+     * @maxLength 36
+     * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+     */
+  deviceId?: string;
 }

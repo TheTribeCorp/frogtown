@@ -111,6 +111,36 @@ export interface WalletProfile {
   username: string | null;
 }
 
+export type SaveWalletUsernameResultReferralStatus = typeof SaveWalletUsernameResultReferralStatus[keyof typeof SaveWalletUsernameResultReferralStatus];
+
+
+export const SaveWalletUsernameResultReferralStatus = {
+  not_referred: 'not_referred',
+  pending: 'pending',
+  rewarded: 'rewarded',
+  device_already_used: 'device_already_used',
+  device_check_unavailable: 'device_check_unavailable',
+  invalid_referrer: 'invalid_referrer',
+  already_recorded: 'already_recorded',
+  existing_wallet: 'existing_wallet',
+} as const;
+
+export type SaveWalletUsernameResult = WalletProfile & {
+  referralStatus: SaveWalletUsernameResultReferralStatus;
+};
+
+export interface ClaimReferralDeviceInput {
+  /**
+     * @maxLength 36
+     * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+     */
+  deviceId: string;
+}
+
+export interface ClaimReferralDeviceResult {
+  eligible: boolean;
+}
+
 export interface WalletUsernameInput {
   /**
      * @minLength 4
@@ -123,6 +153,11 @@ export interface WalletUsernameInput {
      * @pattern ^r[1-9A-HJ-NP-Za-km-z]{24,34}$
      */
   referrerAddress?: string;
+  /**
+     * @maxLength 36
+     * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+     */
+  deviceId?: string;
 }
 
 export interface WalletKey {
@@ -604,6 +639,7 @@ export interface ReferralLeaderboardEntry {
 
 export interface GamificationReferrals {
   referralCount: number;
+  pendingReferralCount: number;
   rewardPoints: number;
   leaderboard: ReferralLeaderboardEntry[];
 }

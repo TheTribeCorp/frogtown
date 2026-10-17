@@ -1,10 +1,11 @@
 import { useForm } from 'react-hook-form';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   getGetWalletProfileQueryKey,
+  useClaimReferralDeviceInstallation,
   useGetWalletProfile,
   useSaveWalletUsername,
 } from '@workspace/api-client-react';
@@ -19,6 +20,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { HermitTick } from '@/components/hermit-tick';
+import { getReferralInstallationId } from '@/lib/referral-installation';
 import { usernameSchema, usernameSaveErrorMessage, type UsernameFormValues } from '@/lib/username';
 
 function shortWallet(address: string) {
@@ -52,6 +54,10 @@ export function UsernameOnboardingGate({
   const saveUsername = useSaveWalletUsername({
     request: { credentials: 'same-origin' },
   });
+  const claimReferralDevice = useClaimReferralDeviceInstallation({
+    request: { credentials: 'same-origin' },
+  });
+  const deviceClaimAttempt = useRef<string | null>(null);
   const form = useForm<UsernameFormValues>({
     resolver: zodResolver(usernameSchema),
     defaultValues: { username: '' },
@@ -63,6 +69,16 @@ export function UsernameOnboardingGate({
       window.sessionStorage.removeItem('frogtown-referrer-wallet');
     }
   }, [profileQuery.data?.username]);
+
+  useEffect(() => {
+    if (!profileQuery.data || !walletAddress) return;
+    const deviceId = getReferralInstallationId();
+    if (!deviceId) return;
+    const attemptKey = `${walletAddress}:${deviceId}`;
+    if (deviceClaimAttempt.current === attemptKey) return;
+    deviceClaimAttempt.current = attemptKey;
+    claimReferralDevice.mutate({ data: { deviceId } });
+  }, [claimReferralDevice.mutate, profileQuery.data?.walletAddress, walletAddress]);
 
   if (!walletAddress) return children;
 
@@ -117,11 +133,21 @@ export function UsernameOnboardingGate({
             onSubmit={form.handleSubmit(({ username }) => {
               const referrerAddress = window.sessionStorage.getItem('frogtown-referrer-wallet') ?? undefined;
               saveUsername.mutate(
-                { data: { username: username.toLowerCase(), referrerAddress } },
+                { data: { username: username.toLowerCase(), referrerAddress, deviceId: getReferralInstallationId() ?? undefined } },
                 {
                   onSuccess: (profile) => {
                     queryClient.setQueryData(profileQueryKey, profile);
                     window.sessionStorage.removeItem('frogtown-referrer-wallet');
+                    const referralNotices = {
+                      pending: 'Your invite is recorded. The member who invited you earns 2 points after you complete all four daily quests in one day.',
+                      rewarded: 'Your daily quests qualified the referral reward for the member who invited you.',
+                      device_already_used: 'This browser installation has already qualified a wallet for referral rewards. You can still use Frogtown, but this invite will not qualify.',
+                      device_check_unavailable: 'Frogtown could not verify this browser installation, so the referral will not qualify. You can still use Frogtown.',
+                      invalid_referrer: 'This referral link could not be verified. You can still use Frogtown.',
+                      already_recorded: 'This wallet already has a referral record. You can still use Frogtown.',
+                    } as const;
+                    const notice = referralNotices[profile.referralStatus as keyof typeof referralNotices];
+                    if (notice) window.sessionStorage.setItem('frogtown-referral-setup-notice', notice);
                   },
                   onError: (error) => {
                     form.setError('username', { type: 'server', message: usernameSaveErrorMessage(error) });

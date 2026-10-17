@@ -9,6 +9,7 @@ import type { ReferralLeaderboardEntry } from './referralLeaderboardEntry';
 
 export interface GamificationReferrals {
   referralCount: number;
+  pendingReferralCount: number;
   rewardPoints: number;
   leaderboard: ReferralLeaderboardEntry[];
 }

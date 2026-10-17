@@ -4,6 +4,8 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
 import {
   AcceptConversationRequestParams,
   BlockWalletBody,
+  ClaimReferralDeviceInstallationBody,
+  ClaimReferralDeviceInstallationResponse,
   CreateDirectConversationBody,
   CreateConversationHistoryShareBody,
   CreateConversationHistoryShareParams,
@@ -38,7 +40,13 @@ import {
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import { publishConversationUpdated, publishMessageCreated, publishMessageRead, publishWalletEncryptionReset, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
-import { awardReferralInTransaction, recordDailyQuestActionInTransaction } from "../lib/gamification";
+import {
+  claimReferralDeviceInTransaction,
+  createReferralInTransaction,
+  recordDailyQuestActionInTransaction,
+  type ReferralSetupStatus,
+} from "../lib/gamification";
+import { hashReferralDeviceId } from "../lib/referral-rules";
 import { getWalletHermitTick, hermitTickCacheControl } from "../lib/hermit-tick";
 import { normalizeUsername } from "../lib/wallet-username";
 import {
@@ -680,6 +688,25 @@ router.get("/wallet/profile", async (req, res): Promise<void> => {
   }));
 });
 
+router.post("/wallet/referral-device", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const parsed = ClaimReferralDeviceInstallationBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Browser installation identifier is invalid." });
+    return;
+  }
+  try {
+    const deviceIdHash = hashReferralDeviceId(parsed.data.deviceId);
+    const eligible = await db.transaction((tx) =>
+      claimReferralDeviceInTransaction(tx, walletAddress, deviceIdHash));
+    res.json(ClaimReferralDeviceInstallationResponse.parse({ eligible }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not register referral device installation");
+    res.status(500).json({ error: "Referral eligibility could not be checked." });
+  }
+});
+
 router.put("/wallet/profile", async (req, res): Promise<void> => {
   const walletAddress = requireAuth(req, res);
   if (!walletAddress) return;
@@ -694,6 +721,9 @@ router.put("/wallet/profile", async (req, res): Promise<void> => {
     return;
   }
   try {
+    const deviceIdHash = parsed.data.deviceId
+      ? hashReferralDeviceId(parsed.data.deviceId)
+      : null;
     const profile = await db.transaction(async (tx) => {
       const [createdProfile] = await tx
         .insert(walletProfilesTable)
@@ -704,10 +734,19 @@ router.put("/wallet/profile", async (req, res): Promise<void> => {
           username: walletProfilesTable.username,
         });
       if (createdProfile) {
+        const deviceEligible = await claimReferralDeviceInTransaction(tx, walletAddress, deviceIdHash);
+        let referralStatus: ReferralSetupStatus = "not_referred";
         if (parsed.data.referrerAddress) {
-          await awardReferralInTransaction(tx, parsed.data.referrerAddress, walletAddress);
+          referralStatus = deviceIdHash
+            ? await createReferralInTransaction(
+              tx,
+              parsed.data.referrerAddress,
+              walletAddress,
+              deviceEligible,
+            )
+            : "device_check_unavailable";
         }
-        return createdProfile;
+        return { ...createdProfile, referralStatus };
       }
 
       const [updatedProfile] = await tx
@@ -719,8 +758,9 @@ router.put("/wallet/profile", async (req, res): Promise<void> => {
           username: walletProfilesTable.username,
         });
       if (!updatedProfile) throw new Error("Unable to save the wallet profile.");
-      return updatedProfile;
-      });
+      await claimReferralDeviceInTransaction(tx, walletAddress, deviceIdHash);
+      return { ...updatedProfile, referralStatus: "existing_wallet" as const };
+    });
     res.json(SaveWalletUsernameResponse.parse(profile));
   } catch (error) {
     if (postgresErrorCode(error) === "23505") {

@@ -8,6 +8,8 @@
 
 export * from './blockedWallet';
 export * from './blockedWalletInput';
+export * from './claimReferralDeviceInput';
+export * from './claimReferralDeviceResult';
 export * from './coinFlipInput';
 export * from './coinFlipInputChoice';
 export * from './coinFlipResult';
@@ -57,6 +59,8 @@ export * from './pushSubscriptionList';
 export * from './readReceipt';
 export * from './readReceiptInput';
 export * from './referralLeaderboardEntry';
+export * from './saveWalletUsernameResult';
+export * from './saveWalletUsernameResultReferralStatus';
 export * from './timelineComment';
 export * from './timelineCommentInput';
 export * from './timelineCommentsPage';

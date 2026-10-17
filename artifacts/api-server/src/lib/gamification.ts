@@ -1,19 +1,24 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import {
   coinFlipsTable,
   dailyQuestActionsTable,
   dailyQuestCompletionsTable,
   db,
   gamificationProfilesTable,
+  referralDeviceClaimsTable,
   referralsTable,
   walletProfilesTable,
 } from "@workspace/db";
+import {
+  hasCompletedReferralDailySet,
+  REFERRAL_QUALIFYING_QUEST_IDS,
+  REFERRAL_REWARD_HUNDREDTHS,
+} from "./referral-rules";
 
 const POINT = 100;
-const REFERRAL_REWARD_HUNDREDTHS = 200;
 const FROG_BADGE_THRESHOLD = 10_000;
-const QUEST_IDS = ["check_in", "ledger_minute", "community_engagement", "room_spotlight"] as const;
+const QUEST_IDS = REFERRAL_QUALIFYING_QUEST_IDS;
 type GamificationTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export type QuestActionType = "timeline_post" | "other_post_like" | "other_post_comment" | "room_message";
@@ -92,6 +97,7 @@ async function completeQuest(
     .returning({ questId: dailyQuestCompletionsTable.questId });
   if (!completion) return false;
   await addPoints(tx, walletAddress, POINT);
+  await rewardQualifiedReferralInTransaction(tx, walletAddress, dayKey);
   return true;
 }
 
@@ -136,19 +142,96 @@ export async function recordDailyQuestAction(
   return db.transaction((tx) => recordDailyQuestActionInTransaction(tx, walletAddress, actionType, referenceId));
 }
 
-export async function awardReferralInTransaction(
+export type ReferralSetupStatus =
+  | "not_referred"
+  | "pending"
+  | "rewarded"
+  | "device_already_used"
+  | "device_check_unavailable"
+  | "invalid_referrer"
+  | "already_recorded"
+  | "existing_wallet";
+
+export async function claimReferralDeviceInTransaction(
+  tx: GamificationTransaction,
+  walletAddress: string,
+  deviceIdHash: string | null,
+) {
+  if (!deviceIdHash) return false;
+  await tx
+    .insert(referralDeviceClaimsTable)
+    .values({ deviceIdHash, walletAddress })
+    .onConflictDoNothing({ target: referralDeviceClaimsTable.deviceIdHash });
+  const [claim] = await tx
+    .select({ walletAddress: referralDeviceClaimsTable.walletAddress })
+    .from(referralDeviceClaimsTable)
+    .where(eq(referralDeviceClaimsTable.deviceIdHash, deviceIdHash))
+    .limit(1);
+  return claim?.walletAddress === walletAddress;
+}
+
+async function rewardQualifiedReferralInTransaction(
+  tx: GamificationTransaction,
+  referredWalletAddress: string,
+  dayKey: string,
+) {
+  const completions = await tx
+    .select({
+      questId: dailyQuestCompletionsTable.questId,
+      pointsHundredths: dailyQuestCompletionsTable.pointsHundredths,
+    })
+    .from(dailyQuestCompletionsTable)
+    .where(and(
+      eq(dailyQuestCompletionsTable.walletAddress, referredWalletAddress),
+      eq(dailyQuestCompletionsTable.dayKey, dayKey),
+      inArray(dailyQuestCompletionsTable.questId, [...REFERRAL_QUALIFYING_QUEST_IDS]),
+    ));
+  if (!hasCompletedReferralDailySet(completions)) return false;
+
+  const [referral] = await tx
+    .select({
+      id: referralsTable.id,
+      referrerWalletAddress: referralsTable.referrerWalletAddress,
+    })
+    .from(referralsTable)
+    .where(and(
+      eq(referralsTable.referredWalletAddress, referredWalletAddress),
+      isNull(referralsTable.rewardedAt),
+    ))
+    .for("update")
+    .limit(1);
+  if (!referral) return false;
+
+  const [rewardedReferral] = await tx
+    .update(referralsTable)
+    .set({ rewardedAt: new Date(), qualifiedDayKey: dayKey })
+    .where(and(
+      eq(referralsTable.id, referral.id),
+      isNull(referralsTable.rewardedAt),
+    ))
+    .returning({ id: referralsTable.id });
+  if (!rewardedReferral) return false;
+
+  await lockProfile(tx, referral.referrerWalletAddress);
+  await addPoints(tx, referral.referrerWalletAddress, REFERRAL_REWARD_HUNDREDTHS);
+  return true;
+}
+
+export async function createReferralInTransaction(
   tx: GamificationTransaction,
   referrerWalletAddress: string,
   referredWalletAddress: string,
-) {
-  if (referrerWalletAddress === referredWalletAddress) return false;
+  deviceEligible: boolean,
+): Promise<ReferralSetupStatus> {
+  if (!deviceEligible) return "device_already_used";
+  if (referrerWalletAddress === referredWalletAddress) return "invalid_referrer";
 
   const [referrer] = await tx
     .select({ walletAddress: walletProfilesTable.walletAddress })
     .from(walletProfilesTable)
     .where(eq(walletProfilesTable.walletAddress, referrerWalletAddress))
     .limit(1);
-  if (!referrer) return false;
+  if (!referrer) return "invalid_referrer";
 
   const [referral] = await tx
     .insert(referralsTable)
@@ -156,14 +239,17 @@ export async function awardReferralInTransaction(
       id: `referral-${randomUUID()}`,
       referrerWalletAddress,
       referredWalletAddress,
+      rewardedAt: null,
+      qualifiedDayKey: null,
     })
     .onConflictDoNothing({ target: referralsTable.referredWalletAddress })
     .returning({ id: referralsTable.id });
-  if (!referral) return false;
+  if (!referral) return "already_recorded";
 
-  await lockProfile(tx, referrerWalletAddress);
-  await addPoints(tx, referrerWalletAddress, REFERRAL_REWARD_HUNDREDTHS);
-  return true;
+  const dayKey = utcDayKey();
+  return await rewardQualifiedReferralInTransaction(tx, referredWalletAddress, dayKey)
+    ? "rewarded"
+    : "pending";
 }
 
 export async function completeDailyCheckIn(walletAddress: string) {
@@ -258,21 +344,26 @@ export async function getGamificationLeaderboard() {
 }
 
 export async function getReferralSummary(walletAddress: string) {
-  const [ownCount] = await db
-    .select({ count: sql<number>`count(*)`.mapWith(Number) })
+  const [ownCounts] = await db
+    .select({
+      successful: sql<number>`count(*) filter (where ${referralsTable.rewardedAt} is not null)`.mapWith(Number),
+      pending: sql<number>`count(*) filter (where ${referralsTable.rewardedAt} is null)`.mapWith(Number),
+    })
     .from(referralsTable)
     .where(eq(referralsTable.referrerWalletAddress, walletAddress));
   const leaderboard = await db
     .select({
       walletAddress: referralsTable.referrerWalletAddress,
-      referralCount: sql<number>`count(*)`.mapWith(Number),
+      referralCount: sql<number>`count(*) filter (where ${referralsTable.rewardedAt} is not null)`.mapWith(Number),
     })
     .from(referralsTable)
     .groupBy(referralsTable.referrerWalletAddress)
-    .orderBy(desc(sql`count(*)`), asc(referralsTable.referrerWalletAddress))
+    .having(sql`count(*) filter (where ${referralsTable.rewardedAt} is not null) > 0`)
+    .orderBy(desc(sql`count(*) filter (where ${referralsTable.rewardedAt} is not null)`), asc(referralsTable.referrerWalletAddress))
     .limit(10);
   return {
-    referralCount: ownCount?.count ?? 0,
+    referralCount: ownCounts?.successful ?? 0,
+    pendingReferralCount: ownCounts?.pending ?? 0,
     rewardPoints: REFERRAL_REWARD_HUNDREDTHS / POINT,
     leaderboard,
   };
@@ -328,7 +419,7 @@ export async function getGamificationHistory(
   const referralEventId = sql<string>`concat('referral:', ${referralsTable.id})`;
   const questCreatedAtBucket = sql<Date>`date_trunc('milliseconds', ${dailyQuestCompletionsTable.completedAt})`;
   const flipCreatedAtBucket = sql<Date>`date_trunc('milliseconds', ${coinFlipsTable.createdAt})`;
-  const referralCreatedAtBucket = sql<Date>`date_trunc('milliseconds', ${referralsTable.createdAt})`;
+  const referralCreatedAtBucket = sql<Date>`date_trunc('milliseconds', ${referralsTable.rewardedAt})`;
   const questCursorFilter = cursor
     ? or(
       lt(questCreatedAtBucket, cursor.createdAt),
@@ -378,11 +469,12 @@ export async function getGamificationHistory(
     db
       .select({
         id: referralsTable.id,
-        createdAt: referralsTable.createdAt,
+        createdAt: sql<Date>`${referralsTable.rewardedAt}`,
       })
       .from(referralsTable)
       .where(and(
         eq(referralsTable.referrerWalletAddress, walletAddress),
+        isNotNull(referralsTable.rewardedAt),
         referralCursorFilter,
       ))
       .orderBy(desc(referralCreatedAtBucket), desc(referralEventId))
@@ -422,7 +514,7 @@ export async function getGamificationHistory(
     ...referrals.map((referral) => ({
       id: `referral:${referral.id}`,
       kind: "referral" as const,
-      description: "New member joined from your referral link",
+      description: "Invited member completed all four daily quests",
       createdAt: referral.createdAt.toISOString(),
       pointsChange: REFERRAL_REWARD_HUNDREDTHS / POINT,
       choice: null,

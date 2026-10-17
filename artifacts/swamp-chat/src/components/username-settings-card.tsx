@@ -17,6 +17,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { getReferralInstallationId } from '@/lib/referral-installation';
 import { usernameSchema, usernameSaveErrorMessage, type UsernameFormValues } from '@/lib/username';
 
 export function UsernameSettingsCard({ walletAddress }: { walletAddress: string }) {
@@ -49,7 +50,7 @@ export function UsernameSettingsCard({ walletAddress }: { walletAddress: string 
   const submit = form.handleSubmit(({ username }) => {
     setNotice('');
     saveUsername.mutate(
-      { data: { username: username.toLowerCase() } },
+      { data: { username: username.toLowerCase(), deviceId: getReferralInstallationId() ?? undefined } },
       {
         onSuccess: (profile) => {
           queryClient.setQueryData(profileQueryKey, profile);

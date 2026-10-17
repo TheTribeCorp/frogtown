@@ -57,6 +57,8 @@ export const referralsTable = pgTable("frogtown_referrals", {
   referrerWalletAddress: text("referrer_wallet_address").notNull(),
   referredWalletAddress: text("referred_wallet_address").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  rewardedAt: timestamp("rewarded_at", { withTimezone: true }),
+  qualifiedDayKey: text("qualified_day_key"),
 }, (table) => [
   uniqueIndex("frogtown_referrals_referred_wallet_unique").on(table.referredWalletAddress),
   index("frogtown_referrals_referrer_created_idx").on(table.referrerWalletAddress, table.createdAt),
@@ -64,4 +66,12 @@ export const referralsTable = pgTable("frogtown_referrals", {
     "frogtown_referrals_no_self_referral_check",
     sql`${table.referrerWalletAddress} <> ${table.referredWalletAddress}`,
   ),
+]);
+
+export const referralDeviceClaimsTable = pgTable("frogtown_referral_device_claims", {
+  deviceIdHash: text("device_id_hash").primaryKey(),
+  walletAddress: text("wallet_address").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("frogtown_referral_device_claims_wallet_idx").on(table.walletAddress),
 ]);

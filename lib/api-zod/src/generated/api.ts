@@ -134,24 +134,49 @@ export const saveWalletUsernameBodyReferrerAddressMax = 35;
 
 
 export const saveWalletUsernameBodyReferrerAddressRegExp = new RegExp('^r[1-9A-HJ-NP-Za-km-z]{24,34}$');
+export const saveWalletUsernameBodyDeviceIdMax = 36;
+
+
+export const saveWalletUsernameBodyDeviceIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
 
 
 export const SaveWalletUsernameBody = zod.object({
   "username": zod.string().min(saveWalletUsernameBodyUsernameMin).max(saveWalletUsernameBodyUsernameMax).regex(saveWalletUsernameBodyUsernameRegExp),
-  "referrerAddress": zod.string().max(saveWalletUsernameBodyReferrerAddressMax).regex(saveWalletUsernameBodyReferrerAddressRegExp).optional()
+  "referrerAddress": zod.string().max(saveWalletUsernameBodyReferrerAddressMax).regex(saveWalletUsernameBodyReferrerAddressRegExp).optional(),
+  "deviceId": zod.string().max(saveWalletUsernameBodyDeviceIdMax).regex(saveWalletUsernameBodyDeviceIdRegExp).optional()
 })
 
-export const saveWalletUsernameResponseWalletAddressRegExp = new RegExp('^r[1-9A-HJ-NP-Za-km-z]{24,34}$');
-export const saveWalletUsernameResponseUsernameMin = 4;
-export const saveWalletUsernameResponseUsernameMax = 17;
+export const saveWalletUsernameResponseOneWalletAddressRegExp = new RegExp('^r[1-9A-HJ-NP-Za-km-z]{24,34}$');
+export const saveWalletUsernameResponseOneUsernameMin = 4;
+export const saveWalletUsernameResponseOneUsernameMax = 17;
 
 
-export const saveWalletUsernameResponseUsernameRegExp = new RegExp('^[A-Za-z0-9_]{4,17}$');
+export const saveWalletUsernameResponseOneUsernameRegExp = new RegExp('^[A-Za-z0-9_]{4,17}$');
 
 
 export const SaveWalletUsernameResponse = zod.object({
-  "walletAddress": zod.string().regex(saveWalletUsernameResponseWalletAddressRegExp),
-  "username": zod.string().min(saveWalletUsernameResponseUsernameMin).max(saveWalletUsernameResponseUsernameMax).regex(saveWalletUsernameResponseUsernameRegExp).nullable()
+  "walletAddress": zod.string().regex(saveWalletUsernameResponseOneWalletAddressRegExp),
+  "username": zod.string().min(saveWalletUsernameResponseOneUsernameMin).max(saveWalletUsernameResponseOneUsernameMax).regex(saveWalletUsernameResponseOneUsernameRegExp).nullable()
+}).and(zod.object({
+  "referralStatus": zod.enum(['not_referred', 'pending', 'rewarded', 'device_already_used', 'device_check_unavailable', 'invalid_referrer', 'already_recorded', 'existing_wallet'])
+}))
+
+
+/**
+ * @summary Mark one browser installation as eligible for referral qualification
+ */
+export const claimReferralDeviceInstallationBodyDeviceIdMax = 36;
+
+
+export const claimReferralDeviceInstallationBodyDeviceIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const ClaimReferralDeviceInstallationBody = zod.object({
+  "deviceId": zod.string().max(claimReferralDeviceInstallationBodyDeviceIdMax).regex(claimReferralDeviceInstallationBodyDeviceIdRegExp)
+})
+
+export const ClaimReferralDeviceInstallationResponse = zod.object({
+  "eligible": zod.boolean()
 })
 
 
@@ -1016,6 +1041,7 @@ export const GetGamificationLeaderboardResponse = zod.object({
  */
 export const GetGamificationReferralsResponse = zod.object({
   "referralCount": zod.number().int(),
+  "pendingReferralCount": zod.number().int(),
   "rewardPoints": zod.number().int(),
   "leaderboard": zod.array(zod.object({
   "rank": zod.number().int(),

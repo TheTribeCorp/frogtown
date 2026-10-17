@@ -1956,3 +1956,118 @@ test("wallet usernames are authenticated, unique, and resolve direct chats", asy
     await client.end();
   }
 });
+
+test("referral rewards wait for four daily quest points and one referred wallet per browser install", async () => {
+  const referrer = randomWalletAddress();
+  const referred = randomWalletAddress();
+  const secondWalletOnInstall = randomWalletAddress();
+  const wallets = [referrer, referred, secondWalletOnInstall];
+  const referrerCookie = sessionCookie(referrer);
+  const referredCookie = sessionCookie(referred);
+  const referrerUsername = `ref${randomUUID().slice(0, 8).replaceAll("-", "").toLowerCase()}`;
+  const referredUsername = `new${randomUUID().slice(0, 8).replaceAll("-", "").toLowerCase()}`;
+  const secondUsername = `alt${randomUUID().slice(0, 8).replaceAll("-", "").toLowerCase()}`;
+  const sharedInstallId = randomUUID();
+  const cleanupClient = new Client({ connectionString: process.env.DATABASE_URL });
+
+  try {
+    const referrerProfile = await request("/api/wallet/profile", {
+      method: "PUT",
+      cookie: referrerCookie,
+      body: { username: referrerUsername, deviceId: randomUUID() },
+    });
+    assert.equal(referrerProfile.status, 200);
+
+    const referredProfile = await request("/api/wallet/profile", {
+      method: "PUT",
+      cookie: referredCookie,
+      body: {
+        username: referredUsername,
+        referrerAddress: referrer,
+        deviceId: sharedInstallId,
+      },
+    });
+    assert.equal(referredProfile.status, 200);
+    assert.equal((await referredProfile.json()).referralStatus, "pending");
+
+    const secondProfile = await request("/api/wallet/profile", {
+      method: "PUT",
+      cookie: sessionCookie(secondWalletOnInstall),
+      body: {
+        username: secondUsername,
+        referrerAddress: referrer,
+        deviceId: sharedInstallId,
+      },
+    });
+    assert.equal(secondProfile.status, 200);
+    assert.equal((await secondProfile.json()).referralStatus, "device_already_used");
+
+    const beforeCompletion = await request("/api/gamification/referrals", { cookie: referrerCookie });
+    assert.equal(beforeCompletion.status, 200);
+    const pendingSummary = await beforeCompletion.json();
+    assert.equal(pendingSummary.referralCount, 0);
+    assert.equal(pendingSummary.pendingReferralCount, 1);
+
+    await cleanupClient.connect();
+    const dayKey = new Date().toISOString().slice(0, 10);
+    await cleanupClient.query(
+      `INSERT INTO frogtown_daily_quest_completions
+         (wallet_address, day_key, quest_id, points_hundredths)
+       SELECT $1, $2, quest_id, 100
+       FROM unnest($3::text[]) AS quest_id
+       ON CONFLICT DO NOTHING`,
+      [referred, dayKey, ["ledger_minute", "community_engagement", "room_spotlight"]],
+    );
+
+    const checkIn = await request("/api/gamification/check-in", {
+      method: "POST",
+      cookie: referredCookie,
+    });
+    assert.equal(checkIn.status, 200);
+
+    const afterCompletion = await request("/api/gamification/referrals", { cookie: referrerCookie });
+    assert.equal(afterCompletion.status, 200);
+    const rewardedSummary = await afterCompletion.json();
+    assert.equal(rewardedSummary.referralCount, 1);
+    assert.equal(rewardedSummary.pendingReferralCount, 0);
+
+    const referrerPoints = await request("/api/gamification/summary", { cookie: referrerCookie });
+    assert.equal(referrerPoints.status, 200);
+    assert.equal((await referrerPoints.json()).points, 2);
+  } finally {
+    await cleanupClient.connect().catch(() => {});
+    try {
+      await cleanupClient.query("BEGIN");
+      await cleanupClient.query(
+        "DELETE FROM frogtown_daily_quest_actions WHERE wallet_address = ANY($1::text[])",
+        [wallets],
+      );
+      await cleanupClient.query(
+        "DELETE FROM frogtown_daily_quest_completions WHERE wallet_address = ANY($1::text[])",
+        [wallets],
+      );
+      await cleanupClient.query(
+        "DELETE FROM frogtown_referrals WHERE referrer_wallet_address = ANY($1::text[]) OR referred_wallet_address = ANY($1::text[])",
+        [wallets],
+      );
+      await cleanupClient.query(
+        "DELETE FROM frogtown_referral_device_claims WHERE wallet_address = ANY($1::text[])",
+        [wallets],
+      );
+      await cleanupClient.query(
+        "DELETE FROM frogtown_gamification_profiles WHERE wallet_address = ANY($1::text[])",
+        [wallets],
+      );
+      await cleanupClient.query(
+        "DELETE FROM swamp_wallet_profiles WHERE wallet_address = ANY($1::text[])",
+        [wallets],
+      );
+      await cleanupClient.query("COMMIT");
+    } catch (error) {
+      await cleanupClient.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      await cleanupClient.end();
+    }
+  }
+});

@@ -138,12 +138,20 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
   const [checkInError, setCheckInError] = useState('');
   const [flipError, setFlipError] = useState('');
   const [referralCopyState, setReferralCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [referralSetupNotice, setReferralSetupNotice] = useState('');
   const [lastFlip, setLastFlip] = useState<Awaited<ReturnType<typeof flip.mutateAsync>> | null>(null);
   const pendingFlip = useRef<{ requestId: string; choice: FlipChoice } | null>(null);
 
   useEffect(() => {
     setHistoryCursor(undefined);
     setHistoryItems([]);
+  }, [walletAddress]);
+
+  useEffect(() => {
+    const notice = window.sessionStorage.getItem('frogtown-referral-setup-notice');
+    if (!notice) return;
+    setReferralSetupNotice(notice);
+    window.sessionStorage.removeItem('frogtown-referral-setup-notice');
   }, [walletAddress]);
 
   useEffect(() => {
@@ -331,9 +339,15 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
                   <h2 className="mt-1 text-lg font-semibold tracking-[-.04em]">Bring a friend to Frogtown</h2>
                   <p className="mt-1 max-w-lg text-xs leading-5 text-[hsl(var(--muted-foreground))]">Earn {referralRewardPoints} game points when a new wallet joins with your personal link and finishes setting up a username. One reward per new wallet.</p>
                 </div>
-                <div className="rounded-xl border border-[hsl(var(--primary)/.16)] bg-[hsl(var(--card)/.7)] px-3 py-2 text-right">
-                  <p className="mono text-[9px] uppercase tracking-[.14em] text-[hsl(var(--muted-foreground))]">Successful referrals</p>
-                  <p className="mt-0.5 text-xl font-semibold tabular-nums" data-testid="text-referral-count">{referralsQuery.data?.referralCount ?? '—'}</p>
+                <div className="flex gap-2">
+                  <div className="rounded-xl border border-[hsl(var(--primary)/.16)] bg-[hsl(var(--card)/.7)] px-3 py-2 text-right">
+                    <p className="mono text-[9px] uppercase tracking-[.14em] text-[hsl(var(--muted-foreground))]">Earned</p>
+                    <p className="mt-0.5 text-xl font-semibold tabular-nums" data-testid="text-referral-count">{referralsQuery.data?.referralCount ?? '—'}</p>
+                  </div>
+                  <div className="rounded-xl border border-[hsl(var(--accent)/.2)] bg-[hsl(var(--card)/.7)] px-3 py-2 text-right">
+                    <p className="mono text-[9px] uppercase tracking-[.14em] text-[hsl(var(--muted-foreground))]">Pending</p>
+                    <p className="mt-0.5 text-xl font-semibold tabular-nums" data-testid="text-pending-referral-count">{referralsQuery.data?.pendingReferralCount ?? '—'}</p>
+                  </div>
                 </div>
               </div>
               <div className="relative mt-4 flex flex-col gap-2 sm:flex-row">
@@ -351,7 +365,8 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
                 </button>
               </div>
               {referralCopyState === 'error' && <p className="relative mt-2 text-[10px] text-[hsl(var(--destructive))]" role="status">Copy was blocked by this browser. Tap the link above to select it, then copy.</p>}
-              <p className="relative mt-2 text-[9px] text-[hsl(var(--muted-foreground))]">Points are awarded once, after the invited wallet completes username setup. Self-referrals and existing accounts do not count.</p>
+              {referralSetupNotice && <p className="relative mt-3 rounded-lg border border-[hsl(var(--primary)/.18)] bg-[hsl(var(--card)/.65)] px-3 py-2.5 text-[10px] leading-4 text-[hsl(var(--foreground))]" role="status" data-testid="notice-referral-setup">{referralSetupNotice}</p>}
+              <p className="relative mt-2 text-[9px] leading-4 text-[hsl(var(--muted-foreground))]">Your friend must complete all four daily quests (4 points) in one day before you receive the {referralRewardPoints}-point reward. Existing accounts, self-referrals, and a second wallet on the same browser installation do not qualify. Frogtown uses a random browser ID, not a hardware fingerprint.</p>
             </section>
 
             <section className="grid grid-cols-1 gap-5 sm:grid-cols-[.92fr_1.08fr]">
