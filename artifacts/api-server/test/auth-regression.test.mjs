@@ -1798,3 +1798,72 @@ test("browser push subscriptions are configured, wallet-scoped, and reject unsaf
     await client.end();
   }
 });
+
+test("wallet usernames are authenticated, unique, and resolve direct chats", async () => {
+  const sender = randomWalletAddress();
+  const recipient = randomWalletAddress();
+  const username = `frog${randomUUID().slice(0, 8).replaceAll("-", "").toLowerCase()}`;
+
+  const anonymousRead = await request("/api/wallet/profile");
+  assert.equal(anonymousRead.status, 401);
+  const anonymousWrite = await request("/api/wallet/profile", {
+    method: "PUT",
+    body: { username },
+  });
+  assert.equal(anonymousWrite.status, 401);
+
+  const emptyProfileResponse = await request("/api/wallet/profile", {
+    cookie: sessionCookie(recipient),
+  });
+  assert.equal(emptyProfileResponse.status, 200);
+  assert.equal((await emptyProfileResponse.json()).username, null);
+
+  const invalidUsername = await request("/api/wallet/profile", {
+    method: "PUT",
+    cookie: sessionCookie(recipient),
+    body: { username: "abc" },
+  });
+  assert.equal(invalidUsername.status, 400);
+
+  const savedProfile = await request("/api/wallet/profile", {
+    method: "PUT",
+    cookie: sessionCookie(recipient),
+    body: { username: username.toUpperCase() },
+  });
+  assert.equal(savedProfile.status, 200);
+  assert.equal((await savedProfile.json()).username, username);
+
+  const duplicateUsername = await request("/api/wallet/profile", {
+    method: "PUT",
+    cookie: sessionCookie(sender),
+    body: { username: username.toUpperCase() },
+  });
+  assert.equal(duplicateUsername.status, 409);
+
+  const directResponse = await request("/api/conversations", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { recipient: `@${username.toUpperCase()}`, fromWalletAddress: sender },
+  });
+  assert.equal(directResponse.status, 201);
+  const conversation = await directResponse.json();
+  assert.equal(conversation.otherWalletAddress, recipient);
+  assert.equal(conversation.title, `@${username}`);
+
+  const listedResponse = await request(`/api/conversations?walletAddress=${sender}`, {
+    cookie: sessionCookie(sender),
+  });
+  assert.equal(listedResponse.status, 200);
+  const conversations = await listedResponse.json();
+  assert.equal(conversations.find((row) => row.id === conversation.id)?.title, `@${username}`);
+
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query("DELETE FROM swamp_conversation_members WHERE conversation_id = $1", [conversation.id]);
+    await client.query("DELETE FROM swamp_conversations WHERE id = $1", [conversation.id]);
+    await client.query("DELETE FROM swamp_wallet_profiles WHERE wallet_address = $1", [recipient]);
+  } finally {
+    await client.end();
+  }
+});

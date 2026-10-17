@@ -161,7 +161,7 @@ export function tickForHermitBalance(balance: string): HermitTick {
   const wholeTokens = BigInt(integerPart);
   const hasFraction = /[1-9]/.test(fractionalPart);
   if (wholeTokens === 0n && !hasFraction) return null;
-  return wholeTokens >= 20_000_000n ? "gold" : "green";
+  return wholeTokens >= 200_000n ? "gold" : "green";
 }
 
 export function tickForIssuerBalance(balance: string): HermitTick {

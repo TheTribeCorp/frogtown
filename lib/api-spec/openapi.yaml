@@ -195,6 +195,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /wallet/profile:
+    get:
+      operationId: getWalletProfile
+      tags: [wallet]
+      summary: Get the signed-in wallet's Frogtown username
+      responses:
+        "200":
+          description: Wallet profile, including an unset username during onboarding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletProfile"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: saveWalletUsername
+      tags: [wallet]
+      summary: Set or update the signed-in wallet's username
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalletUsernameInput"
+      responses:
+        "200":
+          description: Updated wallet profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletProfile"
+        "400":
+          description: Username does not meet Frogtown's format requirements
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Username is already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /wallet/logout:
     post:
       operationId: logoutWallet
@@ -1407,6 +1460,27 @@ components:
         network:
           type: string
       required: [walletAddress, network]
+    WalletProfile:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+          pattern: "^r[1-9A-HJ-NP-Za-km-z]{24,34}$"
+        username:
+          type: ["string", "null"]
+          minLength: 4
+          maxLength: 17
+          pattern: "^[A-Za-z0-9_]{4,17}$"
+      required: [walletAddress, username]
+    WalletUsernameInput:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 4
+          maxLength: 17
+          pattern: "^[A-Za-z0-9_]{4,17}$"
+      required: [username]
     WalletKey:
       type: object
       properties:
@@ -1524,13 +1598,16 @@ components:
     DirectConversationInput:
       type: object
       properties:
-        walletAddress:
+        recipient:
           type: string
-          minLength: 25
+          minLength: 4
+          maxLength: 35
+          description: XRPL wallet address or Frogtown username
         fromWalletAddress:
           type: string
           minLength: 25
-      required: [walletAddress, fromWalletAddress]
+          maxLength: 35
+      required: [recipient, fromWalletAddress]
     BlockedWallet:
       type: object
       properties:

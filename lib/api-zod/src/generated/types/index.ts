@@ -90,6 +90,8 @@ export * from './walletHermitTickCheckStatus';
 export * from './walletHermitTickTick';
 export * from './walletKey';
 export * from './walletKeyInput';
+export * from './walletProfile';
 export * from './walletSession';
 export * from './walletSessionStatus';
 export * from './walletSessionStatusStatus';
+export * from './walletUsernameInput';

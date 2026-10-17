@@ -78,8 +78,10 @@ import type {
   WalletHermitTick,
   WalletKey,
   WalletKeyInput,
+  WalletProfile,
   WalletSession,
-  WalletSessionStatus
+  WalletSessionStatus,
+  WalletUsernameInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -778,6 +780,195 @@ export function useGetCurrentWallet<TData = Awaited<ReturnType<typeof getCurrent
 
 
 
+
+export const getGetWalletProfileUrl = () => {
+
+
+
+
+  return `/api/wallet/profile`
+}
+
+/**
+ * @summary Get the signed-in wallet's Frogtown username
+ */
+export const getWalletProfile = async ( options?: Parameters<typeof customFetch>[1]): Promise<WalletProfile> => {
+
+  return customFetch<WalletProfile>(getGetWalletProfileUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWalletProfileQueryKey = () => {
+    return [
+    `/api/wallet/profile`
+    ] as const;
+    }
+
+
+export const getGetWalletProfileQueryOptions = <TData = Awaited<ReturnType<typeof getWalletProfile>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletProfile>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWalletProfileQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWalletProfile>>> = ({ signal }) => getWalletProfile({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWalletProfile>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetWalletProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getWalletProfile>>>
+export type GetWalletProfileQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetWalletProfile<TData = Awaited<ReturnType<typeof getWalletProfile>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletProfile>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWalletProfile>>,
+          TError,
+          Awaited<ReturnType<typeof getWalletProfile>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWalletProfile<TData = Awaited<ReturnType<typeof getWalletProfile>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletProfile>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWalletProfile>>,
+          TError,
+          Awaited<ReturnType<typeof getWalletProfile>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWalletProfile<TData = Awaited<ReturnType<typeof getWalletProfile>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletProfile>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get the signed-in wallet's Frogtown username
+ */
+
+export function useGetWalletProfile<TData = Awaited<ReturnType<typeof getWalletProfile>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletProfile>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetWalletProfileQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveWalletUsernameUrl = () => {
+
+
+
+
+  return `/api/wallet/profile`
+}
+
+/**
+ * @summary Set or update the signed-in wallet's username
+ */
+export const saveWalletUsername = async (walletUsernameInput: WalletUsernameInput, options?: Parameters<typeof customFetch>[1]): Promise<WalletProfile> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<WalletProfile>(getSaveWalletUsernameUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(walletUsernameInput)
+  }
+);}
+
+
+
+
+
+export const getSaveWalletUsernameMutationKey = () => ['saveWalletUsername'] as const;
+
+export const getSaveWalletUsernameMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveWalletUsername>>, TError,SaveWalletUsernameMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveWalletUsername>>, TError,SaveWalletUsernameMutationVariables, TContext> => {
+
+const mutationKey = getSaveWalletUsernameMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveWalletUsername>>, SaveWalletUsernameMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveWalletUsername(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveWalletUsernameMutationResult = NonNullable<Awaited<ReturnType<typeof saveWalletUsername>>>
+    export type SaveWalletUsernameMutationBody = BodyType<WalletUsernameInput>
+    export type SaveWalletUsernameMutationError = ErrorType<ErrorResponse>
+    export type SaveWalletUsernameMutationVariables = {data: BodyType<WalletUsernameInput>}
+
+    /**
+ * @summary Set or update the signed-in wallet's username
+ */
+export const useSaveWalletUsername = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveWalletUsername>>, TError,SaveWalletUsernameMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof saveWalletUsername>>,
+        TError,
+        SaveWalletUsernameMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSaveWalletUsernameMutationOptions(options), queryClient);
+    }
 
 export const getLogoutWalletUrl = () => {
 

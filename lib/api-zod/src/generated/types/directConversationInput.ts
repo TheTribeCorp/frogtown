@@ -7,8 +7,15 @@
  */
 
 export interface DirectConversationInput {
-  /** @minLength 25 */
-  walletAddress: string;
-  /** @minLength 25 */
+  /**
+     * XRPL wallet address or Frogtown username
+     * @minLength 4
+     * @maxLength 35
+     */
+  recipient: string;
+  /**
+     * @minLength 25
+     * @maxLength 35
+     */
   fromWalletAddress: string;
 }

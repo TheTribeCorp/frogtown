@@ -99,6 +99,27 @@ export interface CurrentWallet {
   network: string;
 }
 
+export interface WalletProfile {
+  /** @pattern ^r[1-9A-HJ-NP-Za-km-z]{24,34}$ */
+  walletAddress: string;
+  /**
+     * @minLength 4
+     * @maxLength 17
+     * @nullable
+     * @pattern ^[A-Za-z0-9_]{4,17}$
+     */
+  username: string | null;
+}
+
+export interface WalletUsernameInput {
+  /**
+     * @minLength 4
+     * @maxLength 17
+     * @pattern ^[A-Za-z0-9_]{4,17}$
+     */
+  username: string;
+}
+
 export interface WalletKey {
   walletAddress: string;
   publicKey: string;
@@ -189,9 +210,16 @@ export interface Conversation {
 }
 
 export interface DirectConversationInput {
-  /** @minLength 25 */
-  walletAddress: string;
-  /** @minLength 25 */
+  /**
+     * XRPL wallet address or Frogtown username
+     * @minLength 4
+     * @maxLength 35
+     */
+  recipient: string;
+  /**
+     * @minLength 25
+     * @maxLength 35
+     */
   fromWalletAddress: string;
 }
 

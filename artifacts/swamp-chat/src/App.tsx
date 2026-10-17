@@ -42,6 +42,7 @@ import { Link, Route, Router as WouterRouter, Switch, useLocation } from 'wouter
 import {
   getGetWalletSessionQueryKey,
   getGetCurrentWalletQueryKey,
+  getGetWalletProfileQueryKey,
   getGetGamificationLeaderboardQueryKey,
   getGetGamificationSummaryQueryKey,
   getHealthCheckQueryKey,
@@ -59,6 +60,7 @@ import {
   useCreateWalletSession,
   useGetConversationEncryptionKeys,
   useGetCurrentWallet,
+  useGetWalletProfile,
   useGetWalletSession,
   useHealthCheck,
   useJoinGroup,
@@ -81,6 +83,7 @@ import { TimelinePage } from '@/components/timeline-page';
 import { DailyQuestsPage } from '@/components/daily-quests-page';
 import { HermitTick } from '@/components/hermit-tick';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { UsernameOnboardingGate } from '@/components/username-onboarding-gate';
 import { notifyIncomingMessage } from '@/lib/browser-notifications';
 import {
   findPendingEncryptedMessage,
@@ -344,13 +347,23 @@ function FrogtownMark({ compact = false, glyph = '≈' }: { compact?: boolean; g
 }
 
 function WalletPill({ address, onClick }: { address: string; onClick?: () => void }) {
+  const profileQueryKey = [...getGetWalletProfileQueryKey(), address];
+  const profileQuery = useGetWalletProfile({
+    query: {
+      queryKey: profileQueryKey,
+      staleTime: 60_000,
+    },
+    request: { credentials: 'same-origin' },
+  });
   const body = (
     <>
       <span className="relative flex size-7 items-center justify-center rounded-lg bg-[hsl(var(--sidebar-accent)/.18)] text-[hsl(var(--sidebar-accent))]">
         <span className="size-2 rounded-full bg-[hsl(var(--sidebar-accent))] pulse-dot" />
       </span>
       <span className="min-w-0 text-left">
-        <span className="block text-[9px] uppercase tracking-[.17em] text-[hsl(var(--sidebar-foreground)/.52)]">wallet identity</span>
+        <span className="block truncate text-[9px] uppercase tracking-[.17em] text-[hsl(var(--sidebar-foreground)/.52)]" data-testid="text-sidebar-username">
+          {profileQuery.data?.username ? `@${profileQuery.data.username}` : 'wallet identity'}
+        </span>
         <span className="flex min-w-0 items-center gap-1.5"><span className="mono block min-w-0 truncate text-xs text-[hsl(var(--sidebar-foreground))]" data-testid="text-sidebar-wallet">{shortAddress(address)}</span><HermitTick walletAddress={address} currentWallet className="size-4" /></span>
       </span>
     </>
@@ -621,17 +634,17 @@ function WalletEntry() {
 function DirectChatDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (conversationId: string) => void }) {
   const { walletAddress } = useWallet();
   const createDirect = useCreateDirectConversation();
-  const [address, setAddress] = useState('');
+  const [recipient, setRecipient] = useState('');
   const [error, setError] = useState('');
   const client = useQueryClient();
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setError('');
-    if (address.trim().length < 25) {
-      setError('Paste a complete XRPL address to start a direct chat.');
+    if (recipient.trim().length < 4 || recipient.trim().length > 35) {
+      setError('Enter a 4–17 character username or a complete XRPL address.');
       return;
     }
-    createDirect.mutate({ data: { walletAddress: address.trim(), fromWalletAddress: walletAddress } }, {
+    createDirect.mutate({ data: { recipient: recipient.trim(), fromWalletAddress: walletAddress } }, {
       onSuccess: (conversation) => {
         client.invalidateQueries({ queryKey: getListConversationsQueryKey({ walletAddress }) });
         onCreated(conversation.id);
@@ -641,9 +654,9 @@ function DirectChatDialog({ onClose, onCreated }: { onClose: () => void; onCreat
   };
   return <Modal title="Start a direct line" eyebrow="private / one-to-one" onClose={onClose}>
     <form onSubmit={submit}>
-      <label className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]" htmlFor="xrpl-address">XRPL wallet address</label>
-      <div className="relative mt-2"><AtSign className="absolute left-3 top-3.5 size-4 text-[hsl(var(--muted-foreground))]" /><input id="xrpl-address" autoFocus value={address} onChange={(event) => setAddress(event.target.value)} placeholder="r… recipient address" className="mono w-full rounded-xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] py-3 pl-10 pr-3 text-sm outline-none transition placeholder:text-[hsl(var(--muted-foreground)/.6)] focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary)/.13)]" data-testid="input-direct-address" /></div>
-      <p className="mt-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]">This starts a private-message request. They can read your encrypted introduction, then accept, decline, or block you.</p>
+      <label className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]" htmlFor="direct-recipient">Username or XRPL address</label>
+      <div className="relative mt-2"><AtSign className="absolute left-3 top-3.5 size-4 text-[hsl(var(--muted-foreground))]" /><input id="direct-recipient" autoFocus value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="@username or r… address" className="w-full rounded-xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] py-3 pl-10 pr-3 text-sm outline-none transition placeholder:text-[hsl(var(--muted-foreground)/.6)] focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary)/.13)]" data-testid="input-direct-recipient" /></div>
+      <p className="mt-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send to a Frogtown username or XRPL wallet address. This starts a private-message request; the recipient can accept, decline, or block you.</p>
       {error && <p className="mt-3 flex items-center gap-2 text-xs text-[hsl(var(--destructive))]" data-testid="text-direct-error"><CircleAlert className="size-3.5" />{error}</p>}
       <button disabled={createDirect.isPending} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] transition hover:bg-[hsl(var(--primary))] disabled:opacity-60" data-testid="button-start-direct-chat">{createDirect.isPending ? <RefreshCw className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} {createDirect.isPending ? 'Sending request…' : 'Send message request'}</button>
     </form>
@@ -1902,7 +1915,7 @@ function AuthGate() {
     return <div className="swamp-app noise flex min-h-[100dvh] items-center justify-center p-6"><div className="flex items-center gap-3 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.8)] px-5 py-4 text-sm text-[hsl(var(--muted-foreground))] shadow-lg"><RefreshCw className="size-4 animate-spin text-[hsl(var(--primary))]" /> Checking wallet session…</div></div>;
   }
 
-  return <WalletContext.Provider value={{ walletAddress, setWalletAddress, disconnect }}><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><ErrorBoundary resetKey={window.location.pathname}><KeyBootstrapGate><RealtimeBridge><RouterView /></RealtimeBridge></KeyBootstrapGate></ErrorBoundary></WouterRouter></WalletContext.Provider>;
+  return <WalletContext.Provider value={{ walletAddress, setWalletAddress, disconnect }}><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><ErrorBoundary resetKey={window.location.pathname}><KeyBootstrapGate><UsernameOnboardingGate walletAddress={walletAddress}><RealtimeBridge><RouterView /></RealtimeBridge></UsernameOnboardingGate></KeyBootstrapGate></ErrorBoundary></WouterRouter></WalletContext.Provider>;
 }
 
 function App() {

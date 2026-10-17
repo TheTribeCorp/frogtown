@@ -18,5 +18,6 @@
 //   export type Post = typeof postsTable.$inferSelect;
 
 export * from "./swamp";
+export * from "./wallet-profiles";
 export * from "./timeline";
 export * from "./gamification";

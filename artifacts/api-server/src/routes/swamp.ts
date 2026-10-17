@@ -13,6 +13,7 @@ import {
   GetWalletHermitTickParams,
   GetWalletHermitTickQueryParams,
   GetWalletHermitTickResponse,
+  GetWalletProfileResponse,
   GetWalletEncryptionKeyParams,
   GetWalletSessionParams,
   JoinGroupBody,
@@ -31,12 +32,15 @@ import {
   RevokePushSubscriptionParams,
   SendMessageBody,
   SendMessageParams,
+  SaveWalletUsernameBody,
+  SaveWalletUsernameResponse,
   UnblockWalletParams,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import { publishConversationUpdated, publishMessageCreated, publishMessageRead, publishWalletEncryptionReset, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
 import { recordDailyQuestActionInTransaction } from "../lib/gamification";
 import { getWalletHermitTick, hermitTickCacheControl } from "../lib/hermit-tick";
+import { normalizeUsername } from "../lib/wallet-username";
 import {
   conversationMembersTable,
   conversationsTable,
@@ -47,7 +51,7 @@ import {
   messageHistorySharesTable,
   walletKeysTable,
 } from "@workspace/db";
-import { pushSubscriptionsTable } from "@workspace/db/schema";
+import { pushSubscriptionsTable, walletProfilesTable } from "@workspace/db/schema";
 import { isWebPushConfigured, sendNewMessagePush } from "../lib/web-push";
 
 const router: IRouter = Router();
@@ -60,6 +64,15 @@ const AUTH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_PUSH_SUBSCRIPTIONS_PER_WALLET = 8;
 
 const isWalletAddress = (value: string) => /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(value);
+
+function postgresErrorCode(error: unknown): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
+    if ("code" in current && typeof current.code === "string") return current.code;
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return undefined;
+}
 
 function isPublicEncryptionKey(value: string): boolean {
   try {
@@ -290,9 +303,10 @@ function serializeConversation(
   row: typeof conversationsTable.$inferSelect,
   otherWalletAddress: string | null = null,
   directMessagingBlocked = false,
+  otherUsername: string | null = null,
 ) {
   const title = row.type === "direct" && otherWalletAddress
-    ? otherWalletAddress
+    ? otherUsername ? `@${otherUsername}` : otherWalletAddress
     : row.title;
   return {
     ...row,
@@ -650,6 +664,56 @@ router.get("/wallet/me", (req, res) => {
   const walletAddress = requireAuth(req, res);
   if (!walletAddress) return;
   res.json({ walletAddress, network: "XRPL Mainnet" });
+});
+
+router.get("/wallet/profile", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const [profile] = await db
+    .select({ username: walletProfilesTable.username })
+    .from(walletProfilesTable)
+    .where(eq(walletProfilesTable.walletAddress, walletAddress))
+    .limit(1);
+  res.json(GetWalletProfileResponse.parse({
+    walletAddress,
+    username: profile?.username ?? null,
+  }));
+});
+
+router.put("/wallet/profile", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  const parsed = SaveWalletUsernameBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Username must be 4–17 letters, numbers, or underscores." });
+    return;
+  }
+  const username = normalizeUsername(parsed.data.username);
+  if (!username) {
+    res.status(400).json({ error: "Username must be 4–17 letters, numbers, or underscores." });
+    return;
+  }
+  try {
+    const [profile] = await db
+      .insert(walletProfilesTable)
+      .values({ walletAddress, username })
+      .onConflictDoUpdate({
+        target: walletProfilesTable.walletAddress,
+        set: { username, updatedAt: new Date() },
+      })
+      .returning({
+        walletAddress: walletProfilesTable.walletAddress,
+        username: walletProfilesTable.username,
+      });
+    res.json(SaveWalletUsernameResponse.parse(profile));
+  } catch (error) {
+    if (postgresErrorCode(error) === "23505") {
+      res.status(409).json({ error: "That username is already taken. Choose another." });
+      return;
+    }
+    req.log.error({ err: error }, "Could not save Frogtown username");
+    res.status(500).json({ error: "Your username could not be saved right now." });
+  }
 });
 
 router.post("/wallet/logout", (_req, res) => {
@@ -1126,6 +1190,19 @@ router.get("/conversations", async (req, res) => {
         otherWalletByConversation.set(participant.conversationId, participant.walletAddress);
       }
     }
+    const otherWalletAddresses = [...new Set(otherWalletByConversation.values())];
+    const otherProfiles = otherWalletAddresses.length > 0
+      ? await db
+        .select({
+          walletAddress: walletProfilesTable.walletAddress,
+          username: walletProfilesTable.username,
+        })
+        .from(walletProfilesTable)
+        .where(inArray(walletProfilesTable.walletAddress, otherWalletAddresses))
+      : [];
+    const usernamesByWallet = new Map(
+      otherProfiles.map((profile) => [profile.walletAddress, profile.username]),
+    );
     const blockedRows = await db
       .select({
         walletAddress: blockedWalletsTable.walletAddress,
@@ -1186,6 +1263,7 @@ router.get("/conversations", async (req, res) => {
             row,
             otherWalletAddress,
             otherWalletAddress ? blockedCounterparts.has(otherWalletAddress) : false,
+            otherWalletAddress ? usernamesByWallet.get(otherWalletAddress) ?? null : null,
           ),
           ...(historyCleared ? { lastMessage: null, lastMessageAt: null } : {}),
           unreadCount: unreadCounts.get(row.id) ?? 0,
@@ -1196,22 +1274,69 @@ router.get("/conversations", async (req, res) => {
   }
 });
 
-router.post("/conversations", async (req, res) => {
+router.post("/conversations", async (req, res): Promise<void> => {
   try {
     const sessionWallet = requireAuth(req, res);
     if (!sessionWallet) return;
-    const input = CreateDirectConversationBody.parse(req.body);
-    requireAddress(input.walletAddress);
-    requireAddress(input.fromWalletAddress);
+    const requestBody = req.body && typeof req.body === "object"
+      ? req.body as Record<string, unknown>
+      : {};
+    const parsedInput = CreateDirectConversationBody.safeParse({
+      recipient: requestBody.recipient ?? requestBody.walletAddress,
+      fromWalletAddress: requestBody.fromWalletAddress,
+    });
+    if (!parsedInput.success) {
+      res.status(400).json({ error: "Enter a valid Frogtown username or XRPL address." });
+      return;
+    }
+    const input = parsedInput.data;
+    if (!isWalletAddress(input.fromWalletAddress)) {
+      res.status(400).json({ error: "The sender wallet address is invalid." });
+      return;
+    }
     if (!requireMatchingWallet(sessionWallet, input.fromWalletAddress, res)) return;
-    if (input.walletAddress === input.fromWalletAddress) {
-      res.status(400).json({ error: "Choose a different wallet address." });
+    const recipientIdentifier = input.recipient.trim();
+    let recipientWalletAddress: string;
+    let recipientUsername: string | null = null;
+    if (isWalletAddress(recipientIdentifier)) {
+      recipientWalletAddress = recipientIdentifier;
+      const [profile] = await db
+        .select({ username: walletProfilesTable.username })
+        .from(walletProfilesTable)
+        .where(eq(walletProfilesTable.walletAddress, recipientWalletAddress))
+        .limit(1);
+      recipientUsername = profile?.username ?? null;
+    } else {
+      const username = normalizeUsername(recipientIdentifier.startsWith("@")
+        ? recipientIdentifier.slice(1)
+        : recipientIdentifier);
+      if (!username) {
+        res.status(400).json({ error: "Enter a 4–17 character username or valid XRPL address." });
+        return;
+      }
+      const [profile] = await db
+        .select({
+          walletAddress: walletProfilesTable.walletAddress,
+          username: walletProfilesTable.username,
+        })
+        .from(walletProfilesTable)
+        .where(eq(walletProfilesTable.username, username))
+        .limit(1);
+      if (!profile) {
+        res.status(404).json({ error: "No Frogtown user has that username." });
+        return;
+      }
+      recipientWalletAddress = profile.walletAddress;
+      recipientUsername = profile.username;
+    }
+    if (recipientWalletAddress === input.fromWalletAddress) {
+      res.status(400).json({ error: "Choose a different user." });
       return;
     }
 
-    const requestedParticipants = new Set([input.walletAddress, input.fromWalletAddress]);
+    const requestedParticipants = new Set([recipientWalletAddress, input.fromWalletAddress]);
     const outcome = await db.transaction(async (transaction) => {
-      const pairKey = directPairLockKey(input.walletAddress, input.fromWalletAddress);
+      const pairKey = directPairLockKey(recipientWalletAddress, input.fromWalletAddress);
       await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${pairKey}, 0))`);
 
       const pairBlock = await transaction
@@ -1219,12 +1344,12 @@ router.post("/conversations", async (req, res) => {
         .from(blockedWalletsTable)
         .where(or(
           and(
-            eq(blockedWalletsTable.walletAddress, input.walletAddress),
+            eq(blockedWalletsTable.walletAddress, recipientWalletAddress),
             eq(blockedWalletsTable.blockedWalletAddress, input.fromWalletAddress),
           ),
           and(
             eq(blockedWalletsTable.walletAddress, input.fromWalletAddress),
-            eq(blockedWalletsTable.blockedWalletAddress, input.walletAddress),
+            eq(blockedWalletsTable.blockedWalletAddress, recipientWalletAddress),
           ),
         ))
         .limit(1);
@@ -1292,8 +1417,8 @@ router.post("/conversations", async (req, res) => {
       const conversation = {
         id: `conversation-${randomUUID()}`,
         type: "direct",
-        title: input.walletAddress,
-        participantLabel: input.walletAddress,
+        title: recipientUsername ? `@${recipientUsername}` : recipientWalletAddress,
+        participantLabel: recipientWalletAddress,
         lastMessage: null,
         lastMessageAt: null,
         unreadCount: 0,
@@ -1305,7 +1430,7 @@ router.post("/conversations", async (req, res) => {
       };
       await transaction.insert(conversationsTable).values(conversation);
       await transaction.insert(conversationMembersTable).values([
-        { conversationId: conversation.id, walletAddress: input.walletAddress },
+        { conversationId: conversation.id, walletAddress: recipientWalletAddress },
         { conversationId: conversation.id, walletAddress: input.fromWalletAddress },
       ]);
       return { kind: "conversation" as const, conversation, created: true };
@@ -1321,13 +1446,19 @@ router.post("/conversations", async (req, res) => {
     }
     if (outcome.created) {
       await publishConversationUpdated(
-        [input.walletAddress, input.fromWalletAddress],
+        [recipientWalletAddress, input.fromWalletAddress],
         { conversationId: outcome.conversation.id },
       );
     }
-    res.status(201).json(serializeConversation(outcome.conversation, input.walletAddress));
-  } catch {
-    res.status(400).json({ error: "Enter two valid XRPL wallet addresses." });
+    res.status(201).json(serializeConversation(
+      outcome.conversation,
+      recipientWalletAddress,
+      false,
+      recipientUsername,
+    ));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not start a private conversation");
+    res.status(500).json({ error: "Could not start that conversation." });
   }
 });
 

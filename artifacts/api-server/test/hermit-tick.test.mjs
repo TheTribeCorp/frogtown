@@ -16,16 +16,16 @@ test("holder checks use short edge caching only for verified public results", ()
   assert.equal(hermitTickCacheControl("unavailable", false), "no-store");
 });
 
-test("holder ticks use the exact 20 million $HERMIT boundary", () => {
+test("holder stars use the exact 200 thousand $HERMIT boundary", () => {
   assert.equal(tickForHermitBalance("0"), null);
   assert.equal(tickForHermitBalance("0.0000001"), "green");
-  assert.equal(tickForHermitBalance("19999999.99999999"), "green");
-  assert.equal(tickForHermitBalance("20000000"), "gold");
-  assert.equal(tickForHermitBalance("20000000.00000001"), "gold");
+  assert.equal(tickForHermitBalance("199999.99999999"), "green");
+  assert.equal(tickForHermitBalance("200000"), "gold");
+  assert.equal(tickForHermitBalance("200000.00000001"), "gold");
 });
 
 test("issuer-perspective trustline balances only award ticks to token holders", () => {
-  assert.equal(tickForIssuerBalance("-3332046.5190324"), "green");
+  assert.equal(tickForIssuerBalance("-42.5190324"), "green");
   assert.equal(tickForIssuerBalance("-277827962.7602165"), "gold");
   assert.equal(tickForIssuerBalance("0"), null);
   assert.equal(tickForIssuerBalance("3332046.5190324"), null);
@@ -152,7 +152,7 @@ test("malformed XRPL responses fail closed without awarding a tick", async () =>
 test("forced wallet refresh bypasses a successful cached lookup", async () => {
   const originalFetch = globalThis.fetch;
   const wallet = syntheticWallet(3_010);
-  const balances = ["-19", "-20000000"];
+  const balances = ["-19", "-200000"];
   let networkCalls = 0;
   globalThis.fetch = async () => {
     const balance = balances[networkCalls];

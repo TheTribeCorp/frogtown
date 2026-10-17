@@ -1,3 +1,4 @@
+import { Star } from 'lucide-react';
 import { useGetWalletHermitTick, getGetWalletHermitTickQueryKey } from '@workspace/api-client-react';
 import { visibleHermitTick } from '@/lib/hermit-tick-display';
 
@@ -22,7 +23,9 @@ export function HermitTick({ walletAddress, currentWallet = false, className = '
   const tick = visibleHermitTick(query.data, query.isError);
   if (!tick) return null;
 
-  const label = tick === 'gold' ? 'Gold $HERMIT holder' : 'Green $HERMIT holder';
+  const label = tick === 'gold'
+    ? 'Gold $HERMIT holder verification star'
+    : 'Green $HERMIT holder verification star';
   return (
     <span
       className={`hermit-tick hermit-tick-${tick} ${className}`}
@@ -31,9 +34,7 @@ export function HermitTick({ walletAddress, currentWallet = false, className = '
       title={label}
       data-testid={`hermit-tick-${tick}`}
     >
-      <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-        <path d="m4.2 8.2 2.35 2.35 5.25-5.3" />
-      </svg>
+      <Star aria-hidden="true" focusable="false" />
     </span>
   );
 }
