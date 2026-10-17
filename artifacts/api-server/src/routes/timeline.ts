@@ -41,6 +41,7 @@ import {
   timelinePostCommentsTable,
   timelinePostLikesTable,
   timelinePostsTable,
+  walletProfilesTable,
 } from "@workspace/db";
 import { recordDailyQuestActionInTransaction } from "../lib/gamification";
 import { requireAuth } from "./swamp";
@@ -154,7 +155,8 @@ async function postExists(postId: string) {
 async function serializePosts(rows: (typeof timelinePostsTable.$inferSelect)[], walletAddress: string) {
   if (rows.length === 0) return [];
   const postIds = rows.map((row) => row.id);
-  const [likeCounts, commentCounts, ownLikes, ownReports] = await Promise.all([
+  const authorAddresses = [...new Set(rows.map((row) => row.authorAddress))];
+  const [likeCounts, commentCounts, ownLikes, ownReports, profiles] = await Promise.all([
     db
       .select({ postId: timelinePostLikesTable.postId, value: sql<number>`count(*)::int` })
       .from(timelinePostLikesTable)
@@ -180,13 +182,22 @@ async function serializePosts(rows: (typeof timelinePostsTable.$inferSelect)[], 
         inArray(timelineContentReportsTable.subjectId, postIds),
         eq(timelineContentReportsTable.walletAddress, walletAddress),
       )),
+    db
+      .select({
+        walletAddress: walletProfilesTable.walletAddress,
+        username: walletProfilesTable.username,
+      })
+      .from(walletProfilesTable)
+      .where(inArray(walletProfilesTable.walletAddress, authorAddresses)),
   ]);
   const likesByPost = new Map(likeCounts.map((row) => [row.postId, row.value]));
   const commentsByPost = new Map(commentCounts.map((row) => [row.postId, row.value]));
   const likedPostIds = new Set(ownLikes.map((row) => row.postId));
   const reportedPostIds = new Set(ownReports.map((row) => row.subjectId));
+  const usernamesByWallet = new Map(profiles.map((profile) => [profile.walletAddress, profile.username]));
   return rows.map((row) => ({
     ...row,
+    authorUsername: usernamesByWallet.get(row.authorAddress) ?? null,
     likeCount: likesByPost.get(row.id) ?? 0,
     commentCount: commentsByPost.get(row.id) ?? 0,
     likedByMe: likedPostIds.has(row.id),
@@ -199,17 +210,28 @@ async function serializeComments(
   walletAddress: string,
 ) {
   if (rows.length === 0) return [];
-  const ownReports = await db
-    .select({ subjectId: timelineContentReportsTable.subjectId })
-    .from(timelineContentReportsTable)
-    .where(and(
-      eq(timelineContentReportsTable.subjectType, "comment"),
-      inArray(timelineContentReportsTable.subjectId, rows.map((row) => row.id)),
-      eq(timelineContentReportsTable.walletAddress, walletAddress),
-    ));
+  const [ownReports, profiles] = await Promise.all([
+    db
+      .select({ subjectId: timelineContentReportsTable.subjectId })
+      .from(timelineContentReportsTable)
+      .where(and(
+        eq(timelineContentReportsTable.subjectType, "comment"),
+        inArray(timelineContentReportsTable.subjectId, rows.map((row) => row.id)),
+        eq(timelineContentReportsTable.walletAddress, walletAddress),
+      )),
+    db
+      .select({
+        walletAddress: walletProfilesTable.walletAddress,
+        username: walletProfilesTable.username,
+      })
+      .from(walletProfilesTable)
+      .where(inArray(walletProfilesTable.walletAddress, [...new Set(rows.map((row) => row.authorAddress))])),
+  ]);
   const reportedCommentIds = new Set(ownReports.map((row) => row.subjectId));
+  const usernamesByWallet = new Map(profiles.map((profile) => [profile.walletAddress, profile.username]));
   return rows.map((row) => ({
     ...row,
+    authorUsername: usernamesByWallet.get(row.authorAddress) ?? null,
     reportedByMe: reportedCommentIds.has(row.id),
   }));
 }
@@ -832,10 +854,8 @@ router.post("/timeline/posts/:postId/comments", async (req, res) => {
       res.status(404).json({ error: "Post not found." });
       return;
     }
-    res.status(201).json(CreateTimelineCommentResponse.parse({
-      ...comment,
-      reportedByMe: false,
-    }));
+    const serializedComment = (await serializeComments([comment], walletAddress))[0];
+    res.status(201).json(CreateTimelineCommentResponse.parse(serializedComment));
   } catch (error) {
     if (error instanceof TimelineRateLimitError) {
       res.setHeader("Retry-After", String(error.retryAfterSeconds));
@@ -877,10 +897,8 @@ router.patch("/timeline/posts/:postId/comments/:commentId", async (req, res): Pr
       .set({ body: body.data.body.trim() })
       .where(eq(timelinePostCommentsTable.id, params.data.commentId))
       .returning();
-    res.json(UpdateTimelineCommentResponse.parse({
-      ...updated[0],
-      reportedByMe: false,
-    }));
+    const serializedComment = (await serializeComments(updated, walletAddress))[0];
+    res.json(UpdateTimelineCommentResponse.parse(serializedComment));
   } catch {
     res.status(500).json({ error: "Unable to update this comment." });
   }

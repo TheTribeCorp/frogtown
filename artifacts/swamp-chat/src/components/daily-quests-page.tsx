@@ -348,7 +348,18 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
                     const mine = Boolean(walletAddress && walletAddress === entry.walletAddress);
                     return <li key={`${entry.rank}-${entry.walletAddress}`} className={`flex items-center gap-3 px-5 py-3 ${mine ? 'bg-[hsl(var(--primary)/.055)]' : ''}`} data-testid={`row-leaderboard-${entry.rank}`}>
                       <span className={`mono flex size-7 shrink-0 items-center justify-center rounded-lg text-[10px] ${entry.rank === 1 ? 'bg-[hsl(var(--accent)/.12)] text-[hsl(var(--accent))]' : 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]'}`}>{entry.rank === 1 ? <Crown className="size-3.5" /> : String(entry.rank).padStart(2, '0')}</span>
-                      <div className="min-w-0 flex-1"><div className="flex items-center gap-1.5"><span className="mono truncate text-[11px] font-medium" title={entry.walletAddress} data-testid={`text-leaderboard-wallet-${entry.rank}`}>{shortWallet(entry.walletAddress)}</span><HermitTick walletAddress={entry.walletAddress} className="size-3.5" />{mine && <span className="rounded-full bg-[hsl(var(--primary)/.11)] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-[hsl(var(--primary))]">you</span>}{entry.frogBadgeEarned && <BadgeCheck className="size-3.5 shrink-0 text-[hsl(var(--primary))]" aria-label="Frog badge earned" />}</div><p className="mt-0.5 text-[9px] text-[hsl(var(--muted-foreground))]">{entry.currentStreak} day streak</p></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="mono truncate text-[11px] font-medium" title={entry.walletAddress} data-testid={`text-leaderboard-wallet-${entry.rank}`}>
+                            {entry.username ? `@${entry.username}` : shortWallet(entry.walletAddress)}
+                          </span>
+                          <HermitTick walletAddress={entry.walletAddress} className="size-3.5" />
+                          {mine && <span className="rounded-full bg-[hsl(var(--primary)/.11)] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-[hsl(var(--primary))]">you</span>}
+                          {entry.frogBadgeEarned && <BadgeCheck className="size-3.5 shrink-0 text-[hsl(var(--primary))]" aria-label="Frog badge earned" />}
+                        </div>
+                        {entry.username && <p className="mono mt-0.5 text-[8px] text-[hsl(var(--muted-foreground))]">{shortWallet(entry.walletAddress)}</p>}
+                        <p className="mt-0.5 text-[9px] text-[hsl(var(--muted-foreground))]">{entry.currentStreak} day streak</p>
+                      </div>
                       <span className="mono text-xs font-semibold tabular-nums" data-testid={`text-leaderboard-points-${entry.rank}`}>{entry.points.toLocaleString()}</span>
                     </li>;
                   })}

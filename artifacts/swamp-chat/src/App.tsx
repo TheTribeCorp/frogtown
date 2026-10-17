@@ -84,6 +84,7 @@ import { DailyQuestsPage } from '@/components/daily-quests-page';
 import { HermitTick } from '@/components/hermit-tick';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { UsernameOnboardingGate } from '@/components/username-onboarding-gate';
+import { UsernameSettingsCard } from '@/components/username-settings-card';
 import { notifyIncomingMessage } from '@/lib/browser-notifications';
 import {
   findPendingEncryptedMessage,
@@ -313,6 +314,83 @@ function formatClock(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+type DecryptedChatMessage = {
+  id: string;
+  conversationId: string;
+  senderAddress: string;
+  senderUsername: string | null;
+  body: string;
+  sentAt: string;
+  isMine: boolean;
+  encrypted: boolean;
+  isRead: boolean;
+  decryptionFailed: boolean;
+  historyPending: boolean;
+  historyShared: boolean;
+  historySharedByAddress: string | null;
+  recipientAddresses: string[];
+};
+
+function ChatMessageItem({ message, isGroup }: { message: DecryptedChatMessage; isGroup: boolean }) {
+  return (
+    <div className={`flex ${message.isMine ? 'justify-end' : 'justify-start'}`} data-testid={`message-${message.id}`}>
+      <div className={`flex max-w-[min(75%,520px)] flex-col ${message.isMine ? 'items-end' : 'items-start'}`}>
+        <div className={`rounded-2xl px-4 py-3 text-sm leading-6 shadow-[0_2px_7px_rgba(25,55,34,.06)] ${message.isMine ? 'rounded-br-md bg-[hsl(var(--foreground))] text-[hsl(var(--card))]' : 'rounded-bl-md border border-[hsl(var(--border))] bg-[hsl(var(--card))]'}`}>
+          <p>{message.body}</p>
+        </div>
+        <div className="mono mt-1.5 flex flex-wrap items-center gap-2 px-1 text-[9px] text-[hsl(var(--muted-foreground))]">
+          <span className="inline-flex items-center gap-1">
+            {message.isMine ? (
+              <>
+                you
+                {message.senderUsername && <span className="text-[hsl(var(--foreground))]">@{message.senderUsername}</span>}
+              </>
+            ) : (
+              <>
+                {message.senderUsername ? (
+                  <>
+                    <span className="text-[hsl(var(--foreground))]">@{message.senderUsername}</span>
+                    <span title={message.senderAddress}>{shortAddress(message.senderAddress)}</span>
+                  </>
+                ) : shortAddress(message.senderAddress)}
+                <HermitTick walletAddress={message.senderAddress} className="size-3.5" />
+              </>
+            )}
+          </span>
+          <span>{formatClock(message.sentAt)}</span>
+          {message.encrypted && <LockKeyhole className="size-2.5" />}
+          {message.isMine && (
+            <span title={message.isRead ? 'Read' : 'Sent'} aria-label={message.isRead ? 'Read' : 'Sent'} data-testid={`message-delivery-status-${message.id}`}>
+              {message.isRead ? <CheckCheck className="size-3 text-[hsl(var(--primary))]" /> : <Check className="size-3" />}
+            </span>
+          )}
+          {message.historyShared && (
+            <span className="rounded-full bg-[hsl(var(--primary)/.1)] px-2 py-0.5 text-[hsl(var(--primary))]" data-testid={`message-history-shared-${message.id}`} title={`Shared by ${message.historySharedByAddress ?? 'a room member'}`}>
+              history shared with you
+            </span>
+          )}
+          {message.historyPending && (
+            <span className="rounded-full bg-[hsl(var(--accent)/.12)] px-2 py-0.5 text-[hsl(var(--muted-foreground))]" data-testid={`message-history-pending-${message.id}`}>
+              waiting for history share
+            </span>
+          )}
+          {isGroup && message.recipientAddresses.length > 0 && !message.historyShared && (
+            <details className="relative">
+              <summary className="cursor-pointer list-none rounded-full bg-[hsl(var(--muted)/.7)] px-2 py-0.5 hover:bg-[hsl(var(--muted))]" aria-label={`Show ${message.recipientAddresses.length} encrypted message recipients`} data-testid={`message-recipients-${message.id}`}>
+                to {message.recipientAddresses.length} wallet{message.recipientAddresses.length === 1 ? '' : 's'}
+              </summary>
+              <div className="absolute bottom-full left-0 z-20 mb-1 min-w-48 max-w-72 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-[10px] shadow-lg" role="note">
+                <p className="mb-2 font-semibold">Encrypted for these wallets</p>
+                <ul className="space-y-1">{message.recipientAddresses.map((address) => <li key={address} className="mono">{shortAddress(address)}</li>)}</ul>
+              </div>
+            </details>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -798,7 +876,7 @@ function MessagePane({
   const [safetyCode, setSafetyCode] = useState('');
   const [keyChanges, setKeyChanges] = useState<ConversationKeyChange[]>([]);
   const [keyTrustError, setKeyTrustError] = useState('');
-  const [decryptedMessages, setDecryptedMessages] = useState<Array<{ id: string; conversationId: string; senderAddress: string; body: string; sentAt: string; isMine: boolean; encrypted: boolean; isRead: boolean; decryptionFailed: boolean; historyPending: boolean; historyShared: boolean; historySharedByAddress: string | null; recipientAddresses: string[] }>>([]);
+  const [decryptedMessages, setDecryptedMessages] = useState<DecryptedChatMessage[]>([]);
   const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible');
   const lastMarkedMessageId = useRef<string | null>(null);
   const pendingReadMessageId = useRef<string | null>(null);
@@ -1290,8 +1368,84 @@ function MessagePane({
         </div></div>
       </div>}
      <div className="flex justify-end px-4 pt-2 md:px-7"><span className={`inline-flex items-center gap-1.5 text-[10px] ${realtimeStatus === 'live' ? 'text-[hsl(var(--primary))]' : 'text-[hsl(var(--muted-foreground))]'}`} role="status" data-testid="status-realtime"><span className={`size-1.5 rounded-full ${realtimeStatus === 'live' ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--muted-foreground))]'}`} />{realtimeStatus === 'live' ? 'Live updates connected' : 'Reconnecting to live updates'}</span></div>
-      <div className="flex items-center gap-3 border-b border-[hsl(var(--border))] px-4 py-4 md:px-7"><button onClick={onBack} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] md:hidden" aria-label="Back to conversations" data-testid="button-back-conversations"><ArrowLeft className="size-4" /></button><div className="flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]">{conversation.type === 'group' ? <Hash className="size-4" /> : <AtSign className="size-4" />}</div><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{conversation.title}</h2><button onClick={() => setShowSafetyCode(true)} className="flex items-center gap-1 text-[10px] text-[hsl(var(--primary))] hover:underline" data-testid="button-show-safety-code"><LockKeyhole className="size-3" /> end-to-end</button></div><p className="mono mt-0.5 truncate text-[10px] text-[hsl(var(--muted-foreground))]">{conversation.participantLabel} {conversation.memberCount > 1 ? `· ${conversation.memberCount} members` : ''}</p></div>{conversation.type === 'direct' && otherWalletAddress && !incomingRequest && (blockedByMe ? <button type="button" onClick={() => onUnblock(otherWalletAddress)} disabled={blockPending} className="ml-auto rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-[10px] font-medium hover:border-[hsl(var(--primary))] disabled:opacity-50" data-testid="button-unblock-chat-wallet">Unblock</button> : <button type="button" onClick={() => onBlock(otherWalletAddress)} disabled={blockPending} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-[10px] font-medium text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--destructive))] hover:text-[hsl(var(--destructive))] disabled:opacity-50" data-testid="button-block-chat-wallet"><Ban className="size-3" /> Block</button>)}</div>
-       <div className="chat-wallpaper soft-scrollbar relative flex flex-1 flex-col gap-4 overflow-auto px-4 py-6 md:px-10" data-testid="chat-message-history">{(messagesQuery.isLoading || keysQuery.isLoading) && [1, 2, 3].map((item) => <div key={item} className={`flex animate-pulse ${item % 2 ? 'justify-start' : 'justify-end'}`}><div className="h-14 w-44 rounded-2xl bg-[hsl(var(--muted))]" /></div>)}{(messagesQuery.isError || keysQuery.isError) && <div className="m-auto max-w-sm rounded-2xl border border-[hsl(var(--destructive)/.16)] bg-[hsl(var(--card)/.92)] p-5 text-center text-sm text-[hsl(var(--muted-foreground))] shadow-sm" data-testid="status-messages-error"><CircleAlert className="mx-auto mb-3 size-5 text-[hsl(var(--destructive))]" />Messages or encryption keys could not be loaded. Refresh to try again.</div>}{!messagesQuery.isLoading && !messagesQuery.isError && messagesQuery.data?.length === 0 && <div className="m-auto max-w-sm rounded-2xl border border-[hsl(var(--border)/.8)] bg-[hsl(var(--card)/.92)] p-5 text-center shadow-sm"><div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"><LockKeyhole className="size-5" /></div><p className="mt-4 text-sm font-medium">This line is quiet.</p><p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send the first end-to-end encrypted message.</p></div>}{decryptedMessages.map((message) => <div key={message.id} className={`flex ${message.isMine ? 'justify-end' : 'justify-start'}`} data-testid={`message-${message.id}`}><div className={`max-w-[min(75%,520px)] ${message.isMine ? 'items-end' : 'items-start'} flex flex-col`}><div className={`rounded-2xl px-4 py-3 text-sm leading-6 shadow-[0_2px_7px_rgba(25,55,34,.06)] ${message.isMine ? 'rounded-br-md bg-[hsl(var(--foreground))] text-[hsl(var(--card))]' : 'rounded-bl-md border border-[hsl(var(--border))] bg-[hsl(var(--card))]'}`}><p>{message.body}</p></div><div className="mono mt-1.5 flex flex-wrap items-center gap-2 px-1 text-[9px] text-[hsl(var(--muted-foreground))]"><span className="inline-flex items-center gap-1">{message.isMine ? 'you' : <>{shortAddress(message.senderAddress)}<HermitTick walletAddress={message.senderAddress} className="size-3.5" /></>}</span><span>{formatClock(message.sentAt)}</span>{message.encrypted && <LockKeyhole className="size-2.5" />}{message.isMine && <span title={message.isRead ? 'Read' : 'Sent'} aria-label={message.isRead ? 'Read' : 'Sent'} data-testid={`message-delivery-status-${message.id}`}>{message.isRead ? <CheckCheck className="size-3 text-[hsl(var(--primary))]" /> : <Check className="size-3" />}</span>}{message.historyShared && <span className="rounded-full bg-[hsl(var(--primary)/.1)] px-2 py-0.5 text-[hsl(var(--primary))]" data-testid={`message-history-shared-${message.id}`} title={`Shared by ${message.historySharedByAddress ?? 'a room member'}`}>history shared with you</span>}{message.historyPending && <span className="rounded-full bg-[hsl(var(--accent)/.12)] px-2 py-0.5 text-[hsl(var(--muted-foreground))]" data-testid={`message-history-pending-${message.id}`}>waiting for history share</span>}{conversation.type === 'group' && message.recipientAddresses.length > 0 && !message.historyShared && <details className="relative"><summary className="cursor-pointer list-none rounded-full bg-[hsl(var(--muted)/.7)] px-2 py-0.5 hover:bg-[hsl(var(--muted))]" aria-label={`Show ${message.recipientAddresses.length} encrypted message recipients`} data-testid={`message-recipients-${message.id}`}>to {message.recipientAddresses.length} wallet{message.recipientAddresses.length === 1 ? '' : 's'}</summary><div className="absolute bottom-full left-0 z-20 mb-1 min-w-48 max-w-72 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-[10px] shadow-lg" role="note"><p className="mb-2 font-semibold">Encrypted for these wallets</p><ul className="space-y-1">{message.recipientAddresses.map((address) => <li key={address} className="mono">{shortAddress(address)}</li>)}</ul></div></details>}</div></div></div>)}</div>
+       <div className="flex items-center gap-3 border-b border-[hsl(var(--border))] px-4 py-4 md:px-7">
+         <button onClick={onBack} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] md:hidden" aria-label="Back to conversations" data-testid="button-back-conversations">
+           <ArrowLeft className="size-4" />
+         </button>
+         <div className="flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]">
+           {conversation.type === 'group' ? <Hash className="size-4" /> : <AtSign className="size-4" />}
+         </div>
+         <div className="min-w-0">
+           <div className="flex items-center gap-2">
+             <h2 className="truncate text-sm font-semibold">{conversation.title}</h2>
+             <button onClick={() => setShowSafetyCode(true)} className="flex items-center gap-1 text-[10px] text-[hsl(var(--primary))] hover:underline" data-testid="button-show-safety-code">
+               <LockKeyhole className="size-3" /> end-to-end
+             </button>
+           </div>
+           <p className="mono mt-0.5 truncate text-[10px] text-[hsl(var(--muted-foreground))]">
+             {conversation.participantLabel} {conversation.memberCount > 1 ? `· ${conversation.memberCount} members` : ''}
+           </p>
+         </div>
+         {conversation.type === 'group' ? (
+           <details className="relative ml-auto" data-testid="group-member-roster">
+             <summary className="cursor-pointer list-none rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-[10px] font-medium hover:border-[hsl(var(--primary))]">
+               Members · {members.length}
+             </summary>
+             <div className="absolute right-0 top-full z-30 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 shadow-xl">
+               <p className="mb-2 text-xs font-semibold">People in this room</p>
+               {keysQuery.isLoading ? (
+                 <p className="py-3 text-xs text-[hsl(var(--muted-foreground))]" role="status">Loading members…</p>
+               ) : keysQuery.isError ? (
+                 <p className="py-3 text-xs text-[hsl(var(--destructive))]" role="alert">Could not load the member list.</p>
+               ) : (
+                 <ul className="max-h-64 space-y-2 overflow-y-auto">
+                   {members.map((member) => (
+                     <li key={member.walletAddress} className="flex items-center justify-between gap-3 rounded-lg bg-[hsl(var(--muted)/.45)] px-2.5 py-2">
+                       <div className="min-w-0">
+                         <p className="truncate text-xs font-medium" title={member.walletAddress}>
+                           {member.username ? `@${member.username}` : shortAddress(member.walletAddress)}
+                         </p>
+                         <p className="mono mt-0.5 truncate text-[9px] text-[hsl(var(--muted-foreground))]">
+                           {shortAddress(member.walletAddress)} · {member.publicKey ? 'Encryption key ready' : 'Key not set'}
+                         </p>
+                       </div>
+                       <HermitTick walletAddress={member.walletAddress} className="size-3.5 shrink-0" />
+                     </li>
+                   ))}
+                 </ul>
+               )}
+             </div>
+           </details>
+         ) : otherWalletAddress && !incomingRequest ? (
+           blockedByMe ? (
+             <button type="button" onClick={() => onUnblock(otherWalletAddress)} disabled={blockPending} className="ml-auto rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-[10px] font-medium hover:border-[hsl(var(--primary))] disabled:opacity-50" data-testid="button-unblock-chat-wallet">Unblock</button>
+           ) : (
+             <button type="button" onClick={() => onBlock(otherWalletAddress)} disabled={blockPending} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-[10px] font-medium text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--destructive))] hover:text-[hsl(var(--destructive))] disabled:opacity-50" data-testid="button-block-chat-wallet">
+               <Ban className="size-3" /> Block
+             </button>
+           )
+         ) : null}
+       </div>
+        <div className="chat-wallpaper soft-scrollbar relative flex flex-1 flex-col gap-4 overflow-auto px-4 py-6 md:px-10" data-testid="chat-message-history">
+          {(messagesQuery.isLoading || keysQuery.isLoading) && [1, 2, 3].map((item) => (
+            <div key={item} className={`flex animate-pulse ${item % 2 ? 'justify-start' : 'justify-end'}`}>
+              <div className="h-14 w-44 rounded-2xl bg-[hsl(var(--muted))]" />
+            </div>
+          ))}
+          {(messagesQuery.isError || keysQuery.isError) && (
+            <div className="m-auto max-w-sm rounded-2xl border border-[hsl(var(--destructive)/.16)] bg-[hsl(var(--card)/.92)] p-5 text-center text-sm text-[hsl(var(--muted-foreground))] shadow-sm" data-testid="status-messages-error">
+              <CircleAlert className="mx-auto mb-3 size-5 text-[hsl(var(--destructive))]" />Messages or encryption keys could not be loaded. Refresh to try again.
+            </div>
+          )}
+          {!messagesQuery.isLoading && !messagesQuery.isError && messagesQuery.data?.length === 0 && (
+            <div className="m-auto max-w-sm rounded-2xl border border-[hsl(var(--border)/.8)] bg-[hsl(var(--card)/.92)] p-5 text-center shadow-sm">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"><LockKeyhole className="size-5" /></div>
+              <p className="mt-4 text-sm font-medium">This line is quiet.</p>
+              <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send the first end-to-end encrypted message.</p>
+            </div>
+          )}
+          {decryptedMessages.map((message) => <ChatMessageItem key={message.id} message={message} isGroup={conversation.type === 'group'} />)}
+        </div>
       <div className="border-t border-[hsl(var(--border))] bg-[hsl(var(--card)/.45)] p-4 md:px-7">
         {outboxError && <p className="mb-3 rounded-lg border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.05)] px-3 py-2 text-xs leading-5 text-[hsl(var(--destructive))]" role="alert" data-testid="status-message-outbox-error">{outboxError}</p>}
         {pendingRetry?.conversationId === conversation.id && <div className="mb-3 rounded-xl border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] p-4" role="status" data-testid="status-pending-encrypted-message">
@@ -1441,7 +1595,76 @@ function GroupsPage({ onOpenGroup }: { onOpenGroup: (conversationId: string) => 
     if (name.length < 2) return;
     createGroup.mutate({ data: { name, description, creatorAddress: walletAddress } }, { onSuccess: () => { client.invalidateQueries({ queryKey: getListGroupsQueryKey(params) }); setDialog(null); setNotice({ message: 'Your room is ready in Frogtown.', tone: 'success' }); }, onError: (error) => setNotice({ message: errorMessage(error, 'Could not create this group.'), tone: 'error' }) });
   };
-  return <AppShell title="Community rooms" eyebrow="the $HERMIT community / find your people"><div className="mx-auto max-w-[1150px] p-5 md:p-8 lg:p-10"><div className="appear flex flex-col justify-between gap-5 md:flex-row md:items-end"><div><div className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]"><Users className="size-4 text-[hsl(var(--accent))]" /><span>XRPL community rooms</span></div><h2 className="mt-3 max-w-xl text-4xl font-semibold leading-[.95] tracking-[-.07em] md:text-6xl">Find your<br /><span className="text-[hsl(var(--primary))]">people.</span></h2><p className="mt-4 max-w-md text-sm leading-6 text-[hsl(var(--muted-foreground))]">Public rooms for XRPL ideas, project updates, and conversations that bring the $HERMIT community closer together.</p></div><button onClick={() => setDialog('create')} className="flex items-center justify-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] transition hover:bg-[hsl(var(--primary))]" data-testid="button-create-group"><Plus className="size-4" /> Create a group</button></div><div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{groupsQuery.isLoading && [1, 2, 3].map((item) => <div key={item} className="h-56 animate-pulse rounded-[1.25rem] bg-[hsl(var(--muted))]" />)}{groupsQuery.isError && <div className="col-span-full rounded-2xl border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.06)] p-5 text-sm text-[hsl(var(--destructive))]" data-testid="status-groups-error">Groups are having a muddy moment. Refresh to try again.</div>}{!groupsQuery.isLoading && !groupsQuery.isError && groups.length === 0 && <div className="col-span-full rounded-[1.25rem] border border-dashed border-[hsl(var(--border))] p-10 text-center" data-testid="empty-groups"><div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-[hsl(var(--secondary)/.4)]"><Users className="size-5" /></div><h3 className="mt-4 text-lg font-semibold">No rooms in the reeds yet.</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[hsl(var(--muted-foreground))]">Create the first group and give the community somewhere to land.</p></div>}{groups.map((group, index) => <article key={group.id} className={`lift appear rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 ${index % 3 === 1 ? 'appear-delay-1' : index % 3 === 2 ? 'appear-delay-2' : ''}`} data-testid={`card-group-${group.id}`}><div className="flex items-start justify-between"><div className={`flex size-11 items-center justify-center rounded-2xl ${index % 2 ? 'bg-[hsl(var(--accent)/.15)] text-[hsl(var(--accent))]' : 'bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]'}`}><Hash className="size-5" /></div><span className="mono rounded-full bg-[hsl(var(--muted))] px-2 py-1 text-[9px] uppercase tracking-[.13em] text-[hsl(var(--muted-foreground))]">Public room</span></div><h3 className="mt-6 text-lg font-semibold tracking-[-.03em]">{group.name}</h3><p className="mt-2 min-h-10 text-sm leading-5 text-[hsl(var(--muted-foreground))]">{group.description || 'A public XRPL room.'}</p><div className="mt-6 flex items-center justify-between border-t border-[hsl(var(--border)/.75)] pt-4"><span className="flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]"><Users className="size-3.5" /> {group.memberCount} members</span>{group.isJoined ? <button onClick={() => onOpenGroup(group.conversationId)} className="flex items-center gap-1 text-xs font-semibold text-[hsl(var(--primary))] hover:underline" data-testid={`button-open-group-${group.id}`}>Open room <ArrowUpRight className="size-3.5" /></button> : <button onClick={() => join(group.id)} disabled={joinGroup.isPending} className="flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-medium transition hover:border-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.07)] disabled:opacity-50" data-testid={`button-join-group-${group.id}`}>{joinGroup.isPending ? <RefreshCw className="size-3 animate-spin" /> : <DoorOpen className="size-3.5" />} Join</button>}</div></article>)}</div></div>{dialog === 'create' && <Modal title="Make a room" eyebrow="public / community-owned" onClose={() => setDialog(null)}><form onSubmit={submitGroup} className="space-y-5"><div><label htmlFor="group-name" className="mono text-[10px] uppercase tracking-[.15em] text-[hsl(var(--muted-foreground))]">Group name</label><input id="group-name" name="name" required minLength={2} placeholder="e.g. Ledger After Dark" className="mt-2 w-full rounded-xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] px-3 py-3 text-sm outline-none focus:border-[hsl(var(--primary))]" data-testid="input-group-name" /></div><div><label htmlFor="group-description" className="mono text-[10px] uppercase tracking-[.15em] text-[hsl(var(--muted-foreground))]">What happens here?</label><textarea id="group-description" name="description" rows={3} placeholder="Set the room's signal in one line." className="mt-2 w-full resize-none rounded-xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] px-3 py-3 text-sm outline-none focus:border-[hsl(var(--primary))]" data-testid="input-group-description" /></div><button disabled={createGroup.isPending} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))] disabled:opacity-50" data-testid="button-submit-group">{createGroup.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Sparkles className="size-4 text-[hsl(var(--secondary))]" />} {createGroup.isPending ? 'Making room…' : 'Create group'}</button></form></Modal>}{notice && <Notice message={notice.message} tone={notice.tone} onClose={() => setNotice(null)} />}</AppShell>;
+  return (
+    <AppShell title="Community rooms" eyebrow="the $HERMIT community / find your people">
+      <div className="mx-auto max-w-[1150px] p-5 md:p-8 lg:p-10">
+        <div className="appear flex flex-col justify-between gap-5 md:flex-row md:items-end">
+          <div>
+            <div className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]"><Users className="size-4 text-[hsl(var(--accent))]" /><span>XRPL community rooms</span></div>
+            <h2 className="mt-3 max-w-xl text-4xl font-semibold leading-[.95] tracking-[-.07em] md:text-6xl">Find your<br /><span className="text-[hsl(var(--primary))]">people.</span></h2>
+            <p className="mt-4 max-w-md text-sm leading-6 text-[hsl(var(--muted-foreground))]">Public rooms for XRPL ideas, project updates, and conversations that bring the $HERMIT community closer together.</p>
+          </div>
+          <button onClick={() => setDialog('create')} className="flex items-center justify-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] transition hover:bg-[hsl(var(--primary))]" data-testid="button-create-group">
+            <Plus className="size-4" /> Create a group
+          </button>
+        </div>
+        <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {groupsQuery.isLoading && [1, 2, 3].map((item) => <div key={item} className="h-56 animate-pulse rounded-[1.25rem] bg-[hsl(var(--muted))]" />)}
+          {groupsQuery.isError && <div className="col-span-full rounded-2xl border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.06)] p-5 text-sm text-[hsl(var(--destructive))]" data-testid="status-groups-error">Groups are having a muddy moment. Refresh to try again.</div>}
+          {!groupsQuery.isLoading && !groupsQuery.isError && groups.length === 0 && (
+            <div className="col-span-full rounded-[1.25rem] border border-dashed border-[hsl(var(--border))] p-10 text-center" data-testid="empty-groups">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-[hsl(var(--secondary)/.4)]"><Users className="size-5" /></div>
+              <h3 className="mt-4 text-lg font-semibold">No rooms in the reeds yet.</h3>
+              <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[hsl(var(--muted-foreground))]">Create the first group and give the community somewhere to land.</p>
+            </div>
+          )}
+          {groups.map((group, index) => (
+            <article key={group.id} className={`lift appear rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 ${index % 3 === 1 ? 'appear-delay-1' : index % 3 === 2 ? 'appear-delay-2' : ''}`} data-testid={`card-group-${group.id}`}>
+              <div className="flex items-start justify-between">
+                <div className={`flex size-11 items-center justify-center rounded-2xl ${index % 2 ? 'bg-[hsl(var(--accent)/.15)] text-[hsl(var(--accent))]' : 'bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]'}`}><Hash className="size-5" /></div>
+                <span className="mono rounded-full bg-[hsl(var(--muted))] px-2 py-1 text-[9px] uppercase tracking-[.13em] text-[hsl(var(--muted-foreground))]">Public room</span>
+              </div>
+              <h3 className="mt-6 text-lg font-semibold tracking-[-.03em]">{group.name}</h3>
+              <p className="mt-2 min-h-10 text-sm leading-5 text-[hsl(var(--muted-foreground))]">{group.description || 'A public XRPL room.'}</p>
+              <p className="mt-3 text-[10px] text-[hsl(var(--muted-foreground))]">
+                Started by <span className="font-medium text-[hsl(var(--foreground))]">{group.creatorUsername ? `@${group.creatorUsername}` : shortAddress(group.creatorAddress)}</span>
+                {group.creatorUsername && <span className="mono ml-1">{shortAddress(group.creatorAddress)}</span>}
+              </p>
+              <div className="mt-5 flex items-center justify-between border-t border-[hsl(var(--border)/.75)] pt-4">
+                <span className="flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]"><Users className="size-3.5" /> {group.memberCount} members</span>
+                {group.isJoined ? (
+                  <button onClick={() => onOpenGroup(group.conversationId)} className="flex items-center gap-1 text-xs font-semibold text-[hsl(var(--primary))] hover:underline" data-testid={`button-open-group-${group.id}`}>Open room <ArrowUpRight className="size-3.5" /></button>
+                ) : (
+                  <button onClick={() => join(group.id)} disabled={joinGroup.isPending} className="flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-medium transition hover:border-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.07)] disabled:opacity-50" data-testid={`button-join-group-${group.id}`}>
+                    {joinGroup.isPending ? <RefreshCw className="size-3 animate-spin" /> : <DoorOpen className="size-3.5" />} Join
+                  </button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+      {dialog === 'create' && (
+        <Modal title="Make a room" eyebrow="public / community-owned" onClose={() => setDialog(null)}>
+          <form onSubmit={submitGroup} className="space-y-5">
+            <div>
+              <label htmlFor="group-name" className="mono text-[10px] uppercase tracking-[.15em] text-[hsl(var(--muted-foreground))]">Group name</label>
+              <input id="group-name" name="name" required minLength={2} placeholder="e.g. Ledger After Dark" className="mt-2 w-full rounded-xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] px-3 py-3 text-sm outline-none focus:border-[hsl(var(--primary))]" data-testid="input-group-name" />
+            </div>
+            <div>
+              <label htmlFor="group-description" className="mono text-[10px] uppercase tracking-[.15em] text-[hsl(var(--muted-foreground))]">What happens here?</label>
+              <textarea id="group-description" name="description" rows={3} placeholder="Set the room's signal in one line." className="mt-2 w-full resize-none rounded-xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] px-3 py-3 text-sm outline-none focus:border-[hsl(var(--primary))]" data-testid="input-group-description" />
+            </div>
+            <button disabled={createGroup.isPending} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))] disabled:opacity-50" data-testid="button-submit-group">
+              {createGroup.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Sparkles className="size-4 text-[hsl(var(--secondary))]" />}
+              {createGroup.isPending ? 'Making room…' : 'Create group'}
+            </button>
+          </form>
+        </Modal>
+      )}
+      {notice && <Notice message={notice.message} tone={notice.tone} onClose={() => setNotice(null)} />}
+    </AppShell>
+  );
 }
 
 function SettingsPage() {
@@ -1450,7 +1673,89 @@ function SettingsPage() {
   const [copied, setCopied] = useState(false);
   const [privateMode, setPrivateMode] = useState(true);
   const copy = () => { navigator.clipboard?.writeText(walletAddress); setCopied(true); window.setTimeout(() => setCopied(false), 1600); };
-  return <AppShell title="Settings" eyebrow="your identity / your rules"><div className="mx-auto max-w-[900px] p-5 md:p-8 lg:p-10"><div className="appear"><p className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">wallet identity</p><h2 className="mt-3 text-4xl font-semibold tracking-[-.07em] md:text-5xl">Keep it yours.</h2><p className="mt-4 max-w-lg text-sm leading-6 text-[hsl(var(--muted-foreground))]">Frogtown does not create a separate profile for you. Your XRPL wallet address is your name here.</p></div><div className="mt-10 grid gap-5 md:grid-cols-[1.2fr_.8fr]"><section className="rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">connected wallet</p><div className="mt-4 flex items-center gap-3"><div className="flex size-11 items-center justify-center rounded-2xl bg-[hsl(var(--secondary)/.45)]"><WalletCards className="size-5" /></div><div><p className="font-semibold" data-testid="text-settings-username">{shortAddress(walletAddress)}</p><p className="mono mt-1 text-[10px] text-[hsl(var(--muted-foreground))]">XRPL mainnet</p></div></div></div><span className="flex items-center gap-1.5 rounded-full bg-[hsl(var(--primary)/.1)] px-2.5 py-1.5 text-[10px] font-medium text-[hsl(var(--primary))]" data-testid="status-wallet-connected"><span className="size-1.5 rounded-full bg-[hsl(var(--primary))]" /> Connected</span></div><div className="mt-7 flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background)/.55)] p-3"><p className="mono min-w-0 flex-1 truncate text-xs text-[hsl(var(--muted-foreground))]" data-testid="text-full-wallet-address">{walletAddress}</p><button onClick={copy} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]" aria-label="Copy wallet address" data-testid="button-copy-address">{copied ? <Check className="size-4 text-[hsl(var(--primary))]" /> : <Copy className="size-4" />}</button></div><button onClick={disconnect} className="mt-6 flex items-center gap-2 text-xs text-[hsl(var(--destructive))] hover:underline" data-testid="button-settings-disconnect"><LogOut className="size-3.5" /> Disconnect this wallet</button></section><section className="rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6"><p className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">connection health</p><div className="mt-5 flex items-center gap-3"><div className={`flex size-10 items-center justify-center rounded-xl ${health.isError ? 'bg-[hsl(var(--destructive)/.1)] text-[hsl(var(--destructive))]' : 'bg-[hsl(var(--primary)/.12)] text-[hsl(var(--primary))]'}`}><Wifi className="size-4" /></div><div><p className="text-sm font-medium">{health.isLoading ? 'Checking signal…' : health.isError ? 'Signal interrupted' : 'All systems listening'}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]" data-testid="status-api-health">{health.isError ? 'The server did not answer.' : health.data?.status ?? 'XRPL relay ready'}</p></div></div><div className="mt-5 h-px bg-[hsl(var(--border))]" /><div className="mt-5 flex items-start gap-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-[hsl(var(--primary))]" /><p>Wallet sessions expire quickly. Messages remain address-to-address.</p></div></section></div><section className="mt-5 rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6"><div className="flex items-start gap-4"><div className="flex size-10 items-center justify-center rounded-xl bg-[hsl(var(--accent)/.13)] text-[hsl(var(--accent))]"><Bell className="size-4" /></div><div className="flex-1"><h3 className="font-semibold">Privacy controls</h3><p className="mt-1 max-w-xl text-sm leading-5 text-[hsl(var(--muted-foreground))]">Keep your presence quiet until you choose to speak. We never infer a public profile from your address.</p><div className="mt-5 flex items-center justify-between border-t border-[hsl(var(--border))] pt-4"><div><p className="text-sm font-medium">Private by default</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Only your messages reveal you are here.</p></div><button onClick={() => setPrivateMode((value) => !value)} className={`relative h-7 w-12 rounded-full transition ${privateMode ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--muted-foreground)/.28)]'}`} role="switch" aria-checked={privateMode} aria-label="Toggle private by default" data-testid="switch-private-mode"><span className={`absolute top-1 size-5 rounded-full bg-[hsl(var(--card))] shadow-sm transition-transform ${privateMode ? 'translate-x-6' : 'translate-x-1'}`} /></button></div></div></div></section><BrowserNotificationSettings walletAddress={walletAddress} /><div className="mt-8 flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]"><KeyRound className="size-3.5 text-[hsl(var(--secondary-foreground))]" /> Frogtown uses your wallet as your handle. Nothing else is required.</div></div></AppShell>;
+  return (
+    <AppShell title="Settings" eyebrow="your identity / your rules">
+      <div className="mx-auto max-w-[900px] space-y-5 p-5 md:p-8 lg:p-10">
+        <div className="appear">
+          <p className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">wallet identity</p>
+          <h2 className="mt-3 text-4xl font-semibold tracking-[-.07em] md:text-5xl">Keep it yours.</h2>
+          <p className="mt-4 max-w-lg text-sm leading-6 text-[hsl(var(--muted-foreground))]">
+            Choose the name community members see. Your XRPL wallet remains your secure account and can still be used to find you.
+          </p>
+        </div>
+
+        <UsernameSettingsCard walletAddress={walletAddress} />
+
+        <div className="grid gap-5 md:grid-cols-[1.2fr_.8fr]">
+          <section className="rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">connected wallet</p>
+                <div className="mt-4 flex items-center gap-3">
+                  <div className="flex size-11 items-center justify-center rounded-2xl bg-[hsl(var(--secondary)/.45)]"><WalletCards className="size-5" /></div>
+                  <div>
+                    <p className="font-semibold" data-testid="text-settings-username">{shortAddress(walletAddress)}</p>
+                    <p className="mono mt-1 text-[10px] text-[hsl(var(--muted-foreground))]">XRPL mainnet</p>
+                  </div>
+                </div>
+              </div>
+              <span className="flex items-center gap-1.5 rounded-full bg-[hsl(var(--primary)/.1)] px-2.5 py-1.5 text-[10px] font-medium text-[hsl(var(--primary))]" data-testid="status-wallet-connected">
+                <span className="size-1.5 rounded-full bg-[hsl(var(--primary))]" /> Connected
+              </span>
+            </div>
+            <div className="mt-7 flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background)/.55)] p-3">
+              <p className="mono min-w-0 flex-1 truncate text-xs text-[hsl(var(--muted-foreground))]" data-testid="text-full-wallet-address">{walletAddress}</p>
+              <button onClick={copy} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]" aria-label="Copy wallet address" data-testid="button-copy-address">
+                {copied ? <Check className="size-4 text-[hsl(var(--primary))]" /> : <Copy className="size-4" />}
+              </button>
+            </div>
+            <button onClick={disconnect} className="mt-6 flex items-center gap-2 text-xs text-[hsl(var(--destructive))] hover:underline" data-testid="button-settings-disconnect">
+              <LogOut className="size-3.5" /> Disconnect this wallet
+            </button>
+          </section>
+
+          <section className="rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6">
+            <p className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">connection health</p>
+            <div className="mt-5 flex items-center gap-3">
+              <div className={`flex size-10 items-center justify-center rounded-xl ${health.isError ? 'bg-[hsl(var(--destructive)/.1)] text-[hsl(var(--destructive))]' : 'bg-[hsl(var(--primary)/.12)] text-[hsl(var(--primary))]'}`}><Wifi className="size-4" /></div>
+              <div>
+                <p className="text-sm font-medium">{health.isLoading ? 'Checking signal…' : health.isError ? 'Signal interrupted' : 'All systems listening'}</p>
+                <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]" data-testid="status-api-health">{health.isError ? 'The server did not answer.' : health.data?.status ?? 'XRPL relay ready'}</p>
+              </div>
+            </div>
+            <div className="mt-5 h-px bg-[hsl(var(--border))]" />
+            <div className="mt-5 flex items-start gap-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[hsl(var(--primary))]" />
+              <p>Wallet sessions expire quickly. Messages remain address-to-address.</p>
+            </div>
+          </section>
+        </div>
+
+        <section className="rounded-[1.25rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.75)] p-5 md:p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-[hsl(var(--accent)/.13)] text-[hsl(var(--accent))]"><Bell className="size-4" /></div>
+            <div className="flex-1">
+              <h3 className="font-semibold">Privacy controls</h3>
+              <p className="mt-1 max-w-xl text-sm leading-5 text-[hsl(var(--muted-foreground))]">Your username and wallet address are shown to other members; private messages remain end-to-end encrypted.</p>
+              <div className="mt-5 flex items-center justify-between border-t border-[hsl(var(--border))] pt-4">
+                <div>
+                  <p className="text-sm font-medium">Private by default</p>
+                  <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Only your messages reveal you are here.</p>
+                </div>
+                <button onClick={() => setPrivateMode((value) => !value)} className={`relative h-7 w-12 rounded-full transition ${privateMode ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--muted-foreground)/.28)]'}`} role="switch" aria-checked={privateMode} aria-label="Toggle private by default" data-testid="switch-private-mode">
+                  <span className={`absolute top-1 size-5 rounded-full bg-[hsl(var(--card))] shadow-sm transition-transform ${privateMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+        <BrowserNotificationSettings walletAddress={walletAddress} />
+        <div className="flex items-center gap-2 pt-2 text-xs text-[hsl(var(--muted-foreground))]">
+          <KeyRound className="size-3.5 text-[hsl(var(--secondary-foreground))]" /> Your wallet remains your account; your username is your Frogtown handle.
+        </div>
+      </div>
+    </AppShell>
+  );
 }
 
 function LockedPage({ title }: { title: string }) {

@@ -1857,11 +1857,100 @@ test("wallet usernames are authenticated, unique, and resolve direct chats", asy
   const conversations = await listedResponse.json();
   assert.equal(conversations.find((row) => row.id === conversation.id)?.title, `@${username}`);
 
+  const updatedUsername = `new${randomUUID().slice(0, 8).replaceAll("-", "").toLowerCase()}`;
+  const updateProfile = await request("/api/wallet/profile", {
+    method: "PUT",
+    cookie: sessionCookie(recipient),
+    body: { username: updatedUsername },
+  });
+  assert.equal(updateProfile.status, 200);
+  assert.equal((await updateProfile.json()).username, updatedUsername);
+
+  const refreshedConversations = await request(`/api/conversations?walletAddress=${sender}`, {
+    cookie: sessionCookie(sender),
+  });
+  assert.equal(
+    (await refreshedConversations.json()).find((row) => row.id === conversation.id)?.title,
+    `@${updatedUsername}`,
+  );
+
+  const senderUsername = `sender${randomUUID().slice(0, 8).replaceAll("-", "").toLowerCase()}`;
+  const senderProfile = await request("/api/wallet/profile", {
+    method: "PUT",
+    cookie: sessionCookie(sender),
+    body: { username: senderUsername },
+  });
+  assert.equal(senderProfile.status, 200);
+
+  const messageId = randomUUID();
+  const sentMessage = await request(`/api/conversations/${conversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { senderAddress: sender, messageId, body: recipientEnvelope([sender, recipient]) },
+  });
+  assert.equal(sentMessage.status, 201);
+  assert.equal((await sentMessage.json()).senderUsername, senderUsername);
+  const conversationMessages = await request(`/api/conversations/${conversation.id}/messages?walletAddress=${recipient}`, {
+    cookie: sessionCookie(recipient),
+  });
+  assert.equal(
+    (await conversationMessages.json()).find((message) => message.id === messageId)?.senderUsername,
+    senderUsername,
+  );
+
+  const groupResponse = await request("/api/groups", {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+    body: { name: `username room ${randomUUID()}`, description: "", creatorAddress: recipient },
+  });
+  assert.equal(groupResponse.status, 201);
+  const group = await groupResponse.json();
+  assert.equal(group.creatorAddress, recipient);
+  assert.equal(group.creatorUsername, updatedUsername);
+  const groupMembers = await request(`/api/conversations/${group.conversationId}/keys`, {
+    cookie: sessionCookie(recipient),
+  });
+  assert.equal(groupMembers.status, 200);
+  assert.equal((await groupMembers.json()).find((member) => member.walletAddress === recipient)?.username, updatedUsername);
+
+  const postResponse = await request("/api/timeline/posts", {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+    body: { body: `Username author test ${randomUUID()}` },
+  });
+  assert.equal(postResponse.status, 201);
+  const post = await postResponse.json();
+  assert.equal(post.authorUsername, updatedUsername);
+  const feed = await request("/api/timeline/posts", { cookie: sessionCookie(sender) });
+  assert.equal((await feed.json()).items.find((item) => item.id === post.id)?.authorUsername, updatedUsername);
+
+  const commentResponse = await request(`/api/timeline/posts/${post.id}/comments`, {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+    body: { body: "Username comment test" },
+  });
+  assert.equal(commentResponse.status, 201);
+  const comment = await commentResponse.json();
+  assert.equal(comment.authorUsername, updatedUsername);
+  const comments = await request(`/api/timeline/posts/${post.id}/comments`, { cookie: sessionCookie(sender) });
+  assert.equal((await comments.json()).items.find((item) => item.id === comment.id)?.authorUsername, updatedUsername);
+  assert.equal((await request(`/api/timeline/posts/${post.id}`, {
+    method: "DELETE",
+    cookie: sessionCookie(recipient),
+  })).status, 204);
+
   const client = new Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
   try {
+    await client.query("DELETE FROM swamp_messages WHERE conversation_id = $1", [group.conversationId]);
+    await client.query("DELETE FROM swamp_conversation_members WHERE conversation_id = $1", [group.conversationId]);
+    await client.query("DELETE FROM swamp_group_members WHERE group_id = $1", [group.id]);
+    await client.query("DELETE FROM swamp_groups WHERE id = $1", [group.id]);
+    await client.query("DELETE FROM swamp_conversations WHERE id = $1", [group.conversationId]);
+    await client.query("DELETE FROM swamp_messages WHERE conversation_id = $1", [conversation.id]);
     await client.query("DELETE FROM swamp_conversation_members WHERE conversation_id = $1", [conversation.id]);
     await client.query("DELETE FROM swamp_conversations WHERE id = $1", [conversation.id]);
+    await client.query("DELETE FROM swamp_wallet_profiles WHERE wallet_address = $1", [sender]);
     await client.query("DELETE FROM swamp_wallet_profiles WHERE wallet_address = $1", [recipient]);
   } finally {
     await client.end();

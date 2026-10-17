@@ -2,7 +2,6 @@ import { useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import {
   getGetWalletProfileQueryKey,
   useGetWalletProfile,
@@ -19,16 +18,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { HermitTick } from '@/components/hermit-tick';
-
-const usernameSchema = z.object({
-  username: z.string()
-    .trim()
-    .min(4, 'Use at least 4 characters.')
-    .max(17, 'Use no more than 17 characters.')
-    .regex(/^[A-Za-z0-9_]+$/, 'Use letters, numbers, and underscores only.'),
-});
-
-type UsernameFormValues = z.infer<typeof usernameSchema>;
+import { usernameSchema, usernameSaveErrorMessage, type UsernameFormValues } from '@/lib/username';
 
 function shortWallet(address: string) {
   return address.length > 15 ? `${address.slice(0, 7)}…${address.slice(-5)}` : address;
@@ -125,7 +115,7 @@ export function UsernameOnboardingGate({
                     queryClient.setQueryData(profileQueryKey, profile);
                   },
                   onError: (error) => {
-                    form.setError('username', { type: 'server', message: saveErrorMessage(error) });
+                    form.setError('username', { type: 'server', message: usernameSaveErrorMessage(error) });
                   },
                 },
               );

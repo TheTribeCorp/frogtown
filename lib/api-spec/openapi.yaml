@@ -1515,9 +1515,11 @@ components:
       properties:
         walletAddress:
           type: string
+        username:
+          type: ["string", "null"]
         publicKey:
           type: ["string", "null"]
-      required: [walletAddress, publicKey]
+      required: [walletAddress, username, publicKey]
     HistoryShareWorkItem:
       type: object
       properties:
@@ -1636,6 +1638,8 @@ components:
           type: string
         senderAddress:
           type: string
+        senderUsername:
+          type: ["string", "null"]
         body:
           type: string
         sentAt:
@@ -1648,7 +1652,7 @@ components:
         isRead:
           type: boolean
       # Read state is derived per recipient and returned for every message.
-      required: [id, conversationId, senderAddress, body, sentAt, isMine, encrypted, isRead]
+      required: [id, conversationId, senderAddress, senderUsername, body, sentAt, isMine, encrypted, isRead]
     ReadReceiptInput:
       type: object
       properties:
@@ -1694,7 +1698,11 @@ components:
           type: boolean
         conversationId:
           type: string
-      required: [id, name, description, memberCount, onlineCount, isJoined, conversationId]
+        creatorAddress:
+          type: string
+        creatorUsername:
+          type: ["string", "null"]
+      required: [id, name, description, memberCount, onlineCount, isJoined, conversationId, creatorAddress, creatorUsername]
     GroupInput:
       type: object
       properties:
@@ -1721,6 +1729,8 @@ components:
           type: string
         authorAddress:
           type: string
+        authorUsername:
+          type: ["string", "null"]
         body:
           type: string
         createdAt:
@@ -1734,7 +1744,7 @@ components:
           type: boolean
         reportedByMe:
           type: boolean
-      required: [id, authorAddress, body, createdAt, likeCount, commentCount, likedByMe, reportedByMe]
+      required: [id, authorAddress, authorUsername, body, createdAt, likeCount, commentCount, likedByMe, reportedByMe]
     TimelinePostsPage:
       type: object
       properties:
@@ -1780,6 +1790,8 @@ components:
           type: string
         authorAddress:
           type: string
+        authorUsername:
+          type: ["string", "null"]
         body:
           type: string
         createdAt:
@@ -1787,7 +1799,7 @@ components:
           format: date-time
         reportedByMe:
           type: boolean
-      required: [id, postId, authorAddress, body, createdAt, reportedByMe]
+      required: [id, postId, authorAddress, authorUsername, body, createdAt, reportedByMe]
     TimelineCommentsPage:
       type: object
       properties:
@@ -1984,6 +1996,8 @@ components:
           type: integer
         walletAddress:
           type: string
+        username:
+          type: ["string", "null"]
         points:
           type: number
           format: double
@@ -1991,7 +2005,7 @@ components:
           type: integer
         frogBadgeEarned:
           type: boolean
-      required: [rank, walletAddress, points, currentStreak, frogBadgeEarned]
+      required: [rank, walletAddress, username, points, currentStreak, frogBadgeEarned]
     GamificationLeaderboard:
       type: object
       properties:

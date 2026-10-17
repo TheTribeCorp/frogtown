@@ -10,6 +10,8 @@ export interface TimelineComment {
   id: string;
   postId: string;
   authorAddress: string;
+  /** @nullable */
+  authorUsername: string | null;
   body: string;
   createdAt: Date;
   reportedByMe: boolean;

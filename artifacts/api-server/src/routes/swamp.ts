@@ -1151,7 +1151,18 @@ router.get("/conversations/:conversationId/keys", async (req, res): Promise<void
     .from(conversationMembersTable)
     .leftJoin(walletKeysTable, eq(conversationMembersTable.walletAddress, walletKeysTable.walletAddress))
     .where(eq(conversationMembersTable.conversationId, conversationId));
-  res.json(keys);
+  const profiles = await db
+    .select({
+      walletAddress: walletProfilesTable.walletAddress,
+      username: walletProfilesTable.username,
+    })
+    .from(walletProfilesTable)
+    .where(inArray(walletProfilesTable.walletAddress, keys.map((key) => key.walletAddress)));
+  const usernamesByWallet = new Map(profiles.map((profile) => [profile.walletAddress, profile.username]));
+  res.json(keys.map((key) => ({
+    ...key,
+    username: usernamesByWallet.get(key.walletAddress) ?? null,
+  })));
 });
 
 router.get("/conversations", async (req, res) => {
@@ -1673,11 +1684,27 @@ router.get("/conversations/:conversationId/messages", async (req, res) => {
       .from(messagesTable)
       .where(messageFilter)
       .orderBy(asc(messagesTable.sentAt));
+    const senderAddresses = [...new Set(rows.map((row) => row.senderAddress))];
+    const profiles = senderAddresses.length > 0
+      ? await db
+        .select({
+          walletAddress: walletProfilesTable.walletAddress,
+          username: walletProfilesTable.username,
+        })
+        .from(walletProfilesTable)
+        .where(inArray(walletProfilesTable.walletAddress, senderAddresses))
+      : [];
+    const usernamesByWallet = new Map(profiles.map((profile) => [profile.walletAddress, profile.username]));
     res.json(rows.map((row) => {
       const recipients = memberships.filter((member) => member.walletAddress !== row.senderAddress);
       const isRead = recipients.length > 0
         && recipients.every((member) => member.lastReadAt !== null && member.lastReadAt >= row.sentAt);
-      return { ...row, isMine: row.senderAddress === walletAddress, isRead };
+      return {
+        ...row,
+        senderUsername: usernamesByWallet.get(row.senderAddress) ?? null,
+        isMine: row.senderAddress === walletAddress,
+        isRead,
+      };
     }));
   } catch {
     res.status(400).json({ error: "Unable to load this conversation." });
@@ -2218,7 +2245,17 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
     const recipients = readState.filter((member) => member.walletAddress !== outcome.message.senderAddress);
     const isRead = recipients.length > 0
       && recipients.every((member) => member.lastReadAt !== null && member.lastReadAt >= outcome.message.sentAt);
-    res.status(outcome.created ? 201 : 200).json({ ...outcome.message, isMine: true, isRead });
+    const [senderProfile] = await db
+      .select({ username: walletProfilesTable.username })
+      .from(walletProfilesTable)
+      .where(eq(walletProfilesTable.walletAddress, outcome.message.senderAddress))
+      .limit(1);
+    res.status(outcome.created ? 201 : 200).json({
+      ...outcome.message,
+      senderUsername: senderProfile?.username ?? null,
+      isMine: true,
+      isRead,
+    });
   } catch {
     res.status(400).json({ error: "Message could not be sent." });
   }
@@ -2246,11 +2283,23 @@ router.get("/groups", async (req, res) => {
       .groupBy(groupMembersTable.groupId);
     const countsByGroup = new Map(memberCounts.map((row) => [row.groupId, row.memberCount]));
     const joined = new Set(memberships.map((member) => member.groupId));
+    const creatorWallets = [...new Set(groups.map((group) => group.creatorAddress))];
+    const creatorProfiles = creatorWallets.length > 0
+      ? await db
+        .select({
+          walletAddress: walletProfilesTable.walletAddress,
+          username: walletProfilesTable.username,
+        })
+        .from(walletProfilesTable)
+        .where(inArray(walletProfilesTable.walletAddress, creatorWallets))
+      : [];
+    const usernamesByWallet = new Map(creatorProfiles.map((profile) => [profile.walletAddress, profile.username]));
     res.json(groups.map((group) => ({
       ...group,
       memberCount: countsByGroup.get(group.id) ?? 0,
       onlineCount: 0,
       isJoined: joined.has(group.id),
+      creatorUsername: usernamesByWallet.get(group.creatorAddress) ?? null,
     })));
   } catch {
     res.status(400).json({ error: "Unable to load groups." });
@@ -2264,6 +2313,11 @@ router.post("/groups", async (req, res) => {
     if (!sessionWallet) return;
     requireAddress(input.creatorAddress);
     if (!requireMatchingWallet(sessionWallet, input.creatorAddress, res)) return;
+    const [creatorProfile] = await db
+      .select({ username: walletProfilesTable.username })
+      .from(walletProfilesTable)
+      .where(eq(walletProfilesTable.walletAddress, input.creatorAddress))
+      .limit(1);
     const groupId = `group-${randomUUID()}`;
     const conversationId = `conversation-${randomUUID()}`;
     const group = {
@@ -2289,7 +2343,11 @@ router.post("/groups", async (req, res) => {
       conversationId,
       walletAddress: input.creatorAddress,
     });
-    res.status(201).json({ ...group, isJoined: true });
+    res.status(201).json({
+      ...group,
+      creatorUsername: creatorProfile?.username ?? null,
+      isJoined: true,
+    });
   } catch {
     res.status(400).json({ error: "Group could not be created." });
   }
@@ -2334,7 +2392,18 @@ router.post("/groups/:groupId/join", async (req, res) => {
       .update(conversationsTable)
       .set({ memberCount: members.length, participantLabel: `${members.length} members` })
       .where(eq(conversationsTable.id, group[0].conversationId));
-    res.json({ ...group[0], memberCount: members.length, onlineCount: 0, isJoined: true });
+    const [creatorProfile] = await db
+      .select({ username: walletProfilesTable.username })
+      .from(walletProfilesTable)
+      .where(eq(walletProfilesTable.walletAddress, group[0].creatorAddress))
+      .limit(1);
+    res.json({
+      ...group[0],
+      creatorUsername: creatorProfile?.username ?? null,
+      memberCount: members.length,
+      onlineCount: 0,
+      isJoined: true,
+    });
   } catch {
     res.status(400).json({ error: "Unable to join this group." });
   }

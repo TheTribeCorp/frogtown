@@ -142,6 +142,8 @@ export interface WalletEncryptionResetResult {
 export interface ConversationKey {
   walletAddress: string;
   /** @nullable */
+  username: string | null;
+  /** @nullable */
   publicKey: string | null;
 }
 
@@ -241,6 +243,8 @@ export interface Message {
   id: string;
   conversationId: string;
   senderAddress: string;
+  /** @nullable */
+  senderUsername: string | null;
   body: string;
   sentAt: string;
   isMine: boolean;
@@ -273,6 +277,9 @@ export interface Group {
   onlineCount: number;
   isJoined: boolean;
   conversationId: string;
+  creatorAddress: string;
+  /** @nullable */
+  creatorUsername: string | null;
 }
 
 export interface GroupInput {
@@ -291,6 +298,8 @@ export interface JoinGroupInput {
 export interface TimelinePost {
   id: string;
   authorAddress: string;
+  /** @nullable */
+  authorUsername: string | null;
   body: string;
   createdAt: string;
   likeCount: number;
@@ -331,6 +340,8 @@ export interface TimelineComment {
   id: string;
   postId: string;
   authorAddress: string;
+  /** @nullable */
+  authorUsername: string | null;
   body: string;
   createdAt: string;
   reportedByMe: boolean;
@@ -547,6 +558,8 @@ export interface GamificationSummary {
 export interface GamificationLeaderboardEntry {
   rank: number;
   walletAddress: string;
+  /** @nullable */
+  username: string | null;
   points: number;
   currentStreak: number;
   frogBadgeEarned: boolean;

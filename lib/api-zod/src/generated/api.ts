@@ -376,6 +376,7 @@ export const ListConversationMessagesResponseItem = zod.object({
   "id": zod.string(),
   "conversationId": zod.string(),
   "senderAddress": zod.string(),
+  "senderUsername": zod.string().nullable(),
   "body": zod.string(),
   "sentAt": zod.coerce.date(),
   "isMine": zod.boolean(),
@@ -407,6 +408,7 @@ export const SendMessageResponse = zod.object({
   "id": zod.string(),
   "conversationId": zod.string(),
   "senderAddress": zod.string(),
+  "senderUsername": zod.string().nullable(),
   "body": zod.string(),
   "sentAt": zod.coerce.date(),
   "isMine": zod.boolean(),
@@ -441,6 +443,7 @@ export const GetConversationEncryptionKeysParams = zod.object({
 
 export const GetConversationEncryptionKeysResponseItem = zod.object({
   "walletAddress": zod.string(),
+  "username": zod.string().nullable(),
   "publicKey": zod.string().nullable()
 })
 export const GetConversationEncryptionKeysResponse = zod.array(GetConversationEncryptionKeysResponseItem)
@@ -525,7 +528,9 @@ export const ListGroupsResponseItem = zod.object({
   "memberCount": zod.number().int(),
   "onlineCount": zod.number().int(),
   "isJoined": zod.boolean(),
-  "conversationId": zod.string()
+  "conversationId": zod.string(),
+  "creatorAddress": zod.string(),
+  "creatorUsername": zod.string().nullable()
 })
 export const ListGroupsResponse = zod.array(ListGroupsResponseItem)
 
@@ -552,7 +557,9 @@ export const CreateGroupResponse = zod.object({
   "memberCount": zod.number().int(),
   "onlineCount": zod.number().int(),
   "isJoined": zod.boolean(),
-  "conversationId": zod.string()
+  "conversationId": zod.string(),
+  "creatorAddress": zod.string(),
+  "creatorUsername": zod.string().nullable()
 })
 
 
@@ -578,7 +585,9 @@ export const JoinGroupResponse = zod.object({
   "memberCount": zod.number().int(),
   "onlineCount": zod.number().int(),
   "isJoined": zod.boolean(),
-  "conversationId": zod.string()
+  "conversationId": zod.string(),
+  "creatorAddress": zod.string(),
+  "creatorUsername": zod.string().nullable()
 })
 
 
@@ -599,6 +608,7 @@ export const ListTimelinePostsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
   "authorAddress": zod.string(),
+  "authorUsername": zod.string().nullable(),
   "body": zod.string(),
   "createdAt": zod.coerce.date(),
   "likeCount": zod.number().int(),
@@ -624,6 +634,7 @@ export const CreateTimelinePostBody = zod.object({
 export const CreateTimelinePostResponse = zod.object({
   "id": zod.string(),
   "authorAddress": zod.string(),
+  "authorUsername": zod.string().nullable(),
   "body": zod.string(),
   "createdAt": zod.coerce.date(),
   "likeCount": zod.number().int(),
@@ -674,6 +685,7 @@ export const UpdateTimelinePostBody = zod.object({
 export const UpdateTimelinePostResponse = zod.object({
   "id": zod.string(),
   "authorAddress": zod.string(),
+  "authorUsername": zod.string().nullable(),
   "body": zod.string(),
   "createdAt": zod.coerce.date(),
   "likeCount": zod.number().int(),
@@ -743,6 +755,7 @@ export const ListTimelineCommentsResponse = zod.object({
   "id": zod.string(),
   "postId": zod.string(),
   "authorAddress": zod.string(),
+  "authorUsername": zod.string().nullable(),
   "body": zod.string(),
   "createdAt": zod.coerce.date(),
   "reportedByMe": zod.boolean()
@@ -770,6 +783,7 @@ export const CreateTimelineCommentResponse = zod.object({
   "id": zod.string(),
   "postId": zod.string(),
   "authorAddress": zod.string(),
+  "authorUsername": zod.string().nullable(),
   "body": zod.string(),
   "createdAt": zod.coerce.date(),
   "reportedByMe": zod.boolean()
@@ -796,6 +810,7 @@ export const UpdateTimelineCommentResponse = zod.object({
   "id": zod.string(),
   "postId": zod.string(),
   "authorAddress": zod.string(),
+  "authorUsername": zod.string().nullable(),
   "body": zod.string(),
   "createdAt": zod.coerce.date(),
   "reportedByMe": zod.boolean()
@@ -965,6 +980,7 @@ export const GetGamificationLeaderboardResponse = zod.object({
   "items": zod.array(zod.object({
   "rank": zod.number().int(),
   "walletAddress": zod.string(),
+  "username": zod.string().nullable(),
   "points": zod.number(),
   "currentStreak": zod.number().int(),
   "frogBadgeEarned": zod.boolean()

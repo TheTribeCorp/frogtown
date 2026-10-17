@@ -9,5 +9,7 @@
 export interface ConversationKey {
   walletAddress: string;
   /** @nullable */
+  username: string | null;
+  /** @nullable */
   publicKey: string | null;
 }

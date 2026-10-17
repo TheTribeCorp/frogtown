@@ -9,6 +9,8 @@
 export interface GamificationLeaderboardEntry {
   rank: number;
   walletAddress: string;
+  /** @nullable */
+  username: string | null;
   points: number;
   currentStreak: number;
   frogBadgeEarned: boolean;

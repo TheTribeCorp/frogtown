@@ -14,4 +14,7 @@ export interface Group {
   onlineCount: number;
   isJoined: boolean;
   conversationId: string;
+  creatorAddress: string;
+  /** @nullable */
+  creatorUsername: string | null;
 }

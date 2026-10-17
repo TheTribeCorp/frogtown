@@ -10,6 +10,8 @@ export interface Message {
   id: string;
   conversationId: string;
   senderAddress: string;
+  /** @nullable */
+  senderUsername: string | null;
   body: string;
   sentAt: Date;
   isMine: boolean;

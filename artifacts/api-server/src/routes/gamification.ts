@@ -8,6 +8,8 @@ import {
   PlayGamificationCoinFlipBody,
   PlayGamificationCoinFlipResponse,
 } from "@workspace/api-zod";
+import { db, walletProfilesTable } from "@workspace/db";
+import { inArray } from "drizzle-orm";
 import {
   completeDailyCheckIn,
   CoinFlipRequestConflictError,
@@ -68,7 +70,24 @@ router.get("/gamification/leaderboard", async (req, res): Promise<void> => {
   const walletAddress = requireAuth(req, res);
   if (!walletAddress) return;
   try {
-    res.json(GetGamificationLeaderboardResponse.parse(await getGamificationLeaderboard()));
+    const leaderboard = await getGamificationLeaderboard();
+    const addresses = leaderboard.items.map((item) => item.walletAddress);
+    const profiles = addresses.length > 0
+      ? await db
+        .select({
+          walletAddress: walletProfilesTable.walletAddress,
+          username: walletProfilesTable.username,
+        })
+        .from(walletProfilesTable)
+        .where(inArray(walletProfilesTable.walletAddress, addresses))
+      : [];
+    const usernamesByWallet = new Map(profiles.map((profile) => [profile.walletAddress, profile.username]));
+    res.json(GetGamificationLeaderboardResponse.parse({
+      items: leaderboard.items.map((item) => ({
+        ...item,
+        username: usernamesByWallet.get(item.walletAddress) ?? null,
+      })),
+    }));
   } catch {
     res.status(500).json({ error: "Unable to load the points leaderboard." });
   }

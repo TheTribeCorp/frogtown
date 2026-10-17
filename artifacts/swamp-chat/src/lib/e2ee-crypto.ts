@@ -7,6 +7,7 @@ type MessageEnvelope = { version: 1; entries: Record<string, CipherEntry> };
 
 export type ConversationPublicKey = {
   walletAddress: string;
+  username?: string | null;
   publicKey: string | null;
 };
 

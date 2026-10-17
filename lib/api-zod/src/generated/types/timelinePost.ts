@@ -9,6 +9,8 @@
 export interface TimelinePost {
   id: string;
   authorAddress: string;
+  /** @nullable */
+  authorUsername: string | null;
   body: string;
   createdAt: Date;
   likeCount: number;
