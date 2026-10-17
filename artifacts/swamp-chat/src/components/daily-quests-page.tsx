@@ -9,6 +9,7 @@ import {
   CircleAlert,
   Clock3,
   Coins,
+  Copy,
   Crown,
   Flame,
   Leaf,
@@ -26,9 +27,11 @@ import {
   getGetGamificationLeaderboardQueryKey,
   getGetGamificationHistoryQueryKey,
   getGetGamificationSummaryQueryKey,
+  getGetGamificationReferralsQueryKey,
   useCheckInGamification,
   useGetGamificationHistory,
   useGetGamificationLeaderboard,
+  useGetGamificationReferrals,
   useGetGamificationSummary,
   usePlayGamificationCoinFlip,
   type GetGamificationHistoryQueryResult,
@@ -111,12 +114,20 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
   const leaderboardQuery = useGetGamificationLeaderboard({
     query: { queryKey: getGetGamificationLeaderboardQueryKey(), refetchInterval: 30_000 },
   });
+  const referralsQuery = useGetGamificationReferrals({
+    query: {
+      enabled: Boolean(walletAddress),
+      queryKey: getGetGamificationReferralsQueryKey(),
+      refetchInterval: 30_000,
+    },
+  });
   const [historyCursor, setHistoryCursor] = useState<string | undefined>();
   const historyParams = { cursor: historyCursor, limit: 20 };
   const historyQuery = useGetGamificationHistory(historyParams, {
     query: {
       enabled: Boolean(walletAddress),
       queryKey: [...getGetGamificationHistoryQueryKey(historyParams), walletAddress ?? 'anonymous'],
+      refetchInterval: 30_000,
     },
   });
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
@@ -126,6 +137,7 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
   const [resetClock, setResetClock] = useState(utcUntilReset());
   const [checkInError, setCheckInError] = useState('');
   const [flipError, setFlipError] = useState('');
+  const [referralCopyState, setReferralCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
   const [lastFlip, setLastFlip] = useState<Awaited<ReturnType<typeof flip.mutateAsync>> | null>(null);
   const pendingFlip = useRef<{ requestId: string; choice: FlipChoice } | null>(null);
 
@@ -154,6 +166,24 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
   const doneCount = tasks.filter((task) => task.completed).length;
   const badgeProgress = Math.min(100, Math.max(0, balance));
   const badgeRemaining = Math.max(0, 100 - balance);
+  const appBasePath = import.meta.env.BASE_URL.endsWith('/')
+    ? import.meta.env.BASE_URL
+    : `${import.meta.env.BASE_URL}/`;
+  const referralUrl = walletAddress && typeof window !== 'undefined'
+    ? new URL(`${appBasePath}?ref=${encodeURIComponent(walletAddress)}`, window.location.origin).toString()
+    : '';
+  const referralRewardPoints = referralsQuery.data?.rewardPoints ?? 2;
+
+  const copyReferralLink = async () => {
+    if (!referralUrl) return;
+    try {
+      await navigator.clipboard.writeText(referralUrl);
+      setReferralCopyState('copied');
+      window.setTimeout(() => setReferralCopyState('idle'), 2200);
+    } catch {
+      setReferralCopyState('error');
+    }
+  };
 
   const onCheckIn = () => {
     setCheckInError('');
@@ -293,6 +323,37 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
               {checkInError && <p className="mt-3 flex items-start gap-2 rounded-lg bg-[hsl(var(--destructive)/.07)] px-3 py-2.5 text-xs text-[hsl(var(--destructive))]" role="alert" data-testid="error-check-in"><CircleAlert className="mt-0.5 size-3.5 shrink-0" />{checkInError}</p>}
             </section>
 
+            <section className="relative overflow-hidden rounded-[1.5rem] border border-[hsl(var(--primary)/.2)] bg-[hsl(var(--secondary)/.28)] p-5 sm:p-6" data-testid="panel-referral-quest">
+              <div className="pointer-events-none absolute -right-8 -top-10 size-32 rounded-full border border-[hsl(var(--primary)/.14)]" />
+              <div className="relative flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="mono text-[9px] uppercase tracking-[.18em] text-[hsl(var(--primary))]">Ongoing quest · not a daily reset</p>
+                  <h2 className="mt-1 text-lg font-semibold tracking-[-.04em]">Bring a friend to Frogtown</h2>
+                  <p className="mt-1 max-w-lg text-xs leading-5 text-[hsl(var(--muted-foreground))]">Earn {referralRewardPoints} game points when a new wallet joins with your personal link and finishes setting up a username. One reward per new wallet.</p>
+                </div>
+                <div className="rounded-xl border border-[hsl(var(--primary)/.16)] bg-[hsl(var(--card)/.7)] px-3 py-2 text-right">
+                  <p className="mono text-[9px] uppercase tracking-[.14em] text-[hsl(var(--muted-foreground))]">Successful referrals</p>
+                  <p className="mt-0.5 text-xl font-semibold tabular-nums" data-testid="text-referral-count">{referralsQuery.data?.referralCount ?? '—'}</p>
+                </div>
+              </div>
+              <div className="relative mt-4 flex flex-col gap-2 sm:flex-row">
+                <input
+                  readOnly
+                  value={referralUrl}
+                  onFocus={(event) => event.currentTarget.select()}
+                  aria-label="Your Frogtown referral link"
+                  className="mono min-h-10 min-w-0 flex-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background)/.8)] px-3 text-[10px] text-[hsl(var(--muted-foreground))] outline-none focus:border-[hsl(var(--primary)/.5)]"
+                  data-testid="input-referral-link"
+                />
+                <button type="button" onClick={() => void copyReferralLink()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[hsl(var(--foreground))] px-4 text-xs font-medium text-[hsl(var(--card))] transition hover:bg-[hsl(var(--primary))]" data-testid="button-copy-referral-link">
+                  <Copy className="size-3.5" />
+                  {referralCopyState === 'copied' ? 'Link copied' : 'Copy invite link'}
+                </button>
+              </div>
+              {referralCopyState === 'error' && <p className="relative mt-2 text-[10px] text-[hsl(var(--destructive))]" role="status">Copy was blocked by this browser. Tap the link above to select it, then copy.</p>}
+              <p className="relative mt-2 text-[9px] text-[hsl(var(--muted-foreground))]">Points are awarded once, after the invited wallet completes username setup. Self-referrals and existing accounts do not count.</p>
+            </section>
+
             <section className="grid grid-cols-1 gap-5 sm:grid-cols-[.92fr_1.08fr]">
               <article className="relative overflow-hidden rounded-[1.45rem] border border-[hsl(var(--primary)/.19)] bg-[hsl(var(--secondary)/.38)] p-5" data-testid="panel-frog-badge">
                 <div className="absolute -right-6 -top-10 size-32 rounded-full border border-[hsl(var(--primary)/.1)]" />
@@ -368,6 +429,38 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
               <div className="border-t border-[hsl(var(--border)/.75)] px-5 py-3"><p className="text-[9px] leading-4 text-[hsl(var(--muted-foreground))]">A friendly tally, not a token market. Balances are never transferable or cashable.</p></div>
             </section>
 
+            <section className="overflow-hidden rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.82)] shadow-[0_10px_30px_hsl(155_27%_15%/.035)]" data-testid="panel-referral-leaderboard">
+              <div className="border-b border-[hsl(var(--border)/.75)] px-5 py-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div><p className="mono text-[9px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">Good neighbors bring neighbors</p><h2 className="mt-1 text-lg font-semibold tracking-[-.04em]">Top 10 referrers</h2></div>
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--primary)/.09)] text-[hsl(var(--primary))]"><Users className="size-[17px]" /></div>
+                </div>
+                <p className="mt-2 text-[11px] leading-5 text-[hsl(var(--muted-foreground))]">Ranked by new members who completed setup.</p>
+              </div>
+              {referralsQuery.isLoading ? (
+                <div className="space-y-3 p-5" aria-label="Loading referral leaderboard" data-testid="loading-referral-leaderboard">{[0, 1, 2, 3, 4].map((item) => <div key={item} className="flex animate-pulse items-center gap-3"><div className="size-7 rounded-lg bg-[hsl(var(--muted))]" /><div className="h-3 flex-1 rounded bg-[hsl(var(--muted))]" /><div className="h-3 w-10 rounded bg-[hsl(var(--muted))]" /></div>)}</div>
+              ) : referralsQuery.isError ? (
+                <div className="p-5 text-center" role="alert" data-testid="error-referral-leaderboard"><p className="text-xs text-[hsl(var(--muted-foreground))]">Referral standings couldn’t be loaded.</p><button type="button" onClick={() => void referralsQuery.refetch()} className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.07)]" data-testid="button-retry-referral-leaderboard"><RotateCw className="size-3" /> Try again</button></div>
+              ) : !referralsQuery.data?.leaderboard?.length ? (
+                <div className="px-5 py-8 text-center" data-testid="empty-referral-leaderboard"><p className="text-sm font-medium">No referrals yet.</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Share your link to welcome the first new neighbor.</p></div>
+              ) : (
+                <ol className="divide-y divide-[hsl(var(--border)/.65)]" data-testid="list-referral-leaderboard">
+                  {referralsQuery.data.leaderboard.slice(0, 10).map((entry) => {
+                    const mine = Boolean(walletAddress && walletAddress === entry.walletAddress);
+                    return <li key={`${entry.rank}-${entry.walletAddress}`} className={`flex items-center gap-3 px-5 py-3 ${mine ? 'bg-[hsl(var(--primary)/.055)]' : ''}`} data-testid={`row-referral-leaderboard-${entry.rank}`}>
+                      <span className={`mono flex size-7 shrink-0 items-center justify-center rounded-lg text-[10px] ${entry.rank === 1 ? 'bg-[hsl(var(--accent)/.12)] text-[hsl(var(--accent))]' : 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]'}`}>{entry.rank === 1 ? <Crown className="size-3.5" /> : String(entry.rank).padStart(2, '0')}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5"><span className="mono truncate text-[11px] font-medium">{entry.username ? `@${entry.username}` : shortWallet(entry.walletAddress)}</span><HermitTick walletAddress={entry.walletAddress} className="size-3.5" />{mine && <span className="rounded-full bg-[hsl(var(--primary)/.11)] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-[hsl(var(--primary))]">you</span>}</div>
+                        {entry.username && <p className="mono mt-0.5 text-[8px] text-[hsl(var(--muted-foreground))]">{shortWallet(entry.walletAddress)}</p>}
+                      </div>
+                      <span className="mono text-xs font-semibold tabular-nums">{entry.referralCount} {entry.referralCount === 1 ? 'invite' : 'invites'}</span>
+                    </li>;
+                  })}
+                </ol>
+              )}
+              <div className="border-t border-[hsl(var(--border)/.75)] px-5 py-3"><p className="text-[9px] leading-4 text-[hsl(var(--muted-foreground))]">Only new wallets that complete username setup count. Each successful referral earns {referralRewardPoints} game points.</p></div>
+            </section>
+
             <section className="relative overflow-hidden rounded-[1.45rem] border border-[hsl(var(--primary)/.17)] bg-[hsl(var(--primary)/.055)] p-5" data-testid="panel-quest-howto">
               <div className="absolute -right-8 -top-8 size-24 rounded-full border border-[hsl(var(--primary)/.12)]" />
               <p className="mono relative text-[9px] uppercase tracking-[.17em] text-[hsl(var(--primary))]">How today works</p>
@@ -407,7 +500,7 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
                   const sign = item.pointsChange > 0 ? '+' : item.pointsChange < 0 ? '−' : '';
                   const detail = item.kind === 'coin_flip'
                     ? `Picked ${item.choice}; ${item.result} landed${item.won ? ` · ${item.payoutPoints} points paid out` : ` · ${item.stakePoints} point stake lost`}`
-                    : 'Daily quest completed';
+                    : item.kind === 'referral' ? 'A new member joined from your referral link' : 'Daily quest completed';
                   return (
                     <li key={item.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5" data-testid={`item-points-history-${item.id}`}>
                       <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${item.pointsChange >= 0 ? 'bg-[hsl(var(--primary)/.1)] text-[hsl(var(--primary))]' : 'bg-[hsl(var(--destructive)/.08)] text-[hsl(var(--destructive))]'}`}>

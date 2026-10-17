@@ -12,4 +12,5 @@ export type GamificationHistoryItemKind = typeof GamificationHistoryItemKind[key
 export const GamificationHistoryItemKind = {
   quest: 'quest',
   coin_flip: 'coin_flip',
+  referral: 'referral',
 } as const;

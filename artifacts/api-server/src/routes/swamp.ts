@@ -38,7 +38,7 @@ import {
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import { publishConversationUpdated, publishMessageCreated, publishMessageRead, publishWalletEncryptionReset, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
-import { recordDailyQuestActionInTransaction } from "../lib/gamification";
+import { awardReferralInTransaction, recordDailyQuestActionInTransaction } from "../lib/gamification";
 import { getWalletHermitTick, hermitTickCacheControl } from "../lib/hermit-tick";
 import { normalizeUsername } from "../lib/wallet-username";
 import {
@@ -694,16 +694,32 @@ router.put("/wallet/profile", async (req, res): Promise<void> => {
     return;
   }
   try {
-    const [profile] = await db
-      .insert(walletProfilesTable)
-      .values({ walletAddress, username })
-      .onConflictDoUpdate({
-        target: walletProfilesTable.walletAddress,
-        set: { username, updatedAt: new Date() },
-      })
-      .returning({
-        walletAddress: walletProfilesTable.walletAddress,
-        username: walletProfilesTable.username,
+    const profile = await db.transaction(async (tx) => {
+      const [createdProfile] = await tx
+        .insert(walletProfilesTable)
+        .values({ walletAddress, username })
+        .onConflictDoNothing({ target: walletProfilesTable.walletAddress })
+        .returning({
+          walletAddress: walletProfilesTable.walletAddress,
+          username: walletProfilesTable.username,
+        });
+      if (createdProfile) {
+        if (parsed.data.referrerAddress) {
+          await awardReferralInTransaction(tx, parsed.data.referrerAddress, walletAddress);
+        }
+        return createdProfile;
+      }
+
+      const [updatedProfile] = await tx
+        .update(walletProfilesTable)
+        .set({ username, updatedAt: new Date() })
+        .where(eq(walletProfilesTable.walletAddress, walletAddress))
+        .returning({
+          walletAddress: walletProfilesTable.walletAddress,
+          username: walletProfilesTable.username,
+        });
+      if (!updatedProfile) throw new Error("Unable to save the wallet profile.");
+      return updatedProfile;
       });
     res.json(SaveWalletUsernameResponse.parse(profile));
   } catch (error) {

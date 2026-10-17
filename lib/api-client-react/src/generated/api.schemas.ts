@@ -118,6 +118,11 @@ export interface WalletUsernameInput {
      * @pattern ^[A-Za-z0-9_]{4,17}$
      */
   username: string;
+  /**
+     * @maxLength 35
+     * @pattern ^r[1-9A-HJ-NP-Za-km-z]{24,34}$
+     */
+  referrerAddress?: string;
 }
 
 export interface WalletKey {
@@ -544,6 +549,26 @@ export interface GamificationTask {
   target: number;
 }
 
+export type HermitMarketDataSource = typeof HermitMarketDataSource[keyof typeof HermitMarketDataSource];
+
+
+export const HermitMarketDataSource = {
+  GeckoTerminal: 'GeckoTerminal',
+} as const;
+
+export interface HermitMarketData {
+  /** @minimum 0 */
+  priceUsd: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  marketCapUsd: number | null;
+  updatedAt: string;
+  isStale: boolean;
+  source: HermitMarketDataSource;
+}
+
 export interface GamificationSummary {
   dayKey: string;
   points: number;
@@ -569,12 +594,27 @@ export interface GamificationLeaderboard {
   items: GamificationLeaderboardEntry[];
 }
 
+export interface ReferralLeaderboardEntry {
+  rank: number;
+  walletAddress: string;
+  /** @nullable */
+  username: string | null;
+  referralCount: number;
+}
+
+export interface GamificationReferrals {
+  referralCount: number;
+  rewardPoints: number;
+  leaderboard: ReferralLeaderboardEntry[];
+}
+
 export type GamificationHistoryItemKind = typeof GamificationHistoryItemKind[keyof typeof GamificationHistoryItemKind];
 
 
 export const GamificationHistoryItemKind = {
   quest: 'quest',
   coin_flip: 'coin_flip',
+  referral: 'referral',
 } as const;
 
 /**

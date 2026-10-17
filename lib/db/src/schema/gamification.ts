@@ -1,4 +1,5 @@
-import { boolean, index, integer, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const gamificationProfilesTable = pgTable("frogtown_gamification_profiles", {
   walletAddress: text("wallet_address").primaryKey(),
@@ -49,4 +50,18 @@ export const coinFlipsTable = pgTable("frogtown_coin_flips", {
 }, (table) => [
   uniqueIndex("frogtown_coin_flips_wallet_request_idx").on(table.walletAddress, table.requestId),
   index("frogtown_coin_flips_wallet_created_idx").on(table.walletAddress, table.createdAt),
+]);
+
+export const referralsTable = pgTable("frogtown_referrals", {
+  id: text("id").primaryKey(),
+  referrerWalletAddress: text("referrer_wallet_address").notNull(),
+  referredWalletAddress: text("referred_wallet_address").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("frogtown_referrals_referred_wallet_unique").on(table.referredWalletAddress),
+  index("frogtown_referrals_referrer_created_idx").on(table.referrerWalletAddress, table.createdAt),
+  check(
+    "frogtown_referrals_no_self_referral_check",
+    sql`${table.referrerWalletAddress} <> ${table.referredWalletAddress}`,
+  ),
 ]);

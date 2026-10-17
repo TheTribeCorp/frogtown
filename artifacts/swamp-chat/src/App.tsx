@@ -81,6 +81,7 @@ import { BrowserNotificationSettings } from '@/components/browser-notification-s
 import { EncryptionRecoveryPanel } from '@/components/encryption-recovery';
 import { TimelinePage } from '@/components/timeline-page';
 import { DailyQuestsPage } from '@/components/daily-quests-page';
+import { HermitMarketTicker } from '@/components/hermit-market-ticker';
 import { HermitTick } from '@/components/hermit-tick';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { UsernameOnboardingGate } from '@/components/username-onboarding-gate';
@@ -504,6 +505,7 @@ function Header({ title, eyebrow, onMenu }: { title: string; eyebrow: string; on
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <HermitMarketTicker />
         <ThemeToggle />
         <span className="hidden items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--card)/.6)] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] sm:flex"><span className="size-1.5 rounded-full bg-[hsl(var(--primary))] pulse-dot" /> XRPL mainnet</span>
       </div>
@@ -641,9 +643,10 @@ function WalletEntry() {
         </section>
 
         <section className="ft-entry-access" aria-labelledby="frogtown-entry-title">
-          <div className="ft-entry-access-top">
+          <div className="ft-entry-access-top flex-wrap gap-3">
             <span className="ft-entry-overline">YOUR FRONT DOOR</span>
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
+              <HermitMarketTicker />
               <ThemeToggle />
               <a className="ft-entry-help-link" href="#frogtown-entry-promises">How it works <span aria-hidden="true">↗</span></a>
             </div>
@@ -2224,6 +2227,15 @@ function AuthGate() {
 }
 
 function App() {
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const referrerAddress = url.searchParams.get('ref');
+    if (referrerAddress && /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(referrerAddress)) {
+      window.sessionStorage.setItem('frogtown-referrer-wallet', referrerAddress);
+      url.searchParams.delete('ref');
+      window.history.replaceState(window.history.state, '', url.toString());
+    }
+  }, []);
   return <QueryClientProvider client={queryClient}><AuthGate /></QueryClientProvider>;
 }
 

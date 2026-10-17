@@ -1,4 +1,5 @@
 import { useForm } from 'react-hook-form';
+import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -57,6 +58,12 @@ export function UsernameOnboardingGate({
     mode: 'onChange',
   });
 
+  useEffect(() => {
+    if (profileQuery.data?.username) {
+      window.sessionStorage.removeItem('frogtown-referrer-wallet');
+    }
+  }, [profileQuery.data?.username]);
+
   if (!walletAddress) return children;
 
   if (profileQuery.isLoading) {
@@ -108,11 +115,13 @@ export function UsernameOnboardingGate({
           <form
             className="mt-6 space-y-4"
             onSubmit={form.handleSubmit(({ username }) => {
+              const referrerAddress = window.sessionStorage.getItem('frogtown-referrer-wallet') ?? undefined;
               saveUsername.mutate(
-                { data: { username: username.toLowerCase() } },
+                { data: { username: username.toLowerCase(), referrerAddress } },
                 {
                   onSuccess: (profile) => {
                     queryClient.setQueryData(profileQueryKey, profile);
+                    window.sessionStorage.removeItem('frogtown-referrer-wallet');
                   },
                   onError: (error) => {
                     form.setError('username', { type: 'server', message: usernameSaveErrorMessage(error) });

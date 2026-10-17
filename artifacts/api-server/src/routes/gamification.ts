@@ -4,6 +4,7 @@ import {
   GetGamificationHistoryQueryParams,
   GetGamificationHistoryResponse,
   GetGamificationLeaderboardResponse,
+  GetGamificationReferralsResponse,
   GetGamificationSummaryResponse,
   PlayGamificationCoinFlipBody,
   PlayGamificationCoinFlipResponse,
@@ -16,6 +17,7 @@ import {
   getGamificationHistory,
   getGamificationLeaderboard,
   getGamificationSummary,
+  getReferralSummary,
   InsufficientPointsError,
   InvalidGamificationHistoryCursorError,
   playCoinFlip,
@@ -90,6 +92,37 @@ router.get("/gamification/leaderboard", async (req, res): Promise<void> => {
     }));
   } catch {
     res.status(500).json({ error: "Unable to load the points leaderboard." });
+  }
+});
+
+router.get("/gamification/referrals", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  try {
+    const referrals = await getReferralSummary(walletAddress);
+    const addresses = referrals.leaderboard.map((item) => item.walletAddress);
+    const profiles = addresses.length > 0
+      ? await db
+        .select({
+          walletAddress: walletProfilesTable.walletAddress,
+          username: walletProfilesTable.username,
+        })
+        .from(walletProfilesTable)
+        .where(inArray(walletProfilesTable.walletAddress, addresses))
+      : [];
+    const usernamesByWallet = new Map(profiles.map((profile) => [profile.walletAddress, profile.username]));
+    res.json(GetGamificationReferralsResponse.parse({
+      referralCount: referrals.referralCount,
+      rewardPoints: referrals.rewardPoints,
+      leaderboard: referrals.leaderboard.map((item, index) => ({
+        ...item,
+        rank: index + 1,
+        username: usernamesByWallet.get(item.walletAddress) ?? null,
+      })),
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not load referral standings.");
+    res.status(500).json({ error: "Unable to load referral standings." });
   }
 });
 

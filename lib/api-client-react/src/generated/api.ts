@@ -38,12 +38,14 @@ import type {
   ErrorResponse,
   GamificationHistoryPage,
   GamificationLeaderboard,
+  GamificationReferrals,
   GamificationSummary,
   GetGamificationHistoryParams,
   GetWalletHermitTickParams,
   Group,
   GroupInput,
   HealthStatus,
+  HermitMarketData,
   HistoryShareWorkItem,
   JoinGroupInput,
   ListConversationMessagesParams,
@@ -4268,6 +4270,107 @@ export const useResolveTimelineModerationReport = <TError = ErrorType<ErrorRespo
       return useMutation(getResolveTimelineModerationReportMutationOptions(options), queryClient);
     }
 
+export const getGetHermitMarketDataUrl = () => {
+
+
+
+
+  return `/api/hermit/market-data`
+}
+
+/**
+ * @summary Get current $HERMIT price and market capitalization from GeckoTerminal
+ */
+export const getHermitMarketData = async ( options?: Parameters<typeof customFetch>[1]): Promise<HermitMarketData> => {
+
+  return customFetch<HermitMarketData>(getGetHermitMarketDataUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetHermitMarketDataQueryKey = () => {
+    return [
+    `/api/hermit/market-data`
+    ] as const;
+    }
+
+
+export const getGetHermitMarketDataQueryOptions = <TData = Awaited<ReturnType<typeof getHermitMarketData>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitMarketData>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetHermitMarketDataQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHermitMarketData>>> = ({ signal }) => getHermitMarketData({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHermitMarketData>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetHermitMarketDataQueryResult = NonNullable<Awaited<ReturnType<typeof getHermitMarketData>>>
+export type GetHermitMarketDataQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetHermitMarketData<TData = Awaited<ReturnType<typeof getHermitMarketData>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitMarketData>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHermitMarketData>>,
+          TError,
+          Awaited<ReturnType<typeof getHermitMarketData>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHermitMarketData<TData = Awaited<ReturnType<typeof getHermitMarketData>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitMarketData>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHermitMarketData>>,
+          TError,
+          Awaited<ReturnType<typeof getHermitMarketData>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHermitMarketData<TData = Awaited<ReturnType<typeof getHermitMarketData>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitMarketData>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get current $HERMIT price and market capitalization from GeckoTerminal
+ */
+
+export function useGetHermitMarketData<TData = Awaited<ReturnType<typeof getHermitMarketData>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitMarketData>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetHermitMarketDataQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getGetGamificationSummaryUrl = () => {
 
 
@@ -4640,6 +4743,107 @@ export function useGetGamificationLeaderboard<TData = Awaited<ReturnType<typeof 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetGamificationLeaderboardQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetGamificationReferralsUrl = () => {
+
+
+
+
+  return `/api/gamification/referrals`
+}
+
+/**
+ * @summary Get the authenticated wallet's referral count and top ten referral leaderboard
+ */
+export const getGamificationReferrals = async ( options?: Parameters<typeof customFetch>[1]): Promise<GamificationReferrals> => {
+
+  return customFetch<GamificationReferrals>(getGetGamificationReferralsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGamificationReferralsQueryKey = () => {
+    return [
+    `/api/gamification/referrals`
+    ] as const;
+    }
+
+
+export const getGetGamificationReferralsQueryOptions = <TData = Awaited<ReturnType<typeof getGamificationReferrals>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationReferrals>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGamificationReferralsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGamificationReferrals>>> = ({ signal }) => getGamificationReferrals({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGamificationReferrals>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGamificationReferralsQueryResult = NonNullable<Awaited<ReturnType<typeof getGamificationReferrals>>>
+export type GetGamificationReferralsQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetGamificationReferrals<TData = Awaited<ReturnType<typeof getGamificationReferrals>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationReferrals>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGamificationReferrals>>,
+          TError,
+          Awaited<ReturnType<typeof getGamificationReferrals>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGamificationReferrals<TData = Awaited<ReturnType<typeof getGamificationReferrals>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationReferrals>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGamificationReferrals>>,
+          TError,
+          Awaited<ReturnType<typeof getGamificationReferrals>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGamificationReferrals<TData = Awaited<ReturnType<typeof getGamificationReferrals>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationReferrals>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get the authenticated wallet's referral count and top ten referral leaderboard
+ */
+
+export function useGetGamificationReferrals<TData = Awaited<ReturnType<typeof getGamificationReferrals>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationReferrals>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGamificationReferralsQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

@@ -1178,6 +1178,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /hermit/market-data:
+    get:
+      operationId: getHermitMarketData
+      tags: [market]
+      summary: Get current $HERMIT price and market capitalization from GeckoTerminal
+      responses:
+        "200":
+          description: Public $HERMIT market snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HermitMarketData"
+        "503":
+          description: Market data is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /gamification/summary:
     get:
       operationId: getGamificationSummary
@@ -1264,6 +1282,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GamificationLeaderboard"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /gamification/referrals:
+    get:
+      operationId: getGamificationReferrals
+      tags: [gamification]
+      summary: Get the authenticated wallet's referral count and top ten referral leaderboard
+      responses:
+        "200":
+          description: Referral totals, points earned per new referral, and top referrers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GamificationReferrals"
         "401":
           description: Wallet session missing or expired
           content:
@@ -1480,6 +1516,10 @@ components:
           minLength: 4
           maxLength: 17
           pattern: "^[A-Za-z0-9_]{4,17}$"
+        referrerAddress:
+          type: string
+          maxLength: 35
+          pattern: "^r[1-9A-HJ-NP-Za-km-z]{24,34}$"
       required: [username]
     WalletKey:
       type: object
@@ -1966,6 +2006,26 @@ components:
         target:
           type: integer
       required: [id, completed, progress, target]
+    HermitMarketData:
+      type: object
+      properties:
+        priceUsd:
+          type: number
+          format: double
+          minimum: 0
+        marketCapUsd:
+          type: ["number", "null"]
+          format: double
+          minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+        isStale:
+          type: boolean
+        source:
+          type: string
+          enum: [GeckoTerminal]
+      required: [priceUsd, marketCapUsd, updatedAt, isStale, source]
     GamificationSummary:
       type: object
       properties:
@@ -2014,6 +2074,30 @@ components:
           items:
             $ref: "#/components/schemas/GamificationLeaderboardEntry"
       required: [items]
+    ReferralLeaderboardEntry:
+      type: object
+      properties:
+        rank:
+          type: integer
+        walletAddress:
+          type: string
+        username:
+          type: ["string", "null"]
+        referralCount:
+          type: integer
+      required: [rank, walletAddress, username, referralCount]
+    GamificationReferrals:
+      type: object
+      properties:
+        referralCount:
+          type: integer
+        rewardPoints:
+          type: integer
+        leaderboard:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReferralLeaderboardEntry"
+      required: [referralCount, rewardPoints, leaderboard]
     GamificationHistoryItem:
       type: object
       properties:
@@ -2021,7 +2105,7 @@ components:
           type: string
         kind:
           type: string
-          enum: [quest, coin_flip]
+          enum: [quest, coin_flip, referral]
         description:
           type: string
         createdAt:

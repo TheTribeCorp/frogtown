@@ -130,10 +130,15 @@ export const saveWalletUsernameBodyUsernameMax = 17;
 
 
 export const saveWalletUsernameBodyUsernameRegExp = new RegExp('^[A-Za-z0-9_]{4,17}$');
+export const saveWalletUsernameBodyReferrerAddressMax = 35;
+
+
+export const saveWalletUsernameBodyReferrerAddressRegExp = new RegExp('^r[1-9A-HJ-NP-Za-km-z]{24,34}$');
 
 
 export const SaveWalletUsernameBody = zod.object({
-  "username": zod.string().min(saveWalletUsernameBodyUsernameMin).max(saveWalletUsernameBodyUsernameMax).regex(saveWalletUsernameBodyUsernameRegExp)
+  "username": zod.string().min(saveWalletUsernameBodyUsernameMin).max(saveWalletUsernameBodyUsernameMax).regex(saveWalletUsernameBodyUsernameRegExp),
+  "referrerAddress": zod.string().max(saveWalletUsernameBodyReferrerAddressMax).regex(saveWalletUsernameBodyReferrerAddressRegExp).optional()
 })
 
 export const saveWalletUsernameResponseWalletAddressRegExp = new RegExp('^r[1-9A-HJ-NP-Za-km-z]{24,34}$');
@@ -905,6 +910,24 @@ export const ResolveTimelineModerationReportResponse = zod.object({
 
 
 /**
+ * @summary Get current $HERMIT price and market capitalization from GeckoTerminal
+ */
+export const getHermitMarketDataResponsePriceUsdMin = 0;
+
+export const getHermitMarketDataResponseMarketCapUsdMin = 0;
+
+
+
+export const GetHermitMarketDataResponse = zod.object({
+  "priceUsd": zod.number().min(getHermitMarketDataResponsePriceUsdMin),
+  "marketCapUsd": zod.number().min(getHermitMarketDataResponseMarketCapUsdMin).nullable(),
+  "updatedAt": zod.coerce.date(),
+  "isStale": zod.boolean(),
+  "source": zod.enum(['GeckoTerminal'])
+})
+
+
+/**
  * @summary Get the authenticated wallet's daily quests, points, streak, and badge
  */
 export const GetGamificationSummaryResponse = zod.object({
@@ -940,7 +963,7 @@ export const GetGamificationHistoryQueryParams = zod.object({
 export const GetGamificationHistoryResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['quest', 'coin_flip']),
+  "kind": zod.enum(['quest', 'coin_flip', 'referral']),
   "description": zod.string(),
   "createdAt": zod.coerce.date(),
   "pointsChange": zod.number(),
@@ -984,6 +1007,21 @@ export const GetGamificationLeaderboardResponse = zod.object({
   "points": zod.number(),
   "currentStreak": zod.number().int(),
   "frogBadgeEarned": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Get the authenticated wallet's referral count and top ten referral leaderboard
+ */
+export const GetGamificationReferralsResponse = zod.object({
+  "referralCount": zod.number().int(),
+  "rewardPoints": zod.number().int(),
+  "leaderboard": zod.array(zod.object({
+  "rank": zod.number().int(),
+  "walletAddress": zod.string(),
+  "username": zod.string().nullable(),
+  "referralCount": zod.number().int()
 }))
 })
 
