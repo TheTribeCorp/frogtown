@@ -94,6 +94,92 @@ export interface WalletHermitTick {
   checkedAt: string;
 }
 
+export type WalletHermitBalanceCheckStatus = typeof WalletHermitBalanceCheckStatus[keyof typeof WalletHermitBalanceCheckStatus];
+
+
+export const WalletHermitBalanceCheckStatus = {
+  checked: 'checked',
+  unavailable: 'unavailable',
+} as const;
+
+export interface WalletHermitBalance {
+  /** @nullable */
+  balance: string | null;
+  /** @nullable */
+  trustlineExists: boolean | null;
+  checkStatus: WalletHermitBalanceCheckStatus;
+  checkedAt: string;
+}
+
+export interface HermitBuyInput {
+  /** @pattern ^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$ */
+  xrpAmount: string;
+  /**
+     * @minimum 50
+     * @maximum 2000
+     */
+  slippageBps: number;
+}
+
+export interface HermitBuyQuote {
+  xrpAmount: string;
+  expectedHermit: string;
+  minimumHermit: string;
+  /** @minimum 0 */
+  priceImpactPercent: number;
+  slippageBps: number;
+  ammFeeBps: number;
+  xrpReserve: string;
+  checkedAt: string;
+}
+
+export type HermitTradePayloadTransactionType = typeof HermitTradePayloadTransactionType[keyof typeof HermitTradePayloadTransactionType];
+
+
+export const HermitTradePayloadTransactionType = {
+  buy: 'buy',
+  trustline: 'trustline',
+} as const;
+
+export interface HermitTradePayload {
+  payloadId: string;
+  qrUrl: string;
+  deeplink: string;
+  websocketStatusUrl: string;
+  transactionType: HermitTradePayloadTransactionType;
+  expiresAt: string;
+  quote: HermitBuyQuote | null;
+}
+
+export type HermitTradeStatusTransactionType = typeof HermitTradeStatusTransactionType[keyof typeof HermitTradeStatusTransactionType];
+
+
+export const HermitTradeStatusTransactionType = {
+  buy: 'buy',
+  trustline: 'trustline',
+} as const;
+
+export type HermitTradeStatusStatus = typeof HermitTradeStatusStatus[keyof typeof HermitTradeStatusStatus];
+
+
+export const HermitTradeStatusStatus = {
+  pending: 'pending',
+  signed: 'signed',
+  rejected: 'rejected',
+  expired: 'expired',
+  wallet_mismatch: 'wallet_mismatch',
+} as const;
+
+export interface HermitTradeStatus {
+  payloadId: string;
+  transactionType: HermitTradeStatusTransactionType;
+  status: HermitTradeStatusStatus;
+  /** @nullable */
+  walletAddress: string | null;
+  /** @nullable */
+  txid: string | null;
+}
+
 export interface CurrentWallet {
   walletAddress: string;
   network: string;
@@ -822,6 +908,25 @@ export type GetWalletHermitTickParams = {
  * Skip the short public lookup cache; true is restricted to the authenticated wallet.
  */
 refresh?: boolean;
+};
+
+export type GetWalletHermitBalanceParams = {
+/**
+ * Skip the short server cache after a wallet action.
+ */
+refresh?: boolean;
+};
+
+export type GetHermitBuyQuoteParams = {
+/**
+ * @pattern ^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$
+ */
+xrpAmount: string;
+/**
+ * @minimum 50
+ * @maximum 2000
+ */
+slippageBps?: number;
 };
 
 export type ListConversationsParams = {

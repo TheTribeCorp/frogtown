@@ -45,11 +45,17 @@ import type {
   GamificationReferrals,
   GamificationSummary,
   GetGamificationHistoryParams,
+  GetHermitBuyQuoteParams,
+  GetWalletHermitBalanceParams,
   GetWalletHermitTickParams,
   Group,
   GroupInput,
   HealthStatus,
+  HermitBuyInput,
+  HermitBuyQuote,
   HermitMarketData,
+  HermitTradePayload,
+  HermitTradeStatus,
   JoinGroupInput,
   ListConversationHistoryShareWorkParams,
   ListConversationMessagesParams,
@@ -82,6 +88,7 @@ import type {
   TimelineReportResult,
   WalletEncryptionResetInput,
   WalletEncryptionResetResult,
+  WalletHermitBalance,
   WalletHermitTick,
   WalletKey,
   WalletKeyInput,
@@ -675,6 +682,485 @@ export function useGetWalletHermitTick<TData = Awaited<ReturnType<typeof getWall
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetWalletHermitTickQueryOptions(walletAddress,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetWalletHermitBalanceUrl = (params?: GetWalletHermitBalanceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/wallet/hermit-balance?${stringifiedParams}` : `/api/wallet/hermit-balance`
+}
+
+/**
+ * @summary Get the authenticated wallet's $HERMIT trustline balance
+ */
+export const getWalletHermitBalance = async (params?: GetWalletHermitBalanceParams, options?: Parameters<typeof customFetch>[1]): Promise<WalletHermitBalance> => {
+
+  return customFetch<WalletHermitBalance>(getGetWalletHermitBalanceUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWalletHermitBalanceQueryKey = (params?: GetWalletHermitBalanceParams,) => {
+    return [
+    `/api/wallet/hermit-balance`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetWalletHermitBalanceQueryOptions = <TData = Awaited<ReturnType<typeof getWalletHermitBalance>>, TError = ErrorType<ErrorResponse>>(params?: GetWalletHermitBalanceParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitBalance>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWalletHermitBalanceQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWalletHermitBalance>>> = ({ signal }) => getWalletHermitBalance(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitBalance>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetWalletHermitBalanceQueryResult = NonNullable<Awaited<ReturnType<typeof getWalletHermitBalance>>>
+export type GetWalletHermitBalanceQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetWalletHermitBalance<TData = Awaited<ReturnType<typeof getWalletHermitBalance>>, TError = ErrorType<ErrorResponse>>(
+ params: undefined |  GetWalletHermitBalanceParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitBalance>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWalletHermitBalance>>,
+          TError,
+          Awaited<ReturnType<typeof getWalletHermitBalance>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWalletHermitBalance<TData = Awaited<ReturnType<typeof getWalletHermitBalance>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetWalletHermitBalanceParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitBalance>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWalletHermitBalance>>,
+          TError,
+          Awaited<ReturnType<typeof getWalletHermitBalance>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWalletHermitBalance<TData = Awaited<ReturnType<typeof getWalletHermitBalance>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetWalletHermitBalanceParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitBalance>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get the authenticated wallet's $HERMIT trustline balance
+ */
+
+export function useGetWalletHermitBalance<TData = Awaited<ReturnType<typeof getWalletHermitBalance>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetWalletHermitBalanceParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWalletHermitBalance>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetWalletHermitBalanceQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetHermitBuyQuoteUrl = (params: GetHermitBuyQuoteParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/wallet/hermit-buy-quote?${stringifiedParams}` : `/api/wallet/hermit-buy-quote`
+}
+
+/**
+ * @summary Quote an XRP-to-$HERMIT swap against the XRPL AMM
+ */
+export const getHermitBuyQuote = async (params: GetHermitBuyQuoteParams, options?: Parameters<typeof customFetch>[1]): Promise<HermitBuyQuote> => {
+
+  return customFetch<HermitBuyQuote>(getGetHermitBuyQuoteUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetHermitBuyQuoteQueryKey = (params?: GetHermitBuyQuoteParams,) => {
+    return [
+    `/api/wallet/hermit-buy-quote`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetHermitBuyQuoteQueryOptions = <TData = Awaited<ReturnType<typeof getHermitBuyQuote>>, TError = ErrorType<ErrorResponse>>(params: GetHermitBuyQuoteParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyQuote>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetHermitBuyQuoteQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHermitBuyQuote>>> = ({ signal }) => getHermitBuyQuote(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyQuote>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetHermitBuyQuoteQueryResult = NonNullable<Awaited<ReturnType<typeof getHermitBuyQuote>>>
+export type GetHermitBuyQuoteQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetHermitBuyQuote<TData = Awaited<ReturnType<typeof getHermitBuyQuote>>, TError = ErrorType<ErrorResponse>>(
+ params: GetHermitBuyQuoteParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyQuote>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHermitBuyQuote>>,
+          TError,
+          Awaited<ReturnType<typeof getHermitBuyQuote>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHermitBuyQuote<TData = Awaited<ReturnType<typeof getHermitBuyQuote>>, TError = ErrorType<ErrorResponse>>(
+ params: GetHermitBuyQuoteParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyQuote>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHermitBuyQuote>>,
+          TError,
+          Awaited<ReturnType<typeof getHermitBuyQuote>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHermitBuyQuote<TData = Awaited<ReturnType<typeof getHermitBuyQuote>>, TError = ErrorType<ErrorResponse>>(
+ params: GetHermitBuyQuoteParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyQuote>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Quote an XRP-to-$HERMIT swap against the XRPL AMM
+ */
+
+export function useGetHermitBuyQuote<TData = Awaited<ReturnType<typeof getHermitBuyQuote>>, TError = ErrorType<ErrorResponse>>(
+ params: GetHermitBuyQuoteParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyQuote>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetHermitBuyQuoteQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateHermitTrustlinePayloadUrl = () => {
+
+
+
+
+  return `/api/wallet/hermit-trustline`
+}
+
+/**
+ * @summary Prepare a Xaman-approved $HERMIT trustline transaction
+ */
+export const createHermitTrustlinePayload = async ( options?: Parameters<typeof customFetch>[1]): Promise<HermitTradePayload> => {
+
+  return customFetch<HermitTradePayload>(getCreateHermitTrustlinePayloadUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCreateHermitTrustlinePayloadMutationKey = () => ['createHermitTrustlinePayload'] as const;
+
+export const getCreateHermitTrustlinePayloadMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHermitTrustlinePayload>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createHermitTrustlinePayload>>, TError,void, TContext> => {
+
+const mutationKey = getCreateHermitTrustlinePayloadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createHermitTrustlinePayload>>, void> = () => {
+
+
+          return  createHermitTrustlinePayload(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateHermitTrustlinePayloadMutationResult = NonNullable<Awaited<ReturnType<typeof createHermitTrustlinePayload>>>
+
+    export type CreateHermitTrustlinePayloadMutationError = ErrorType<ErrorResponse>
+
+
+    /**
+ * @summary Prepare a Xaman-approved $HERMIT trustline transaction
+ */
+export const useCreateHermitTrustlinePayload = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHermitTrustlinePayload>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createHermitTrustlinePayload>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCreateHermitTrustlinePayloadMutationOptions(options), queryClient);
+    }
+
+export const getCreateHermitBuyPayloadUrl = () => {
+
+
+
+
+  return `/api/wallet/hermit-buy`
+}
+
+/**
+ * @summary Prepare an immediate-or-cancel XRP-to-$HERMIT order for Xaman approval
+ */
+export const createHermitBuyPayload = async (hermitBuyInput: HermitBuyInput, options?: Parameters<typeof customFetch>[1]): Promise<HermitTradePayload> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<HermitTradePayload>(getCreateHermitBuyPayloadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(hermitBuyInput)
+  }
+);}
+
+
+
+
+
+export const getCreateHermitBuyPayloadMutationKey = () => ['createHermitBuyPayload'] as const;
+
+export const getCreateHermitBuyPayloadMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHermitBuyPayload>>, TError,CreateHermitBuyPayloadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createHermitBuyPayload>>, TError,CreateHermitBuyPayloadMutationVariables, TContext> => {
+
+const mutationKey = getCreateHermitBuyPayloadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createHermitBuyPayload>>, CreateHermitBuyPayloadMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createHermitBuyPayload(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateHermitBuyPayloadMutationResult = NonNullable<Awaited<ReturnType<typeof createHermitBuyPayload>>>
+    export type CreateHermitBuyPayloadMutationBody = BodyType<HermitBuyInput>
+    export type CreateHermitBuyPayloadMutationError = ErrorType<ErrorResponse>
+    export type CreateHermitBuyPayloadMutationVariables = {data: BodyType<HermitBuyInput>}
+
+    /**
+ * @summary Prepare an immediate-or-cancel XRP-to-$HERMIT order for Xaman approval
+ */
+export const useCreateHermitBuyPayload = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHermitBuyPayload>>, TError,CreateHermitBuyPayloadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createHermitBuyPayload>>,
+        TError,
+        CreateHermitBuyPayloadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateHermitBuyPayloadMutationOptions(options), queryClient);
+    }
+
+export const getGetHermitTradeStatusUrl = (payloadId: string,) => {
+
+
+
+
+  return `/api/wallet/hermit-transactions/${payloadId}`
+}
+
+/**
+ * @summary Verify a Frogtown $HERMIT transaction sign request with Xaman
+ */
+export const getHermitTradeStatus = async (payloadId: string, options?: Parameters<typeof customFetch>[1]): Promise<HermitTradeStatus> => {
+
+  return customFetch<HermitTradeStatus>(getGetHermitTradeStatusUrl(payloadId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetHermitTradeStatusQueryKey = (payloadId: string,) => {
+    return [
+    `/api/wallet/hermit-transactions/${payloadId}`
+    ] as const;
+    }
+
+
+export const getGetHermitTradeStatusQueryOptions = <TData = Awaited<ReturnType<typeof getHermitTradeStatus>>, TError = ErrorType<ErrorResponse>>(payloadId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitTradeStatus>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetHermitTradeStatusQueryKey(payloadId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHermitTradeStatus>>> = ({ signal }) => getHermitTradeStatus(payloadId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: payloadId !== null && payloadId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHermitTradeStatus>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetHermitTradeStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getHermitTradeStatus>>>
+export type GetHermitTradeStatusQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetHermitTradeStatus<TData = Awaited<ReturnType<typeof getHermitTradeStatus>>, TError = ErrorType<ErrorResponse>>(
+ payloadId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitTradeStatus>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHermitTradeStatus>>,
+          TError,
+          Awaited<ReturnType<typeof getHermitTradeStatus>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHermitTradeStatus<TData = Awaited<ReturnType<typeof getHermitTradeStatus>>, TError = ErrorType<ErrorResponse>>(
+ payloadId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitTradeStatus>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHermitTradeStatus>>,
+          TError,
+          Awaited<ReturnType<typeof getHermitTradeStatus>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHermitTradeStatus<TData = Awaited<ReturnType<typeof getHermitTradeStatus>>, TError = ErrorType<ErrorResponse>>(
+ payloadId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitTradeStatus>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Verify a Frogtown $HERMIT transaction sign request with Xaman
+ */
+
+export function useGetHermitTradeStatus<TData = Awaited<ReturnType<typeof getHermitTradeStatus>>, TError = ErrorType<ErrorResponse>>(
+ payloadId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitTradeStatus>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetHermitTradeStatusQueryOptions(payloadId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

@@ -253,6 +253,11 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/wallet/keys/" + walletA, "GET"],
     ["/api/wallet/keys", "PUT", { publicKey: "not-a-key" }],
     ["/api/wallet/keys/reset", "POST", { publicKey: "not-a-key" }],
+    ["/api/wallet/hermit-balance", "GET"],
+    ["/api/wallet/hermit-buy-quote?xrpAmount=1", "GET"],
+    ["/api/wallet/hermit-trustline", "POST"],
+    ["/api/wallet/hermit-buy", "POST", { xrpAmount: "1", slippageBps: 500 }],
+    ["/api/wallet/hermit-transactions/11111111-1111-4111-8111-111111111111", "GET"],
     ["/api/wallets/" + walletA + "/hermit-tick?refresh=true", "GET"],
     ["/api/groups?walletAddress=" + walletA, "GET"],
     ["/api/groups", "POST", { name: "test", description: "", creatorAddress: walletA }],
@@ -281,6 +286,17 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     const response = await request(pathname, { method, body });
     assert.equal(response.status, 401, `${method} ${pathname} should require a wallet session`);
   }
+
+  const invalidBuy = await request("/api/wallet/hermit-buy", {
+    method: "POST",
+    cookie: validCookie,
+    body: { xrpAmount: "1001", slippageBps: 500 },
+  });
+  assert.equal(invalidBuy.status, 400, "buy amount validation should reject oversized orders");
+  const invalidQuote = await request("/api/wallet/hermit-buy-quote?xrpAmount=0.001", {
+    cookie: validCookie,
+  });
+  assert.equal(invalidQuote.status, 400, "quote validation should reject tiny orders");
 
   const authenticatedMismatches = [
     ["/api/conversations?walletAddress=" + walletB, "GET"],

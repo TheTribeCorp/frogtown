@@ -97,6 +97,136 @@ export const GetWalletHermitTickResponse = zod.object({
 
 
 /**
+ * @summary Get the authenticated wallet's $HERMIT trustline balance
+ */
+export const getWalletHermitBalanceQueryRefreshDefault = false;
+
+export const GetWalletHermitBalanceQueryParams = zod.object({
+  "refresh": zod.coerce.boolean().default(getWalletHermitBalanceQueryRefreshDefault).describe('Skip the short server cache after a wallet action.')
+})
+
+export const GetWalletHermitBalanceResponse = zod.object({
+  "balance": zod.string().nullable(),
+  "trustlineExists": zod.boolean().nullable(),
+  "checkStatus": zod.enum(['checked', 'unavailable']),
+  "checkedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Quote an XRP-to-$HERMIT swap against the XRPL AMM
+ */
+export const getHermitBuyQuoteQueryXrpAmountRegExp = new RegExp('^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,6})?$');
+export const getHermitBuyQuoteQuerySlippageBpsDefault = 500;
+export const getHermitBuyQuoteQuerySlippageBpsMin = 50;
+export const getHermitBuyQuoteQuerySlippageBpsMax = 2000;
+
+
+
+export const GetHermitBuyQuoteQueryParams = zod.object({
+  "xrpAmount": zod.coerce.string().regex(getHermitBuyQuoteQueryXrpAmountRegExp),
+  "slippageBps": zod.coerce.number().int().min(getHermitBuyQuoteQuerySlippageBpsMin).max(getHermitBuyQuoteQuerySlippageBpsMax).default(getHermitBuyQuoteQuerySlippageBpsDefault)
+})
+
+export const getHermitBuyQuoteResponsePriceImpactPercentMin = 0;
+
+
+
+export const GetHermitBuyQuoteResponse = zod.object({
+  "xrpAmount": zod.string(),
+  "expectedHermit": zod.string(),
+  "minimumHermit": zod.string(),
+  "priceImpactPercent": zod.number().min(getHermitBuyQuoteResponsePriceImpactPercentMin),
+  "slippageBps": zod.number().int(),
+  "ammFeeBps": zod.number().int(),
+  "xrpReserve": zod.string(),
+  "checkedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Prepare a Xaman-approved $HERMIT trustline transaction
+ */
+export const createHermitTrustlinePayloadResponseQuoteOnePriceImpactPercentMin = 0;
+
+
+
+export const CreateHermitTrustlinePayloadResponse = zod.object({
+  "payloadId": zod.string().uuid(),
+  "qrUrl": zod.string().url(),
+  "deeplink": zod.string().url(),
+  "websocketStatusUrl": zod.string().url(),
+  "transactionType": zod.enum(['buy', 'trustline']),
+  "expiresAt": zod.coerce.date(),
+  "quote": zod.union([zod.object({
+  "xrpAmount": zod.string(),
+  "expectedHermit": zod.string(),
+  "minimumHermit": zod.string(),
+  "priceImpactPercent": zod.number().min(createHermitTrustlinePayloadResponseQuoteOnePriceImpactPercentMin),
+  "slippageBps": zod.number().int(),
+  "ammFeeBps": zod.number().int(),
+  "xrpReserve": zod.string(),
+  "checkedAt": zod.coerce.date()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Prepare an immediate-or-cancel XRP-to-$HERMIT order for Xaman approval
+ */
+export const createHermitBuyPayloadBodyXrpAmountRegExp = new RegExp('^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,6})?$');
+export const createHermitBuyPayloadBodySlippageBpsDefault = 500;
+export const createHermitBuyPayloadBodySlippageBpsMin = 50;
+export const createHermitBuyPayloadBodySlippageBpsMax = 2000;
+
+
+
+export const CreateHermitBuyPayloadBody = zod.object({
+  "xrpAmount": zod.string().regex(createHermitBuyPayloadBodyXrpAmountRegExp),
+  "slippageBps": zod.number().int().min(createHermitBuyPayloadBodySlippageBpsMin).max(createHermitBuyPayloadBodySlippageBpsMax).default(createHermitBuyPayloadBodySlippageBpsDefault)
+})
+
+export const createHermitBuyPayloadResponseQuoteOnePriceImpactPercentMin = 0;
+
+
+
+export const CreateHermitBuyPayloadResponse = zod.object({
+  "payloadId": zod.string().uuid(),
+  "qrUrl": zod.string().url(),
+  "deeplink": zod.string().url(),
+  "websocketStatusUrl": zod.string().url(),
+  "transactionType": zod.enum(['buy', 'trustline']),
+  "expiresAt": zod.coerce.date(),
+  "quote": zod.union([zod.object({
+  "xrpAmount": zod.string(),
+  "expectedHermit": zod.string(),
+  "minimumHermit": zod.string(),
+  "priceImpactPercent": zod.number().min(createHermitBuyPayloadResponseQuoteOnePriceImpactPercentMin),
+  "slippageBps": zod.number().int(),
+  "ammFeeBps": zod.number().int(),
+  "xrpReserve": zod.string(),
+  "checkedAt": zod.coerce.date()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Verify a Frogtown $HERMIT transaction sign request with Xaman
+ */
+export const GetHermitTradeStatusParams = zod.object({
+  "payloadId": zod.coerce.string().uuid()
+})
+
+export const GetHermitTradeStatusResponse = zod.object({
+  "payloadId": zod.string().uuid(),
+  "transactionType": zod.enum(['buy', 'trustline']),
+  "status": zod.enum(['pending', 'signed', 'rejected', 'expired', 'wallet_mismatch']),
+  "walletAddress": zod.string().nullable(),
+  "txid": zod.string().nullable()
+})
+
+
+/**
  * @summary Return the wallet bound to the current browser session
  */
 export const GetCurrentWalletResponse = zod.object({

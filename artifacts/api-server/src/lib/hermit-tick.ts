@@ -6,6 +6,15 @@ export type HermitTickCheck = {
   checkedAt: Date;
 };
 
+export type HermitBalanceCheck = {
+  balance: string | null;
+  trustlineExists: boolean | null;
+  checkStatus: "checked" | "unavailable";
+  checkedAt: Date;
+};
+
+type HermitHoldingCheck = HermitTickCheck & HermitBalanceCheck;
+
 export function hermitTickCacheControl(
   checkStatus: HermitTickCheck["checkStatus"],
   forceRefresh: boolean,
@@ -40,9 +49,9 @@ type XrplAccountLinesResponse = {
   };
 };
 
-const cachedChecks = new Map<string, { value: HermitTickCheck; expiresAt: number }>();
-const pendingPublicChecks = new Map<string, Promise<HermitTickCheck>>();
-const pendingRefreshChecks = new Map<string, Promise<HermitTickCheck>>();
+const cachedChecks = new Map<string, { value: HermitHoldingCheck; expiresAt: number }>();
+const pendingPublicChecks = new Map<string, Promise<HermitHoldingCheck>>();
+const pendingRefreshChecks = new Map<string, Promise<HermitHoldingCheck>>();
 
 type LookupPriority = "public" | "refresh";
 type LookupWaiter = {
@@ -171,7 +180,20 @@ export function tickForIssuerBalance(balance: string): HermitTick {
   return balance.startsWith("-") ? tickForHermitBalance(balance.slice(1)) : null;
 }
 
-function rememberCheck(walletAddress: string, value: HermitTickCheck) {
+export function holderBalanceFromIssuerBalance(balance: string): string {
+  if (!/^-?\d+(?:\.\d+)?$/.test(balance)) {
+    throw new Error("XRPL returned an invalid issued-token balance.");
+  }
+  if (!balance.startsWith("-")) return "0";
+
+  const [whole = "0", fractional = ""] = balance.slice(1).split(".");
+  const normalizedWhole = whole.replace(/^0+(?=\d)/, "") || "0";
+  const normalizedFraction = fractional.replace(/0+$/, "");
+  if (normalizedWhole === "0" && !/[1-9]/.test(normalizedFraction)) return "0";
+  return normalizedFraction ? `${normalizedWhole}.${normalizedFraction}` : normalizedWhole;
+}
+
+function rememberCheck(walletAddress: string, value: HermitHoldingCheck) {
   cachedChecks.delete(walletAddress);
   while (cachedChecks.size >= MAX_CACHED_WALLETS) {
     const oldest = cachedChecks.keys().next().value;
@@ -184,7 +206,7 @@ function rememberCheck(walletAddress: string, value: HermitTickCheck) {
   });
 }
 
-async function requestHermitTick(walletAddress: string): Promise<HermitTickCheck> {
+async function requestHermitHolding(walletAddress: string): Promise<HermitHoldingCheck> {
   const response = await fetch(XRPL_MAINNET_RPC, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -208,7 +230,13 @@ async function requestHermitTick(walletAddress: string): Promise<HermitTickCheck
   if (!result) throw new Error("XRPL returned an invalid account-lines response.");
 
   if (result.error === "actNotFound") {
-    return { tick: null, checkStatus: "checked", checkedAt: new Date() };
+    return {
+      tick: null,
+      balance: "0",
+      trustlineExists: false,
+      checkStatus: "checked",
+      checkedAt: new Date(),
+    };
   }
   if (result.error) throw new Error("XRPL could not verify the wallet trustline.");
 
@@ -219,7 +247,13 @@ async function requestHermitTick(walletAddress: string): Promise<HermitTickCheck
     (line) => line.account === walletAddress && line.currency === HERMIT_CURRENCY,
   );
   if (!hermitLine) {
-    return { tick: null, checkStatus: "checked", checkedAt: new Date() };
+    return {
+      tick: null,
+      balance: "0",
+      trustlineExists: false,
+      checkStatus: "checked",
+      checkedAt: new Date(),
+    };
   }
   if (typeof hermitLine.balance !== "string") {
     throw new Error("XRPL returned an invalid $HERMIT balance.");
@@ -229,6 +263,8 @@ async function requestHermitTick(walletAddress: string): Promise<HermitTickCheck
     // The trustline balance is from the issuer's perspective; a negative
     // value is the holder's positive $HERMIT balance.
     tick: tickForIssuerBalance(hermitLine.balance),
+    balance: holderBalanceFromIssuerBalance(hermitLine.balance),
+    trustlineExists: true,
     checkStatus: "checked",
     checkedAt: new Date(),
   };
@@ -238,6 +274,31 @@ export async function getWalletHermitTick(
   walletAddress: string,
   forceRefresh = false,
 ): Promise<HermitTickCheck> {
+  const holding = await getWalletHermitHolding(walletAddress, forceRefresh);
+  return {
+    tick: holding.tick,
+    checkStatus: holding.checkStatus,
+    checkedAt: holding.checkedAt,
+  };
+}
+
+export async function getWalletHermitBalance(
+  walletAddress: string,
+  forceRefresh = false,
+): Promise<HermitBalanceCheck> {
+  const holding = await getWalletHermitHolding(walletAddress, forceRefresh);
+  return {
+    balance: holding.balance,
+    trustlineExists: holding.trustlineExists,
+    checkStatus: holding.checkStatus,
+    checkedAt: holding.checkedAt,
+  };
+}
+
+async function getWalletHermitHolding(
+  walletAddress: string,
+  forceRefresh: boolean,
+): Promise<HermitHoldingCheck> {
   if (forceRefresh) {
     const pendingRefresh = pendingRefreshChecks.get(walletAddress);
     if (pendingRefresh) return pendingRefresh;
@@ -258,16 +319,18 @@ export async function getWalletHermitTick(
 function startWalletCheck(
   walletAddress: string,
   priority: LookupPriority,
-): Promise<HermitTickCheck> {
+): Promise<HermitHoldingCheck> {
   const registry = priority === "refresh" ? pendingRefreshChecks : pendingPublicChecks;
-  let check: Promise<HermitTickCheck>;
-  check = withLookupSlot(priority, () => requestHermitTick(walletAddress))
+  let check: Promise<HermitHoldingCheck>;
+  check = withLookupSlot(priority, () => requestHermitHolding(walletAddress))
     .then((value) => {
       rememberCheck(walletAddress, value);
       return value;
     })
-    .catch((): HermitTickCheck => ({
+    .catch((): HermitHoldingCheck => ({
       tick: null,
+      balance: null,
+      trustlineExists: null,
       checkStatus: "unavailable",
       checkedAt: new Date(),
     }))

@@ -177,6 +177,204 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /wallet/hermit-balance:
+    get:
+      operationId: getWalletHermitBalance
+      tags: [wallet]
+      summary: Get the authenticated wallet's $HERMIT trustline balance
+      parameters:
+        - in: query
+          name: refresh
+          required: false
+          description: Skip the short server cache after a wallet action.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Authenticated wallet balance and trustline state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletHermitBalance"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /wallet/hermit-buy-quote:
+    get:
+      operationId: getHermitBuyQuote
+      tags: [wallet]
+      summary: Quote an XRP-to-$HERMIT swap against the XRPL AMM
+      parameters:
+        - in: query
+          name: xrpAmount
+          required: true
+          schema:
+            type: string
+            pattern: "^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,6})?$"
+        - in: query
+          name: slippageBps
+          required: false
+          schema:
+            type: integer
+            minimum: 50
+            maximum: 2000
+            default: 500
+      responses:
+        "200":
+          description: Estimated AMM execution and minimum receive amount
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HermitBuyQuote"
+        "400":
+          description: Invalid trade amount or slippage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: $HERMIT trustline must be created before trading
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: XRPL AMM quote is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /wallet/hermit-trustline:
+    post:
+      operationId: createHermitTrustlinePayload
+      tags: [wallet]
+      summary: Prepare a Xaman-approved $HERMIT trustline transaction
+      responses:
+        "201":
+          description: Xaman trustline sign request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HermitTradePayload"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Wallet already has a $HERMIT trustline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Xaman could not prepare the transaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Xaman is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /wallet/hermit-buy:
+    post:
+      operationId: createHermitBuyPayload
+      tags: [wallet]
+      summary: Prepare an immediate-or-cancel XRP-to-$HERMIT order for Xaman approval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HermitBuyInput"
+      responses:
+        "201":
+          description: Xaman buy order sign request and quote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HermitTradePayload"
+        "400":
+          description: Invalid trade amount or slippage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: $HERMIT trustline must be created before trading
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Xaman could not prepare the transaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: XRPL quote or Xaman service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /wallet/hermit-transactions/{payloadId}:
+    get:
+      operationId: getHermitTradeStatus
+      tags: [wallet]
+      summary: Verify a Frogtown $HERMIT transaction sign request with Xaman
+      parameters:
+        - in: path
+          name: payloadId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Xaman sign request status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HermitTradeStatus"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Transaction payload not found for this wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Xaman could not confirm the transaction status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /wallet/me:
     get:
       operationId: getCurrentWallet
@@ -1576,6 +1774,98 @@ components:
           type: string
           format: date-time
       required: [tick, checkStatus, checkedAt]
+    WalletHermitBalance:
+      type: object
+      properties:
+        balance:
+          type: ["string", "null"]
+        trustlineExists:
+          type: ["boolean", "null"]
+        checkStatus:
+          type: string
+          enum: [checked, unavailable]
+        checkedAt:
+          type: string
+          format: date-time
+      required: [balance, trustlineExists, checkStatus, checkedAt]
+    HermitBuyInput:
+      type: object
+      properties:
+        xrpAmount:
+          type: string
+          pattern: "^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,6})?$"
+        slippageBps:
+          type: integer
+          minimum: 50
+          maximum: 2000
+          default: 500
+      required: [xrpAmount, slippageBps]
+    HermitBuyQuote:
+      type: object
+      properties:
+        xrpAmount:
+          type: string
+        expectedHermit:
+          type: string
+        minimumHermit:
+          type: string
+        priceImpactPercent:
+          type: number
+          format: double
+          minimum: 0
+        slippageBps:
+          type: integer
+        ammFeeBps:
+          type: integer
+        xrpReserve:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+      required: [xrpAmount, expectedHermit, minimumHermit, priceImpactPercent, slippageBps, ammFeeBps, xrpReserve, checkedAt]
+    HermitTradePayload:
+      type: object
+      properties:
+        payloadId:
+          type: string
+          format: uuid
+        qrUrl:
+          type: string
+          format: uri
+        deeplink:
+          type: string
+          format: uri
+        websocketStatusUrl:
+          type: string
+          format: uri
+        transactionType:
+          type: string
+          enum: [buy, trustline]
+        expiresAt:
+          type: string
+          format: date-time
+        quote:
+          oneOf:
+            - $ref: "#/components/schemas/HermitBuyQuote"
+            - type: "null"
+      required: [payloadId, qrUrl, deeplink, websocketStatusUrl, transactionType, expiresAt, quote]
+    HermitTradeStatus:
+      type: object
+      properties:
+        payloadId:
+          type: string
+          format: uuid
+        transactionType:
+          type: string
+          enum: [buy, trustline]
+        status:
+          type: string
+          enum: [pending, signed, rejected, expired, wallet_mismatch]
+        walletAddress:
+          type: ["string", "null"]
+        txid:
+          type: ["string", "null"]
+      required: [payloadId, transactionType, status, walletAddress, txid]
     CurrentWallet:
       type: object
       properties:

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  getWalletHermitBalance,
   getWalletHermitTick,
+  holderBalanceFromIssuerBalance,
   hermitTickCacheControl,
   tickForHermitBalance,
   tickForIssuerBalance,
@@ -30,6 +32,13 @@ test("issuer-perspective trustline balances only award ticks to token holders", 
   assert.equal(tickForIssuerBalance("0"), null);
   assert.equal(tickForIssuerBalance("3332046.5190324"), null);
   assert.throws(() => tickForIssuerBalance("not-a-balance"), /invalid issued-token balance/i);
+});
+
+test("issuer-perspective balances expose only the holder's positive amount", () => {
+  assert.equal(holderBalanceFromIssuerBalance("-00042.519032400"), "42.5190324");
+  assert.equal(holderBalanceFromIssuerBalance("-0.000"), "0");
+  assert.equal(holderBalanceFromIssuerBalance("42.5"), "0");
+  assert.throws(() => holderBalanceFromIssuerBalance("not-a-balance"), /invalid issued-token balance/i);
 });
 
 function syntheticWallet(index) {
@@ -96,6 +105,54 @@ test("a successful XRPL lookup with no $HERMIT trustline has no tick", async () 
     const check = await getWalletHermitTick(wallet);
     assert.equal(check.tick, null);
     assert.equal(check.checkStatus, "checked");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("authenticated balance lookup returns the trustline amount and uses the shared cache", async () => {
+  const originalFetch = globalThis.fetch;
+  const wallet = syntheticWallet(3_039);
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return xrplResponse({
+      result: {
+        lines: [{
+          account: wallet,
+          currency: "4845524D49540000000000000000000000000000",
+          balance: "-12345.670000",
+        }],
+      },
+    });
+  };
+
+  try {
+    const balance = await getWalletHermitBalance(wallet);
+    assert.equal(balance.balance, "12345.67");
+    assert.equal(balance.trustlineExists, true);
+    assert.equal(balance.checkStatus, "checked");
+
+    const tick = await getWalletHermitTick(wallet);
+    assert.equal(tick.tick, "green");
+    assert.equal(calls, 1, "tick and balance requests share the same short cache");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("unavailable balance lookups do not claim a zero balance or missing trustline", async () => {
+  const originalFetch = globalThis.fetch;
+  const wallet = syntheticWallet(3_040);
+  globalThis.fetch = async () => {
+    throw new Error("temporary XRPL outage");
+  };
+
+  try {
+    const balance = await getWalletHermitBalance(wallet, true);
+    assert.equal(balance.balance, null);
+    assert.equal(balance.trustlineExists, null);
+    assert.equal(balance.checkStatus, "unavailable");
   } finally {
     globalThis.fetch = originalFetch;
   }

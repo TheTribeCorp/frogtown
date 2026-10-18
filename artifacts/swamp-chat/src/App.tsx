@@ -494,7 +494,7 @@ function Sidebar({ mobileOpen, onClose, onNewChat }: { mobileOpen: boolean; onCl
   );
 }
 
-function Header({ title, eyebrow, onMenu }: { title: string; eyebrow: string; onMenu: () => void }) {
+function Header({ title, eyebrow, onMenu, walletAddress }: { title: string; eyebrow: string; onMenu: () => void; walletAddress?: string }) {
   return (
     <header className="flex min-h-[76px] items-center justify-between border-b border-[hsl(var(--border)/.75)] px-5 py-4 md:px-8">
       <div className="flex items-center gap-3">
@@ -505,7 +505,7 @@ function Header({ title, eyebrow, onMenu }: { title: string; eyebrow: string; on
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <HermitMarketTicker />
+        <HermitMarketTicker walletAddress={walletAddress} />
         <ThemeToggle />
         <span className="hidden items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--card)/.6)] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] sm:flex"><span className="size-1.5 rounded-full bg-[hsl(var(--primary))] pulse-dot" /> XRPL mainnet</span>
       </div>
@@ -516,13 +516,14 @@ function Header({ title, eyebrow, onMenu }: { title: string; eyebrow: string; on
 function AppShell({ children, title, eyebrow, onNewChat }: { children: ReactNode; title: string; eyebrow: string; onNewChat?: () => void }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [, setLocation] = useLocation();
+  const { walletAddress } = useWallet();
   const startChat = onNewChat ?? (() => setLocation('/'));
   return (
     <div className="swamp-app noise flex min-h-[100dvh] overflow-hidden">
       <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} onNewChat={startChat} />
       {mobileOpen && <button className="fixed inset-0 z-20 bg-[hsl(var(--foreground)/.32)] md:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation overlay" data-testid="button-navigation-overlay" />}
       <main className="flex min-w-0 flex-1 flex-col">
-        <Header title={title} eyebrow={eyebrow} onMenu={() => setMobileOpen(true)} />
+        <Header title={title} eyebrow={eyebrow} onMenu={() => setMobileOpen(true)} walletAddress={walletAddress} />
         <div className="min-h-0 flex-1 overflow-auto">{children}</div>
       </main>
     </div>
