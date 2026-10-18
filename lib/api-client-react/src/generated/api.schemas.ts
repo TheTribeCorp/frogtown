@@ -196,6 +196,16 @@ export interface HistoryShareWorkItem {
   recipientPublicKey: string;
 }
 
+export interface ConversationHistoryShareWorkPage {
+  items: HistoryShareWorkItem[];
+  /**
+     * Present for another work page or as a checkpoint when hasMore is false.
+     * @nullable
+     */
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 export interface ConversationHistoryShare {
   messageId: string;
   sharedByAddress: string;
@@ -825,6 +835,15 @@ export type ListConversationMessagesParams = {
  * @minLength 25
  */
 walletAddress: WalletAddressParameter;
+};
+
+export type ListConversationHistoryShareWorkParams = {
+/**
+ * Opaque cursor for continuing a bounded history-share scan or resuming at its latest checkpoint.
+ * @minLength 1
+ * @maxLength 1024
+ */
+cursor?: string;
 };
 
 export type ListGroupsParams = {

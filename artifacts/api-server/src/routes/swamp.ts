@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, notExists, notInArray, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   AcceptConversationRequestParams,
@@ -25,6 +26,7 @@ import {
   ListConversationMessagesParams,
   ListConversationMessagesQueryParams,
   ListConversationHistoryShareWorkParams,
+  ListConversationHistoryShareWorkQueryParams,
   ListConversationHistorySharesParams,
   ListConversationsQueryParams,
   ListGroupsQueryParams,
@@ -70,8 +72,57 @@ let groupSeedPromise: Promise<void> | undefined;
 const AUTH_COOKIE = "swamp_session_v2";
 const AUTH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_PUSH_SUBSCRIPTIONS_PER_WALLET = 8;
+const HISTORY_SHARE_SCAN_LIMIT = 100;
+const HISTORY_SHARE_WORK_LIMIT = 20;
 
 const isWalletAddress = (value: string) => /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(value);
+
+type HistoryShareWorkCursor = {
+  conversationId: string;
+  sentAt: string;
+  messageId: string;
+  recipientAddress: string;
+  terminal: boolean;
+};
+
+function encodeHistoryShareWorkCursor(cursor: HistoryShareWorkCursor) {
+  return Buffer.from(JSON.stringify({
+    conversationId: cursor.conversationId,
+    sentAt: cursor.sentAt,
+    messageId: cursor.messageId,
+    recipientAddress: cursor.recipientAddress,
+    terminal: cursor.terminal,
+  })).toString("base64url");
+}
+
+function decodeHistoryShareWorkCursor(value: string, conversationId: string): HistoryShareWorkCursor | null {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Record<string, unknown>;
+    const sentAt = typeof parsed.sentAt === "string" ? parsed.sentAt : null;
+    const terminal = parsed.terminal === true;
+    if (
+      parsed.conversationId !== conversationId
+      || !sentAt
+      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(sentAt)
+      || !Number.isFinite(Date.parse(sentAt))
+      || typeof parsed.messageId !== "string"
+      || parsed.messageId.length < 1
+      || parsed.messageId.length > 128
+      || typeof parsed.recipientAddress !== "string"
+      || (parsed.terminal !== undefined && typeof parsed.terminal !== "boolean")
+      || (terminal ? parsed.recipientAddress !== "" : !isWalletAddress(parsed.recipientAddress))
+    ) return null;
+    return {
+      conversationId,
+      sentAt,
+      messageId: parsed.messageId,
+      recipientAddress: parsed.recipientAddress,
+      terminal,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function postgresErrorCode(error: unknown): string | undefined {
   let current: unknown = error;
@@ -1775,7 +1826,19 @@ router.get("/conversations/:conversationId/history-share-work", async (req, res)
     res.status(400).json({ error: "Invalid conversation." });
     return;
   }
+  const parsedQuery = ListConversationHistoryShareWorkQueryParams.safeParse(req.query);
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: "Invalid history-share cursor." });
+    return;
+  }
   const conversationId = parsed.data.conversationId;
+  const cursor = parsedQuery.data.cursor
+    ? decodeHistoryShareWorkCursor(parsedQuery.data.cursor, conversationId)
+    : null;
+  if (parsedQuery.data.cursor && !cursor) {
+    res.status(400).json({ error: "Invalid history-share cursor." });
+    return;
+  }
   const conversation = await db
     .select({ type: conversationsTable.type })
     .from(conversationsTable)
@@ -1785,86 +1848,143 @@ router.get("/conversations/:conversationId/history-share-work", async (req, res)
     res.status(404).json({ error: "Group conversation not found." });
     return;
   }
-  const memberships = await db
+  const [sharerMembership] = await db
     .select({
-      walletAddress: conversationMembersTable.walletAddress,
       joinedAt: conversationMembersTable.joinedAt,
       historyStartsAt: conversationMembersTable.historyStartsAt,
     })
     .from(conversationMembersTable)
-    .where(eq(conversationMembersTable.conversationId, conversationId));
-  const sharerMembership = memberships.find((member) => member.walletAddress === sessionWallet);
+    .where(and(
+      eq(conversationMembersTable.conversationId, conversationId),
+      eq(conversationMembersTable.walletAddress, sessionWallet),
+    ))
+    .limit(1);
   if (!sharerMembership) {
     res.status(403).json({ error: "You are not a member of this group." });
     return;
   }
 
-  const [messages, existingShares] = await Promise.all([
-    db.select({
+  const recipientMembership = alias(conversationMembersTable, "history_share_recipient");
+  const cursorFilter = !cursor
+    ? undefined
+    : cursor.terminal
+      ? sql`
+        (
+          ${messagesTable.sentAt} > ${cursor.sentAt}::timestamptz
+          OR (
+            ${messagesTable.sentAt} = ${cursor.sentAt}::timestamptz
+            AND ${messagesTable.id} > ${cursor.messageId}
+          )
+        )
+      `
+      : sql`
+      (
+        ${messagesTable.sentAt} > ${cursor.sentAt}::timestamptz
+        OR (
+          ${messagesTable.sentAt} = ${cursor.sentAt}::timestamptz
+          AND ${messagesTable.id} > ${cursor.messageId}
+        )
+        OR (
+          ${messagesTable.sentAt} = ${cursor.sentAt}::timestamptz
+          AND ${messagesTable.id} = ${cursor.messageId}
+          AND ${recipientMembership.walletAddress} > ${cursor.recipientAddress}
+        )
+      )
+      `;
+  const candidateRows = await db.select({
       id: messagesTable.id,
       senderAddress: messagesTable.senderAddress,
       body: messagesTable.body,
       sentAt: messagesTable.sentAt,
+      sentAtCursor: sql<string>`to_char(${messagesTable.sentAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+      recipientAddress: recipientMembership.walletAddress,
+      recipientPublicKey: walletKeysTable.publicKey,
+    })
+      .from(messagesTable)
+      .innerJoin(recipientMembership, eq(recipientMembership.conversationId, messagesTable.conversationId))
+      .innerJoin(walletKeysTable, eq(walletKeysTable.walletAddress, recipientMembership.walletAddress))
+      .where(and(
+        eq(messagesTable.conversationId, conversationId),
+        eq(messagesTable.encrypted, true),
+        gte(messagesTable.sentAt, sharerMembership.joinedAt),
+        sharerMembership.historyStartsAt
+          ? gt(messagesTable.sentAt, sharerMembership.historyStartsAt)
+          : undefined,
+        ne(recipientMembership.walletAddress, sessionWallet),
+        gt(recipientMembership.joinedAt, messagesTable.sentAt),
+        or(
+          isNull(recipientMembership.historyStartsAt),
+          lt(recipientMembership.historyStartsAt, messagesTable.sentAt),
+        ),
+        cursorFilter,
+        notExists(
+          db.select({ found: sql`1` })
+            .from(messageHistorySharesTable)
+            .where(and(
+              eq(messageHistorySharesTable.conversationId, conversationId),
+              eq(messageHistorySharesTable.messageId, messagesTable.id),
+              eq(messageHistorySharesTable.recipientAddress, recipientMembership.walletAddress),
+            )),
+        ),
+      ))
+      .orderBy(
+        asc(messagesTable.sentAt),
+        asc(messagesTable.id),
+        asc(recipientMembership.walletAddress),
+      )
+      .limit(HISTORY_SHARE_SCAN_LIMIT + 1);
+
+  const scannedRows = candidateRows.slice(0, HISTORY_SHARE_SCAN_LIMIT);
+  const eligibleRows = scannedRows.filter((row) => envelopeIncludesRecipient(row.body, sessionWallet));
+  const work = eligibleRows.slice(0, HISTORY_SHARE_WORK_LIMIT).map((row) => ({
+    messageId: row.id,
+    senderAddress: row.senderAddress,
+    body: row.body,
+    sentAt: row.sentAt,
+    recipientAddress: row.recipientAddress,
+    recipientPublicKey: row.recipientPublicKey,
+  }));
+  const hasMore = candidateRows.length > HISTORY_SHARE_SCAN_LIMIT
+    || eligibleRows.length > HISTORY_SHARE_WORK_LIMIT;
+  const lastScanned = eligibleRows.length > HISTORY_SHARE_WORK_LIMIT
+    ? eligibleRows[HISTORY_SHARE_WORK_LIMIT - 1]
+    : scannedRows[scannedRows.length - 1];
+  let nextCursor: string | null;
+  if (hasMore && lastScanned) {
+    nextCursor = encodeHistoryShareWorkCursor({
+      conversationId,
+      sentAt: lastScanned.sentAtCursor,
+      messageId: lastScanned.id,
+      recipientAddress: lastScanned.recipientAddress,
+      terminal: false,
+    });
+  } else {
+    // Keep a terminal watermark for idle polls; clients restart the scan when the room's key set changes.
+    const [latestMessage] = await db.select({
+      messageId: messagesTable.id,
+      sentAt: sql<string>`to_char(${messagesTable.sentAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
     })
       .from(messagesTable)
       .where(eq(messagesTable.conversationId, conversationId))
-      .orderBy(asc(messagesTable.sentAt)),
-    db.select({
-      messageId: messageHistorySharesTable.messageId,
-      recipientAddress: messageHistorySharesTable.recipientAddress,
-    })
-      .from(messageHistorySharesTable)
-      .where(eq(messageHistorySharesTable.conversationId, conversationId)),
-  ]);
-  const keys = memberships.length > 0
-    ? await db.select({
-      walletAddress: walletKeysTable.walletAddress,
-      publicKey: walletKeysTable.publicKey,
-    })
-      .from(walletKeysTable)
-      .where(inArray(walletKeysTable.walletAddress, memberships.map((member) => member.walletAddress)))
-    : [];
-  const publicKeys = new Map(keys.map((key) => [key.walletAddress, key.publicKey]));
-  const sharedPairs = new Set(existingShares.map((share) => `${share.messageId}:${share.recipientAddress}`));
-  const work: Array<{
-    messageId: string;
-    senderAddress: string;
-    body: string;
-    sentAt: Date;
-    recipientAddress: string;
-    recipientPublicKey: string;
-  }> = [];
-
-  for (const message of messages) {
-    if (
-      sharerMembership.joinedAt > message.sentAt
-      || (sharerMembership.historyStartsAt && sharerMembership.historyStartsAt >= message.sentAt)
-      || !envelopeIncludesRecipient(message.body, sessionWallet)
-    ) continue;
-    for (const recipient of memberships) {
-      const publicKey = publicKeys.get(recipient.walletAddress);
-      if (
-        recipient.walletAddress === sessionWallet
-        || recipient.joinedAt <= message.sentAt
-        || (recipient.historyStartsAt && recipient.historyStartsAt >= message.sentAt)
-        || !publicKey
-        || sharedPairs.has(`${message.id}:${recipient.walletAddress}`)
-      ) continue;
-      work.push({
-        messageId: message.id,
-        senderAddress: message.senderAddress,
-        body: message.body,
-        sentAt: message.sentAt,
-        recipientAddress: recipient.walletAddress,
-        recipientPublicKey: publicKey,
-      });
-      if (work.length >= 20) {
-        res.json(work);
-        return;
-      }
-    }
+      .orderBy(desc(messagesTable.sentAt), desc(messagesTable.id))
+      .limit(1);
+    nextCursor = latestMessage
+      ? encodeHistoryShareWorkCursor({
+        conversationId,
+        sentAt: latestMessage.sentAt,
+        messageId: latestMessage.messageId,
+        recipientAddress: "",
+        terminal: true,
+      })
+      : cursor
+        ? encodeHistoryShareWorkCursor(cursor)
+        : null;
   }
-  res.json(work);
+  res.json({
+    items: work,
+    hasMore,
+    nextCursor,
+  });
 });
 
 router.get("/conversations/:conversationId/history-shares", async (req, res): Promise<void> => {

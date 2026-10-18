@@ -486,15 +486,26 @@ export const ListConversationHistoryShareWorkParams = zod.object({
   "conversationId": zod.coerce.string()
 })
 
-export const ListConversationHistoryShareWorkResponseItem = zod.object({
+export const listConversationHistoryShareWorkQueryCursorMax = 1024;
+
+
+
+export const ListConversationHistoryShareWorkQueryParams = zod.object({
+  "cursor": zod.coerce.string().min(1).max(listConversationHistoryShareWorkQueryCursorMax).optional().describe('Opaque cursor for continuing a bounded history-share scan or resuming at its latest checkpoint.')
+})
+
+export const ListConversationHistoryShareWorkResponse = zod.object({
+  "items": zod.array(zod.object({
   "messageId": zod.string(),
   "senderAddress": zod.string(),
   "body": zod.string(),
   "sentAt": zod.coerce.date(),
   "recipientAddress": zod.string(),
   "recipientPublicKey": zod.string()
+})),
+  "nextCursor": zod.string().nullable().describe('Present for another work page or as a checkpoint when hasMore is false.'),
+  "hasMore": zod.boolean()
 })
-export const ListConversationHistoryShareWorkResponse = zod.array(ListConversationHistoryShareWorkResponseItem)
 
 
 /**

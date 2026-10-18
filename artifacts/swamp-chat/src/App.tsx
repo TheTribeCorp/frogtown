@@ -884,11 +884,105 @@ function MessagePane({
   const lastMarkedMessageId = useRef<string | null>(null);
   const pendingReadMessageId = useRef<string | null>(null);
   const historyShareInFlight = useRef(new Set<string>());
+  const historySharePagesInBatch = useRef(0);
+  const historySharePassHadFailures = useRef(false);
+  const historyMembershipSignatureRef = useRef<string | null>(null);
+  const historySeenMessageIds = useRef(new Set<string>());
+  const historyLatestMessageOrder = useRef<{ sentAt: number; id: string } | null>(null);
+  const historyShareResumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [historyWorkCursor, setHistoryWorkCursor] = useState<string | null>(null);
+  const [historyWorkPaused, setHistoryWorkPaused] = useState(false);
+  const [historyWorkRevision, setHistoryWorkRevision] = useState(0);
   const params = useMemo(() => ({ walletAddress }), [walletAddress]);
+  const historyWorkParams = useMemo(
+    () => ({ cursor: historyWorkCursor ?? undefined }),
+    [historyWorkCursor],
+  );
   const messagesQuery = useListConversationMessages(conversation?.id ?? '', params, { query: { enabled: Boolean(conversation?.id), queryKey: getListConversationMessagesQueryKey(conversation?.id ?? '', params), refetchInterval: 30000 } });
   const keysQuery = useGetConversationEncryptionKeys(conversation?.id ?? '', { query: { enabled: Boolean(conversation?.id), queryKey: ['/api/conversations', conversation?.id, 'keys'], refetchInterval: 15000 } });
+  const historyMembershipSignature = useMemo(
+    () => (keysQuery.data ?? [])
+      .map((member) => `${member.walletAddress}:${member.publicKey ?? ''}`)
+      .sort()
+      .join('|'),
+    [keysQuery.data],
+  );
   const historySharesQuery = useListConversationHistoryShares(conversation?.id ?? '', { query: { enabled: Boolean(conversation?.id), queryKey: getListConversationHistorySharesQueryKey(conversation?.id ?? ''), refetchInterval: 30000 } });
-  const historyWorkQuery = useListConversationHistoryShareWork(conversation?.id ?? '', { query: { enabled: Boolean(conversation?.id && conversation.type === 'group' && isActive && pageVisible), queryKey: getListConversationHistoryShareWorkQueryKey(conversation?.id ?? ''), refetchInterval: 30000 } });
+  const historyWorkQuery = useListConversationHistoryShareWork(conversation?.id ?? '', historyWorkParams, {
+    query: {
+      enabled: Boolean(conversation?.id && conversation.type === 'group' && isActive && pageVisible && !historyWorkPaused),
+      queryKey: [
+        ...getListConversationHistoryShareWorkQueryKey(conversation?.id ?? '', historyWorkParams),
+        historyWorkRevision,
+        walletAddress ?? '',
+      ],
+      refetchInterval: 30000,
+    },
+  });
+  const pauseHistoryWork = useCallback((durationMs: number) => {
+    setHistoryWorkPaused(true);
+    if (historyShareResumeTimer.current) clearTimeout(historyShareResumeTimer.current);
+    historyShareResumeTimer.current = setTimeout(() => {
+      historyShareResumeTimer.current = null;
+      setHistoryWorkPaused(false);
+    }, durationMs);
+  }, []);
+  useEffect(() => {
+    setHistoryWorkCursor(null);
+    setHistoryWorkPaused(false);
+    historySharePagesInBatch.current = 0;
+    historySharePassHadFailures.current = false;
+    historyMembershipSignatureRef.current = null;
+    historySeenMessageIds.current.clear();
+    historyLatestMessageOrder.current = null;
+    historyShareInFlight.current.clear();
+    if (historyShareResumeTimer.current) clearTimeout(historyShareResumeTimer.current);
+    historyShareResumeTimer.current = null;
+    return () => {
+      if (historyShareResumeTimer.current) clearTimeout(historyShareResumeTimer.current);
+      historyShareResumeTimer.current = null;
+    };
+  }, [conversation?.id, walletAddress]);
+  useEffect(() => {
+    if (!conversation?.id || !keysQuery.data) return;
+    const previousSignature = historyMembershipSignatureRef.current;
+    if (previousSignature !== historyMembershipSignature) {
+      setHistoryWorkRevision((revision) => revision + 1);
+      historySharePagesInBatch.current = 0;
+      historySharePassHadFailures.current = false;
+      if (historyShareResumeTimer.current) clearTimeout(historyShareResumeTimer.current);
+      historyShareResumeTimer.current = null;
+      setHistoryWorkCursor(null);
+      setHistoryWorkPaused(false);
+    }
+    historyMembershipSignatureRef.current = historyMembershipSignature;
+  }, [conversation?.id, walletAddress, keysQuery.data, historyMembershipSignature]);
+  useEffect(() => {
+    if (!conversation?.id || conversation.type !== 'group' || !messagesQuery.data) return;
+    let newest = historyLatestMessageOrder.current;
+    let foundLateMessage = false;
+    for (const message of messagesQuery.data) {
+      if (historySeenMessageIds.current.has(message.id)) continue;
+      historySeenMessageIds.current.add(message.id);
+      const sentAt = Date.parse(message.sentAt);
+      if (!Number.isFinite(sentAt)) continue;
+      if (newest && sentAt <= newest.sentAt) foundLateMessage = true;
+      if (
+        !newest
+        || sentAt > newest.sentAt
+        || (sentAt === newest.sentAt && message.id.localeCompare(newest.id) > 0)
+      ) newest = { sentAt, id: message.id };
+    }
+    historyLatestMessageOrder.current = newest;
+    if (!foundLateMessage) return;
+    setHistoryWorkRevision((revision) => revision + 1);
+    historySharePagesInBatch.current = 0;
+    historySharePassHadFailures.current = false;
+    if (historyShareResumeTimer.current) clearTimeout(historyShareResumeTimer.current);
+    historyShareResumeTimer.current = null;
+    setHistoryWorkCursor(null);
+    setHistoryWorkPaused(false);
+  }, [conversation?.id, conversation?.type, messagesQuery.data]);
   const sendMessage = useSendMessage();
   const acceptRequest = useAcceptConversationRequest();
   const declineRequest = useDeclineConversationRequest();
@@ -1077,7 +1171,7 @@ function MessagePane({
               );
             const historyPending = !historyShare
               && originalBody === 'This message was not encrypted for this device.'
-              && (historyWorkQuery.data ?? []).some((item) => item.messageId === message.id);
+              && (historyWorkQuery.data?.items ?? []).some((item) => item.messageId === message.id);
             const body = historyPending
               ? 'Earlier encrypted message — waiting for a current member to open this room and share its history.'
               : originalBody;
@@ -1117,19 +1211,23 @@ function MessagePane({
       || conversation.type !== 'group'
       || !isActive
       || !pageVisible
+      || historyWorkPaused
+      || historyWorkQuery.isError
       || !walletAddress
-      || !historyWorkQuery.data?.length
-      || !keysQuery.data
+      || !historyWorkQuery.data
+      || !keysQuery.data?.some((member) => member.walletAddress === walletAddress && member.publicKey)
       || keysQuery.isError
       || keyChanges.length > 0
       || keyTrustError
     ) return;
     let cancelled = false;
+    const page = historyWorkQuery.data;
     const shareHistory = async () => {
       let sharedAny = false;
+      let pageHadFailure = false;
       try {
         const identity = await getLocalIdentityKey(walletAddress);
-        for (const item of historyWorkQuery.data ?? []) {
+        for (const item of page.items) {
           if (cancelled) break;
           const taskKey = `${conversation.id}:${item.messageId}:${item.recipientAddress}`;
           if (historyShareInFlight.current.has(taskKey)) continue;
@@ -1161,17 +1259,45 @@ function MessagePane({
             });
             sharedAny = true;
           } catch {
-            // The next poll retries transient failures. The server only stores a share after local decryption succeeds.
+            // Keep scanning; this pair is retried from the first page after the current pass reaches the end.
+            pageHadFailure = true;
           } finally {
             historyShareInFlight.current.delete(taskKey);
           }
         }
       } catch {
         // Keep the original encrypted history intact if this device cannot access its local key.
+        pageHadFailure = true;
       }
+      if (pageHadFailure) historySharePassHadFailures.current = true;
       if (sharedAny && !cancelled) {
-        await client.invalidateQueries({ queryKey: getListConversationHistorySharesQueryKey(conversation.id) });
-        await client.invalidateQueries({ queryKey: getListConversationHistoryShareWorkQueryKey(conversation.id) });
+        await client.invalidateQueries({ queryKey: getListConversationHistorySharesQueryKey(conversation.id) }).catch(() => {});
+      }
+      if (cancelled) return;
+      if (page.hasMore && page.nextCursor) {
+        historySharePagesInBatch.current += 1;
+        setHistoryWorkCursor(page.nextCursor);
+        if (historySharePagesInBatch.current >= 4) {
+          historySharePagesInBatch.current = 0;
+          pauseHistoryWork(5_000);
+        }
+      } else if (page.hasMore) {
+        historySharePagesInBatch.current = 0;
+        historySharePassHadFailures.current = false;
+        setHistoryWorkCursor(null);
+        pauseHistoryWork(30_000);
+      } else if (historySharePassHadFailures.current) {
+        historySharePagesInBatch.current = 0;
+        historySharePassHadFailures.current = false;
+        setHistoryWorkCursor(null);
+        pauseHistoryWork(30_000);
+      } else {
+        historySharePagesInBatch.current = 0;
+        if (page.nextCursor && page.nextCursor !== historyWorkCursor) {
+          setHistoryWorkCursor(page.nextCursor);
+        } else if (!page.nextCursor && historyWorkCursor) {
+          setHistoryWorkCursor(null);
+        }
       }
     };
     void shareHistory();
@@ -1181,14 +1307,18 @@ function MessagePane({
     conversation?.type,
     isActive,
     pageVisible,
+    historyWorkPaused,
+    historyWorkQuery.isError,
     walletAddress,
     historyWorkQuery.data,
+    historyWorkCursor,
     keysQuery.data,
     keysQuery.isError,
     keyChanges.length,
     keyTrustError,
     createHistoryShare.mutateAsync,
     client,
+    pauseHistoryWork,
   ]);
 
   useEffect(() => {

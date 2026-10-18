@@ -626,15 +626,21 @@ paths:
       summary: Get encrypted group history that the current member can share with newer members
       parameters:
         - $ref: "#/components/parameters/ConversationId"
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor for continuing a bounded history-share scan or resuming at its latest checkpoint.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 1024
       responses:
         "200":
-          description: Source ciphertext and eligible recipient keys
+          description: One bounded page of source ciphertext and eligible recipient keys
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/HistoryShareWorkItem"
+                $ref: "#/components/schemas/ConversationHistoryShareWorkPage"
         "403":
           description: Caller is not a group member
           content:
@@ -1672,6 +1678,19 @@ components:
         recipientPublicKey:
           type: string
       required: [messageId, senderAddress, body, sentAt, recipientAddress, recipientPublicKey]
+    ConversationHistoryShareWorkPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HistoryShareWorkItem"
+        nextCursor:
+          type: ["string", "null"]
+          description: Present for another work page or as a checkpoint when hasMore is false.
+        hasMore:
+          type: boolean
+      required: [items, nextCursor, hasMore]
     ConversationHistoryShare:
       type: object
       properties:

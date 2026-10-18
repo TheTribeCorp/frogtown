@@ -779,9 +779,11 @@ test("group history shares are limited to new members and remain recipient-only"
   });
   assert.equal(workResponse.status, 200);
   const work = await workResponse.json();
-  assert.equal(work.length, 1);
-  assert.equal(work[0].messageId, messageId);
-  assert.equal(work[0].recipientAddress, lateJoiner);
+  assert.equal(work.items.length, 1);
+  assert.equal(work.items[0].messageId, messageId);
+  assert.equal(work.items[0].recipientAddress, lateJoiner);
+  assert.equal(work.hasMore, false);
+  assert.ok(work.nextCursor, "completed work returns a stable polling checkpoint");
 
   const unauthorizedShare = await request(`/api/conversations/${group.conversationId}/history-shares`, {
     method: "POST",
@@ -819,6 +821,177 @@ test("group history shares are limited to new members and remain recipient-only"
     cookie: sessionCookie(outsider),
   });
   assert.equal(outsiderWork.status, 403);
+});
+
+test("group history work pages through large backlogs and retries failed early shares", async () => {
+  const owner = randomWalletAddress();
+  const lateJoiners = Array.from({ length: 8 }, () => randomWalletAddress());
+  let conversationId = null;
+  let groupId = null;
+  await registerWalletKey(owner);
+  for (const wallet of lateJoiners) await registerWalletKey(wallet);
+  const groupResponse = await request("/api/groups", {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: { name: `Paged history ${randomUUID()}`, description: "", creatorAddress: owner },
+  });
+  assert.equal(groupResponse.status, 201);
+  const group = await groupResponse.json();
+  conversationId = group.conversationId;
+  groupId = group.id;
+  const messageIds = [];
+
+  try {
+    for (let index = 0; index < 24; index += 1) {
+      messageIds.push(randomUUID());
+    }
+    const seed = new Client({ connectionString: process.env.DATABASE_URL });
+    try {
+      await seed.connect();
+      await seed.query(
+        `INSERT INTO swamp_messages (id, conversation_id, sender_address, body, sent_at, encrypted)
+         SELECT message_id, $2, $3, $4, $5::timestamptz + ((ordinal - 1) * interval '1 microsecond'), true
+         FROM unnest($1::text[]) WITH ORDINALITY AS source(message_id, ordinal)`,
+        [messageIds, conversationId, owner, recipientEnvelope([owner]), new Date(Date.now() + 250)],
+      );
+    } finally {
+      await seed.end();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    for (const wallet of lateJoiners) {
+      const joined = await request(`/api/groups/${groupId}/join`, {
+        method: "POST",
+        cookie: sessionCookie(wallet),
+        body: { walletAddress: wallet },
+      });
+      assert.equal(joined.status, 200);
+    }
+
+    const firstPageResponse = await request(`/api/conversations/${conversationId}/history-share-work`, {
+      cookie: sessionCookie(owner),
+    });
+    assert.equal(firstPageResponse.status, 200);
+    const firstPage = await firstPageResponse.json();
+    assert.equal(firstPage.items.length, 20);
+    assert.equal(firstPage.hasMore, true);
+    assert.ok(firstPage.nextCursor);
+
+    const duplicateFetch = await request(`/api/conversations/${conversationId}/history-share-work`, {
+      cookie: sessionCookie(owner),
+    });
+    const repeatedPage = await duplicateFetch.json();
+    assert.deepEqual(repeatedPage.items.map((item) => item.messageId), firstPage.items.map((item) => item.messageId));
+    assert.equal(repeatedPage.nextCursor, firstPage.nextCursor, "re-fetching a page must be deterministic");
+
+    const invalidCursor = await request(`/api/conversations/${conversationId}/history-share-work?cursor=not-a-cursor`, {
+      cookie: sessionCookie(owner),
+    });
+    assert.equal(invalidCursor.status, 400);
+
+    // Leave the first pair pending to simulate a transient device failure.
+    // Successful later pairs must still be saved before moving to the next page.
+    const firstWorkItem = firstPage.items[0];
+    let successfulShareBody = null;
+    for (const item of firstPage.items.slice(1)) {
+      const body = recipientEnvelope([item.recipientAddress]);
+      const saved = await request(`/api/conversations/${conversationId}/history-shares`, {
+        method: "POST",
+        cookie: sessionCookie(owner),
+        body: { messageId: item.messageId, recipientAddress: item.recipientAddress, body },
+      });
+      assert.equal(saved.status, 201);
+      successfulShareBody ??= body;
+    }
+    const repeatedShare = await request(`/api/conversations/${conversationId}/history-shares`, {
+      method: "POST",
+      cookie: sessionCookie(owner),
+      body: {
+        messageId: firstPage.items[1].messageId,
+        recipientAddress: firstPage.items[1].recipientAddress,
+        body: recipientEnvelope([firstPage.items[1].recipientAddress]),
+      },
+    });
+    assert.equal(repeatedShare.status, 201);
+    assert.equal((await repeatedShare.json()).body, successfulShareBody, "a retried share keeps the first persisted ciphertext");
+
+    const allItems = [...firstPage.items];
+    let nextCursor = firstPage.nextCursor;
+    let pages = 1;
+    let hasMore = firstPage.hasMore;
+    while (hasMore) {
+      assert.ok(nextCursor, "every unfinished page includes a continuation cursor");
+      const nextPageResponse = await request(
+        `/api/conversations/${conversationId}/history-share-work?cursor=${encodeURIComponent(nextCursor)}`,
+        { cookie: sessionCookie(owner) },
+      );
+      assert.equal(nextPageResponse.status, 200);
+      const nextPage = await nextPageResponse.json();
+      assert.ok(nextPage.items.length <= 20, "each page stays within its bounded work limit");
+      assert.ok(nextPage.items.length > 0, "large-group cursors advance to later recipient/message pairs");
+      allItems.push(...nextPage.items);
+      for (const item of nextPage.items) {
+        const saved = await request(`/api/conversations/${conversationId}/history-shares`, {
+          method: "POST",
+          cookie: sessionCookie(owner),
+          body: {
+            messageId: item.messageId,
+            recipientAddress: item.recipientAddress,
+            body: recipientEnvelope([item.recipientAddress]),
+          },
+        });
+        assert.equal(saved.status, 201);
+      }
+      nextCursor = nextPage.nextCursor;
+      hasMore = nextPage.hasMore;
+      pages += 1;
+      assert.ok(pages < 20, "the cursor must not loop");
+    }
+    assert.ok(pages > 1);
+    assert.ok(nextCursor, "the last page leaves a cursor checkpoint for light polling");
+    assert.equal(allItems.length, 24 * lateJoiners.length);
+    assert.equal(
+      new Set(allItems.map((item) => `${item.messageId}:${item.recipientAddress}`)).size,
+      24 * lateJoiners.length,
+      "keyset paging does not duplicate pairs even when message timestamps are only microseconds apart",
+    );
+    const terminalPollResponse = await request(
+      `/api/conversations/${conversationId}/history-share-work?cursor=${encodeURIComponent(nextCursor)}`,
+      { cookie: sessionCookie(owner) },
+    );
+    const terminalPoll = await terminalPollResponse.json();
+    assert.deepEqual(terminalPoll.items, []);
+    assert.equal(terminalPoll.hasMore, false);
+    assert.equal(terminalPoll.nextCursor, nextCursor, "idle polling stays at its latest checkpoint");
+
+    const retryPageResponse = await request(`/api/conversations/${conversationId}/history-share-work`, {
+      cookie: sessionCookie(owner),
+    });
+    const retryPage = await retryPageResponse.json();
+    assert.equal(retryPage.items.length, 1);
+    assert.ok(retryPage.items.some((item) => item.messageId === firstWorkItem.messageId && item.recipientAddress === firstWorkItem.recipientAddress));
+    assert.equal(retryPage.hasMore, false, "failed early shares can be retried after later pages complete");
+  } finally {
+    if (conversationId) {
+      const cleanup = new Client({ connectionString: process.env.DATABASE_URL });
+      await cleanup.connect();
+      try {
+        await cleanup.query("BEGIN");
+        await cleanup.query("DELETE FROM swamp_message_history_shares WHERE conversation_id = $1", [conversationId]);
+        await cleanup.query("DELETE FROM swamp_messages WHERE conversation_id = $1", [conversationId]);
+        await cleanup.query("DELETE FROM swamp_conversation_members WHERE conversation_id = $1", [conversationId]);
+        await cleanup.query("DELETE FROM swamp_group_members WHERE group_id = $1", [groupId]);
+        await cleanup.query("DELETE FROM swamp_groups WHERE conversation_id = $1", [conversationId]);
+        await cleanup.query("DELETE FROM swamp_conversations WHERE id = $1", [conversationId]);
+        await cleanup.query("DELETE FROM swamp_wallet_keys WHERE wallet_address = ANY($1::text[])", [[owner, ...lateJoiners]]);
+        await cleanup.query("COMMIT");
+      } catch (error) {
+        await cleanup.query("ROLLBACK").catch(() => {});
+        throw error;
+      } finally {
+        await cleanup.end();
+      }
+    }
+  }
 });
 
 test("forgetting an encrypted backup resets only that wallet's history and preserves group access", async () => {
@@ -978,7 +1151,10 @@ test("forgetting an encrypted backup resets only that wallet's history and prese
     `/api/conversations/${group.conversationId}/history-share-work`,
     { cookie: sessionCookie(owner) },
   );
-  assert.deepEqual(await historyWork.json(), [], "pre-reset group history is not shared again");
+  const resetWork = await historyWork.json();
+  assert.deepEqual(resetWork.items, [], "pre-reset group history is not shared again");
+  assert.equal(resetWork.hasMore, false);
+  assert.ok(resetWork.nextCursor, "the reset room retains a cheap idle-polling checkpoint");
 
   const newMessageId = randomUUID();
   const newMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
