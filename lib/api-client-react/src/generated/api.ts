@@ -45,12 +45,15 @@ import type {
   GamificationReferrals,
   GamificationSummary,
   GetGamificationHistoryParams,
+  GetHermitBuyFunnelParams,
   GetHermitBuyQuoteParams,
   GetWalletHermitBalanceParams,
   GetWalletHermitTickParams,
   Group,
   GroupInput,
   HealthStatus,
+  HermitBuyFunnel,
+  HermitBuyFunnelEventInput,
   HermitBuyInput,
   HermitBuyQuote,
   HermitMarketData,
@@ -1161,6 +1164,203 @@ export function useGetHermitTradeStatus<TData = Awaited<ReturnType<typeof getHer
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetHermitTradeStatusQueryOptions(payloadId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateHermitBuyFunnelEventUrl = () => {
+
+
+
+
+  return `/api/wallet/hermit-buy-funnel-events`
+}
+
+/**
+ * Accepts only a fixed event label. The server stores daily aggregate counts and does not store wallet or transaction identifiers.
+ * @summary Record one privacy-safe $HERMIT purchase step
+ */
+export const createHermitBuyFunnelEvent = async (hermitBuyFunnelEventInput: HermitBuyFunnelEventInput, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<void>(getCreateHermitBuyFunnelEventUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(hermitBuyFunnelEventInput)
+  }
+);}
+
+
+
+
+
+export const getCreateHermitBuyFunnelEventMutationKey = () => ['createHermitBuyFunnelEvent'] as const;
+
+export const getCreateHermitBuyFunnelEventMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHermitBuyFunnelEvent>>, TError,CreateHermitBuyFunnelEventMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createHermitBuyFunnelEvent>>, TError,CreateHermitBuyFunnelEventMutationVariables, TContext> => {
+
+const mutationKey = getCreateHermitBuyFunnelEventMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createHermitBuyFunnelEvent>>, CreateHermitBuyFunnelEventMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createHermitBuyFunnelEvent(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateHermitBuyFunnelEventMutationResult = NonNullable<Awaited<ReturnType<typeof createHermitBuyFunnelEvent>>>
+    export type CreateHermitBuyFunnelEventMutationBody = BodyType<HermitBuyFunnelEventInput>
+    export type CreateHermitBuyFunnelEventMutationError = ErrorType<ErrorResponse>
+    export type CreateHermitBuyFunnelEventMutationVariables = {data: BodyType<HermitBuyFunnelEventInput>}
+
+    /**
+ * @summary Record one privacy-safe $HERMIT purchase step
+ */
+export const useCreateHermitBuyFunnelEvent = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHermitBuyFunnelEvent>>, TError,CreateHermitBuyFunnelEventMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createHermitBuyFunnelEvent>>,
+        TError,
+        CreateHermitBuyFunnelEventMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateHermitBuyFunnelEventMutationOptions(options), queryClient);
+    }
+
+export const getGetHermitBuyFunnelUrl = (params?: GetHermitBuyFunnelParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/wallet/hermit-buy-funnel?${stringifiedParams}` : `/api/wallet/hermit-buy-funnel`
+}
+
+/**
+ * @summary Get aggregate $HERMIT buy-flow counts for moderators
+ */
+export const getHermitBuyFunnel = async (params?: GetHermitBuyFunnelParams, options?: Parameters<typeof customFetch>[1]): Promise<HermitBuyFunnel> => {
+
+  return customFetch<HermitBuyFunnel>(getGetHermitBuyFunnelUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetHermitBuyFunnelQueryKey = (params?: GetHermitBuyFunnelParams,) => {
+    return [
+    `/api/wallet/hermit-buy-funnel`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetHermitBuyFunnelQueryOptions = <TData = Awaited<ReturnType<typeof getHermitBuyFunnel>>, TError = ErrorType<ErrorResponse>>(params?: GetHermitBuyFunnelParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyFunnel>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetHermitBuyFunnelQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHermitBuyFunnel>>> = ({ signal }) => getHermitBuyFunnel(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyFunnel>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetHermitBuyFunnelQueryResult = NonNullable<Awaited<ReturnType<typeof getHermitBuyFunnel>>>
+export type GetHermitBuyFunnelQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetHermitBuyFunnel<TData = Awaited<ReturnType<typeof getHermitBuyFunnel>>, TError = ErrorType<ErrorResponse>>(
+ params: undefined |  GetHermitBuyFunnelParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyFunnel>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHermitBuyFunnel>>,
+          TError,
+          Awaited<ReturnType<typeof getHermitBuyFunnel>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHermitBuyFunnel<TData = Awaited<ReturnType<typeof getHermitBuyFunnel>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetHermitBuyFunnelParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyFunnel>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHermitBuyFunnel>>,
+          TError,
+          Awaited<ReturnType<typeof getHermitBuyFunnel>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHermitBuyFunnel<TData = Awaited<ReturnType<typeof getHermitBuyFunnel>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetHermitBuyFunnelParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyFunnel>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get aggregate $HERMIT buy-flow counts for moderators
+ */
+
+export function useGetHermitBuyFunnel<TData = Awaited<ReturnType<typeof getHermitBuyFunnel>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetHermitBuyFunnelParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHermitBuyFunnel>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetHermitBuyFunnelQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

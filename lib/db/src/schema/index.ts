@@ -21,3 +21,4 @@ export * from "./swamp";
 export * from "./wallet-profiles";
 export * from "./timeline";
 export * from "./gamification";
+export * from "./hermit-purchase-analytics";

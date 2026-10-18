@@ -375,6 +375,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /wallet/hermit-buy-funnel-events:
+    post:
+      operationId: createHermitBuyFunnelEvent
+      tags: [wallet]
+      summary: Record one privacy-safe $HERMIT purchase step
+      description: Accepts only a fixed event label. The server stores daily aggregate counts and does not store wallet or transaction identifiers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HermitBuyFunnelEventInput"
+      responses:
+        "204":
+          description: Aggregate event recorded
+        "400":
+          description: Unsupported event label
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /wallet/hermit-buy-funnel:
+    get:
+      operationId: getHermitBuyFunnel
+      tags: [wallet]
+      summary: Get aggregate $HERMIT buy-flow counts for moderators
+      parameters:
+        - in: query
+          name: days
+          required: false
+          schema:
+            type: integer
+            enum: [7, 30, 90]
+            default: 30
+      responses:
+        "200":
+          description: Daily aggregate purchase-step counts with no member or transaction identifiers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HermitBuyFunnel"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Moderator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Moderator access is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /wallet/me:
     get:
       operationId: getCurrentWallet
@@ -1860,12 +1925,66 @@ components:
           enum: [buy, trustline]
         status:
           type: string
-          enum: [pending, signed, rejected, expired, wallet_mismatch]
+          enum: [pending, signed, completed, unfilled, failed, rejected, expired, wallet_mismatch]
+        receivedHermit:
+          type: ["string", "null"]
         walletAddress:
           type: ["string", "null"]
         txid:
           type: ["string", "null"]
-      required: [payloadId, transactionType, status, walletAddress, txid]
+      required: [payloadId, transactionType, status, receivedHermit, walletAddress, txid]
+    HermitBuyFunnelEventInput:
+      type: object
+      properties:
+        event:
+          type: string
+          enum:
+            - quote_preview
+            - trustline_approval
+            - buy_approval
+            - buy_completed
+            - buy_unfilled
+            - buy_failed
+            - buy_rejected
+            - buy_expired
+            - buy_wallet_mismatch
+            - trustline_rejected
+            - trustline_expired
+            - trustline_wallet_mismatch
+      required: [event]
+    HermitBuyFunnel:
+      type: object
+      properties:
+        days:
+          type: integer
+          enum: [7, 30, 90]
+        totals:
+          type: array
+          items:
+            $ref: "#/components/schemas/HermitBuyFunnelTotal"
+      required: [days, totals]
+    HermitBuyFunnelTotal:
+      type: object
+      properties:
+        event:
+          type: string
+          enum:
+            - quote_preview
+            - trustline_approval
+            - buy_approval
+            - buy_completed
+            - buy_unfilled
+            - buy_failed
+            - buy_rejected
+            - buy_expired
+            - buy_wallet_mismatch
+            - trustline_rejected
+            - trustline_expired
+            - trustline_wallet_mismatch
+        count:
+          type: integer
+          minimum: 0
+      required: [event, count]
     CurrentWallet:
       type: object
       properties:

@@ -13,6 +13,8 @@ export interface HermitTradeStatus {
   transactionType: HermitTradeStatusTransactionType;
   status: HermitTradeStatusStatus;
   /** @nullable */
+  receivedHermit: string | null;
+  /** @nullable */
   walletAddress: string | null;
   /** @nullable */
   txid: string | null;

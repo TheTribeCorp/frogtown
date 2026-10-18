@@ -1,5 +1,9 @@
 import { Router, type IRouter, type Request, type Response } from "express";
+import { gte, lt, sql } from "drizzle-orm";
 import {
+  CreateHermitBuyFunnelEventBody,
+  GetHermitBuyFunnelQueryParams,
+  GetHermitBuyFunnelResponse,
   CreateHermitBuyPayloadBody,
   CreateHermitBuyPayloadResponse,
   CreateHermitTrustlinePayloadResponse,
@@ -10,15 +14,18 @@ import {
   GetWalletHermitBalanceQueryParams,
   GetWalletHermitBalanceResponse,
 } from "@workspace/api-zod";
+import { db, hermitBuyFunnelDailyTable } from "@workspace/db";
 import { getWalletHermitBalance } from "../lib/hermit-tick";
 import {
   buildHermitBuyTransaction,
   buildHermitTrustlineTransaction,
   createHermitXamanPayload,
+  getHermitBuyLedgerOutcome,
   getHermitBuyQuote,
   HermitTradingError,
   validateHermitXrpAmount,
 } from "../lib/hermit-trading";
+import { requireModerator } from "../lib/moderator-auth";
 import { requireAuth } from "./swamp";
 
 const router: IRouter = Router();
@@ -37,6 +44,27 @@ type XamanPayloadStatus = {
     txid?: unknown;
   };
 };
+
+const FUNNEL_EVENT_NAMES = [
+  "quote_preview",
+  "trustline_approval",
+  "buy_approval",
+  "buy_completed",
+  "buy_unfilled",
+  "buy_failed",
+  "buy_rejected",
+  "buy_expired",
+  "buy_wallet_mismatch",
+  "trustline_rejected",
+  "trustline_expired",
+  "trustline_wallet_mismatch",
+] as const;
+
+function utcDayOffset(daysAgo: number) {
+  const day = new Date();
+  day.setUTCDate(day.getUTCDate() - daysAgo);
+  return day.toISOString().slice(0, 10);
+}
 
 function sendTradingError(req: Request, res: Response, error: unknown) {
   if (error instanceof HermitTradingError) {
@@ -237,9 +265,17 @@ router.get("/wallet/hermit-transactions/:payloadId", async (req, res): Promise<v
     const signer = typeof payload.response?.account === "string"
       ? payload.response.account
       : null;
-    let status: "pending" | "signed" | "rejected" | "expired" | "wallet_mismatch" = "pending";
+    let status: "pending" | "signed" | "completed" | "unfilled" | "failed" | "rejected" | "expired" | "wallet_mismatch" = "pending";
+    let receivedHermit: string | null = null;
     if (resolved && signed) {
       status = signer === walletAddress ? "signed" : "wallet_mismatch";
+      if (transactionType === "buy" && status === "signed" && typeof payload.response?.txid === "string") {
+        const ledgerOutcome = await getHermitBuyLedgerOutcome(payload.response.txid, walletAddress);
+        if (ledgerOutcome) {
+          status = ledgerOutcome.status;
+          if (ledgerOutcome.status === "completed") receivedHermit = ledgerOutcome.receivedHermit;
+        }
+      }
     } else if (resolved) {
       status = "rejected";
     } else if (payload.meta?.expired === true) {
@@ -251,12 +287,66 @@ router.get("/wallet/hermit-transactions/:payloadId", async (req, res): Promise<v
       payloadId: params.data.payloadId,
       transactionType,
       status,
+      receivedHermit,
       walletAddress: signer,
       txid: typeof payload.response?.txid === "string" ? payload.response.txid : null,
     }));
   } catch {
     res.status(502).json({ error: "Xaman could not confirm the transaction status." });
   }
+});
+
+router.post("/wallet/hermit-buy-funnel-events", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+
+  const body = CreateHermitBuyFunnelEventBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "Unsupported purchase-flow event." });
+    return;
+  }
+
+  const eventDay = utcDayOffset(0);
+  const retentionCutoff = utcDayOffset(90);
+  await db.delete(hermitBuyFunnelDailyTable)
+    .where(lt(hermitBuyFunnelDailyTable.eventDay, retentionCutoff));
+  await db.insert(hermitBuyFunnelDailyTable)
+    .values({ eventDay, event: body.data.event, eventCount: 1 })
+    .onConflictDoUpdate({
+      target: [hermitBuyFunnelDailyTable.eventDay, hermitBuyFunnelDailyTable.event],
+      set: { eventCount: sql`${hermitBuyFunnelDailyTable.eventCount} + 1` },
+    });
+  res.status(204).end();
+});
+
+router.get("/wallet/hermit-buy-funnel", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  if (!requireModerator(walletAddress, res, "view purchase-flow analytics")) return;
+
+  const parsed = GetHermitBuyFunnelQueryParams.safeParse({
+    days: req.query.days === undefined ? 30 : Number(req.query.days),
+  });
+  if (!parsed.success) {
+    res.status(400).json({ error: "Choose a funnel reporting window of 7, 30, or 90 days." });
+    return;
+  }
+
+  const cutoff = utcDayOffset(parsed.data.days - 1);
+  const rows = await db
+    .select({
+      event: hermitBuyFunnelDailyTable.event,
+      count: sql<number>`sum(${hermitBuyFunnelDailyTable.eventCount})::integer`,
+    })
+    .from(hermitBuyFunnelDailyTable)
+    .where(gte(hermitBuyFunnelDailyTable.eventDay, cutoff))
+    .groupBy(hermitBuyFunnelDailyTable.event);
+  const totalsByEvent = new Map(rows.map((row) => [row.event, Number(row.count)]));
+  res.setHeader("Cache-Control", "private, no-store");
+  res.json(GetHermitBuyFunnelResponse.parse({
+    days: parsed.data.days,
+    totals: FUNNEL_EVENT_NAMES.map((event) => ({ event, count: totalsByEvent.get(event) ?? 0 })),
+  }));
 });
 
 export default router;

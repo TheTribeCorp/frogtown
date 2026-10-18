@@ -258,6 +258,8 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/wallet/hermit-trustline", "POST"],
     ["/api/wallet/hermit-buy", "POST", { xrpAmount: "1", slippageBps: 500 }],
     ["/api/wallet/hermit-transactions/11111111-1111-4111-8111-111111111111", "GET"],
+    ["/api/wallet/hermit-buy-funnel-events", "POST", { event: "quote_preview" }],
+    ["/api/wallet/hermit-buy-funnel", "GET"],
     ["/api/wallets/" + walletA + "/hermit-tick?refresh=true", "GET"],
     ["/api/groups?walletAddress=" + walletA, "GET"],
     ["/api/groups", "POST", { name: "test", description: "", creatorAddress: walletA }],
@@ -297,6 +299,12 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     cookie: validCookie,
   });
   assert.equal(invalidQuote.status, 400, "quote validation should reject tiny orders");
+  const invalidFunnelEvent = await request("/api/wallet/hermit-buy-funnel-events", {
+    method: "POST",
+    cookie: validCookie,
+    body: { event: "anything-else", walletAddress: walletA, txid: "private-transaction-data" },
+  });
+  assert.equal(invalidFunnelEvent.status, 400, "funnel analytics should only accept fixed event labels");
 
   const authenticatedMismatches = [
     ["/api/conversations?walletAddress=" + walletB, "GET"],

@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   getWalletHermitBalance,
+  useCreateHermitBuyFunnelEvent,
   useCreateHermitBuyPayload,
   useCreateHermitTrustlinePayload,
   useGetHermitBuyQuote,
   getGetHermitBuyQuoteQueryKey,
   useGetHermitTradeStatus,
   useGetWalletHermitBalance,
+  type HermitBuyFunnelEventInputEvent,
   type HermitTradePayload,
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -53,10 +55,29 @@ function apiErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-function statusCopy(status: string) {
+function formatExactHermit(value: string) {
+  const [whole = '0', fraction = ''] = value.split('.');
+  let groupedWhole = whole;
+  try {
+    groupedWhole = BigInt(whole).toLocaleString('en-US');
+  } catch {
+    // The API returns a decimal string; keep it intact if an unexpected format arrives.
+  }
+  return `${groupedWhole}${fraction ? `.${fraction}` : ''}`;
+}
+
+function statusCopy(status: string, transactionType: HermitTradePayload['transactionType'] | undefined) {
   switch (status) {
     case 'signed':
-      return 'Xaman signed the request. The order is immediate-or-cancel: it can fill fully, partially, or not at all.';
+      return transactionType === 'trustline'
+        ? 'Xaman signed the trustline request. Refresh the balance to confirm it on XRPL.'
+        : 'Xaman signed the order. Frogtown is waiting for the XRPL ledger to confirm what, if anything, was delivered.';
+    case 'completed':
+      return 'The XRPL ledger confirmed this buy.';
+    case 'unfilled':
+      return 'The order was validated, but no $HERMIT was delivered. Any unfilled XRP was not left as an open offer.';
+    case 'failed':
+      return 'The XRPL ledger did not complete this order. Check your wallet activity for the network fee.';
     case 'rejected':
       return 'The transaction was not approved in Xaman.';
     case 'expired':
@@ -77,7 +98,14 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
   const [tradeStatus, setTradeStatus] = useState<string | null>(null);
   const [balanceNotice, setBalanceNotice] = useState('');
   const [refreshingBalance, setRefreshingBalance] = useState(false);
-  const [lastRefreshedPayload, setLastRefreshedPayload] = useState<string | null>(null);
+  const handledStatusesRef = useRef(new Set<string>());
+  const lastQuoteEventRef = useRef<string | null>(null);
+  const funnelEventMutation = useCreateHermitBuyFunnelEvent({
+    request: { credentials: 'same-origin' },
+  });
+  const trackFunnelEvent = useCallback((event: HermitBuyFunnelEventInputEvent) => {
+    funnelEventMutation.mutate({ data: { event } }, { onError: () => undefined });
+  }, [funnelEventMutation.mutate]);
 
   const balanceKey = hermitBalanceQueryKey(walletAddress, false);
   const balanceQuery = useGetWalletHermitBalance(
@@ -98,9 +126,10 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
     activePayload?.payloadId ?? '',
     {
       query: {
-        enabled: false,
+        enabled: Boolean(activePayload),
         retry: false,
         refetchOnWindowFocus: false,
+        refetchInterval: activePayload?.transactionType === 'buy' && tradeStatus === 'signed' ? 4_000 : false,
       },
       request: { credentials: 'same-origin' },
     },
@@ -120,12 +149,14 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
     },
     request: { credentials: 'same-origin' },
   });
+  const quote = quoteQuery.data;
   const trustlineMutation = useCreateHermitTrustlinePayload({
     mutation: {
       onSuccess: (payload) => {
         setActivePayload(payload);
         setTradeStatus(null);
         setBalanceNotice('');
+        trackFunnelEvent('trustline_approval');
       },
     },
   });
@@ -135,6 +166,7 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
         setActivePayload(payload);
         setTradeStatus(null);
         setBalanceNotice('');
+        trackFunnelEvent('buy_approval');
       },
     },
   });
@@ -202,16 +234,32 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
   }, [activePayload?.payloadId, activePayload?.websocketStatusUrl, statusQuery.refetch]);
 
   useEffect(() => {
+    if (!open || !quote) return;
+    const key = `${quote.checkedAt}:${quote.xrpAmount}:${quote.slippageBps}`;
+    if (lastQuoteEventRef.current === key) return;
+    lastQuoteEventRef.current = key;
+    trackFunnelEvent('quote_preview');
+  }, [open, quote?.checkedAt, quote?.xrpAmount, quote?.slippageBps, trackFunnelEvent]);
+
+  useEffect(() => {
     const status = statusQuery.data?.status;
-    if (!activePayload || !status || status === 'pending' || lastRefreshedPayload === activePayload.payloadId) return;
+    if (!activePayload || !status || status === 'pending') return;
+    const handledKey = `${activePayload.payloadId}:${status}`;
+    if (handledStatusesRef.current.has(handledKey)) return;
+    handledStatusesRef.current.add(handledKey);
     setTradeStatus(status);
-    setLastRefreshedPayload(activePayload.payloadId);
-    if (status === 'signed') {
+    if (status === 'completed') trackFunnelEvent('buy_completed');
+    else if (status === 'unfilled') trackFunnelEvent('buy_unfilled');
+    else if (status === 'failed') trackFunnelEvent('buy_failed');
+    else if (status === 'rejected') trackFunnelEvent(activePayload.transactionType === 'buy' ? 'buy_rejected' : 'trustline_rejected');
+    else if (status === 'expired') trackFunnelEvent(activePayload.transactionType === 'buy' ? 'buy_expired' : 'trustline_expired');
+    else if (status === 'wallet_mismatch') trackFunnelEvent(activePayload.transactionType === 'buy' ? 'buy_wallet_mismatch' : 'trustline_wallet_mismatch');
+    if (status === 'completed' || (status === 'signed' && activePayload.transactionType === 'trustline')) {
       window.setTimeout(() => {
         void refreshBalance();
       }, 4_000);
     }
-  }, [activePayload, lastRefreshedPayload, refreshBalance, statusQuery.data?.status]);
+  }, [activePayload, refreshBalance, statusQuery.data?.status, trackFunnelEvent]);
 
   const prepareTrustline = () => trustlineMutation.mutate(undefined,
     {
@@ -223,12 +271,12 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
     { onError: (error) => setBalanceNotice(apiErrorMessage(error, 'Could not prepare the buy order in Xaman.')) },
   );
 
-  const quote = quoteQuery.data;
   const busy = trustlineMutation.isPending || buyMutation.isPending;
   const openDialog = () => {
     setActivePayload(null);
     setTradeStatus(null);
     setBalanceNotice('');
+    lastQuoteEventRef.current = null;
     setOpen(true);
   };
 
@@ -405,11 +453,19 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
             {activePayload && (
               <section className="space-y-3 rounded-xl border border-[hsl(var(--border))] p-4" data-testid="panel-hermit-xaman-payload">
                 <div className="flex items-start gap-2">
-                  {tradeStatus === 'signed'
+                  {tradeStatus === 'completed'
                     ? <Check className="mt-0.5 size-4 shrink-0 text-[hsl(var(--primary))]" />
                     : <CircleAlert className="mt-0.5 size-4 shrink-0 text-[hsl(var(--accent))]" />}
-                  <p className="text-xs leading-5">{statusCopy(tradeStatus ?? 'pending')}</p>
+                  <p className="text-xs leading-5">{statusCopy(tradeStatus ?? 'pending', activePayload.transactionType)}</p>
                 </div>
+                {tradeStatus === 'completed' && statusQuery.data?.receivedHermit && (
+                  <div className="rounded-lg border border-[hsl(var(--primary)/.35)] bg-[hsl(var(--primary)/.08)] px-3 py-3" data-testid="text-hermit-buy-actual-received">
+                    <p className="text-[10px] uppercase tracking-[.14em] text-[hsl(var(--muted-foreground))]">Confirmed amount received</p>
+                    <p className="mt-1 font-mono text-lg font-semibold text-[hsl(var(--primary))]">
+                      {formatExactHermit(statusQuery.data.receivedHermit)} $HERMIT
+                    </p>
+                  </div>
+                )}
                 {statusQuery.isError && (
                   <p className="text-xs text-[hsl(var(--destructive))]" role="alert">
                     {apiErrorMessage(statusQuery.error, 'Xaman status could not be checked. Try again.')}
@@ -447,7 +503,7 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
                     Order: up to {activePayload.quote.xrpAmount} XRP for at least {formatHermit(activePayload.quote.minimumHermit)} $HERMIT, with {activePayload.quote.priceImpactPercent.toFixed(2)}% estimated impact. Approval is final once submitted to XRPL.
                   </p>
                 )}
-                {tradeStatus === 'signed' && (
+                {(tradeStatus === 'signed' || tradeStatus === 'completed') && (
                   <button
                     type="button"
                     onClick={() => void refreshBalance()}

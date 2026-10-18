@@ -165,6 +165,9 @@ export type HermitTradeStatusStatus = typeof HermitTradeStatusStatus[keyof typeo
 export const HermitTradeStatusStatus = {
   pending: 'pending',
   signed: 'signed',
+  completed: 'completed',
+  unfilled: 'unfilled',
+  failed: 'failed',
   rejected: 'rejected',
   expired: 'expired',
   wallet_mismatch: 'wallet_mismatch',
@@ -175,9 +178,71 @@ export interface HermitTradeStatus {
   transactionType: HermitTradeStatusTransactionType;
   status: HermitTradeStatusStatus;
   /** @nullable */
+  receivedHermit: string | null;
+  /** @nullable */
   walletAddress: string | null;
   /** @nullable */
   txid: string | null;
+}
+
+export type HermitBuyFunnelEventInputEvent = typeof HermitBuyFunnelEventInputEvent[keyof typeof HermitBuyFunnelEventInputEvent];
+
+
+export const HermitBuyFunnelEventInputEvent = {
+  quote_preview: 'quote_preview',
+  trustline_approval: 'trustline_approval',
+  buy_approval: 'buy_approval',
+  buy_completed: 'buy_completed',
+  buy_unfilled: 'buy_unfilled',
+  buy_failed: 'buy_failed',
+  buy_rejected: 'buy_rejected',
+  buy_expired: 'buy_expired',
+  buy_wallet_mismatch: 'buy_wallet_mismatch',
+  trustline_rejected: 'trustline_rejected',
+  trustline_expired: 'trustline_expired',
+  trustline_wallet_mismatch: 'trustline_wallet_mismatch',
+} as const;
+
+export interface HermitBuyFunnelEventInput {
+  event: HermitBuyFunnelEventInputEvent;
+}
+
+export type HermitBuyFunnelDays = typeof HermitBuyFunnelDays[keyof typeof HermitBuyFunnelDays];
+
+
+export const HermitBuyFunnelDays = {
+  NUMBER_7: 7,
+  NUMBER_30: 30,
+  NUMBER_90: 90,
+} as const;
+
+export type HermitBuyFunnelTotalEvent = typeof HermitBuyFunnelTotalEvent[keyof typeof HermitBuyFunnelTotalEvent];
+
+
+export const HermitBuyFunnelTotalEvent = {
+  quote_preview: 'quote_preview',
+  trustline_approval: 'trustline_approval',
+  buy_approval: 'buy_approval',
+  buy_completed: 'buy_completed',
+  buy_unfilled: 'buy_unfilled',
+  buy_failed: 'buy_failed',
+  buy_rejected: 'buy_rejected',
+  buy_expired: 'buy_expired',
+  buy_wallet_mismatch: 'buy_wallet_mismatch',
+  trustline_rejected: 'trustline_rejected',
+  trustline_expired: 'trustline_expired',
+  trustline_wallet_mismatch: 'trustline_wallet_mismatch',
+} as const;
+
+export interface HermitBuyFunnelTotal {
+  event: HermitBuyFunnelTotalEvent;
+  /** @minimum 0 */
+  count: number;
+}
+
+export interface HermitBuyFunnel {
+  days: HermitBuyFunnelDays;
+  totals: HermitBuyFunnelTotal[];
 }
 
 export interface CurrentWallet {
@@ -928,6 +993,19 @@ xrpAmount: string;
  */
 slippageBps?: number;
 };
+
+export type GetHermitBuyFunnelParams = {
+days?: GetHermitBuyFunnelDays;
+};
+
+export type GetHermitBuyFunnelDays = typeof GetHermitBuyFunnelDays[keyof typeof GetHermitBuyFunnelDays];
+
+
+export const GetHermitBuyFunnelDays = {
+  NUMBER_7: 7,
+  NUMBER_30: 30,
+  NUMBER_90: 90,
+} as const;
 
 export type ListConversationsParams = {
 /**

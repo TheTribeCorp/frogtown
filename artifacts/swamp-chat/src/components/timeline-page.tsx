@@ -19,6 +19,7 @@ import {
   type TimelinePost,
 } from '@workspace/api-client-react';
 import { TimelineModerationPanel } from '@/components/timeline-moderation';
+import { HermitBuyFunnelPanel } from '@/components/hermit-buy-funnel';
 import { TimelineOwnerActions } from '@/components/timeline-owner-actions';
 import { HermitTick } from '@/components/hermit-tick';
 
@@ -503,7 +504,14 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
               <button type="button" onClick={() => void moderationAccess.refetch()} className="font-medium underline underline-offset-2" data-testid="button-retry-moderator-access">Try again</button>
             </div>
           ) : (
-            <TimelineModerationPanel enabled={Boolean(moderationAccess.data?.isModerator)} />
+            moderationAccess.data?.isModerator ? (
+              <>
+                <HermitBuyFunnelPanel />
+                <TimelineModerationPanel enabled />
+              </>
+            ) : (
+              <TimelineModerationPanel enabled={false} />
+            )
           )}
 
           <div className="mb-3 flex items-center justify-between px-1">

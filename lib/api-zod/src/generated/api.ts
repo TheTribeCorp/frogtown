@@ -220,9 +220,43 @@ export const GetHermitTradeStatusParams = zod.object({
 export const GetHermitTradeStatusResponse = zod.object({
   "payloadId": zod.string().uuid(),
   "transactionType": zod.enum(['buy', 'trustline']),
-  "status": zod.enum(['pending', 'signed', 'rejected', 'expired', 'wallet_mismatch']),
+  "status": zod.enum(['pending', 'signed', 'completed', 'unfilled', 'failed', 'rejected', 'expired', 'wallet_mismatch']),
+  "receivedHermit": zod.string().nullable(),
   "walletAddress": zod.string().nullable(),
   "txid": zod.string().nullable()
+})
+
+
+/**
+ * Accepts only a fixed event label. The server stores daily aggregate counts and does not store wallet or transaction identifiers.
+ * @summary Record one privacy-safe $HERMIT purchase step
+ */
+export const CreateHermitBuyFunnelEventBody = zod.object({
+  "event": zod.enum(['quote_preview', 'trustline_approval', 'buy_approval', 'buy_completed', 'buy_unfilled', 'buy_failed', 'buy_rejected', 'buy_expired', 'buy_wallet_mismatch', 'trustline_rejected', 'trustline_expired', 'trustline_wallet_mismatch'])
+})
+
+export const CreateHermitBuyFunnelEventResponse = zod.void()
+
+
+/**
+ * @summary Get aggregate $HERMIT buy-flow counts for moderators
+ */
+export const getHermitBuyFunnelQueryDaysDefault = 30;
+
+export const GetHermitBuyFunnelQueryParams = zod.object({
+  "days": zod.union([zod.literal(7),zod.literal(30),zod.literal(90)]).default(getHermitBuyFunnelQueryDaysDefault)
+})
+
+export const getHermitBuyFunnelResponseTotalsItemCountMin = 0;
+
+
+
+export const GetHermitBuyFunnelResponse = zod.object({
+  "days": zod.union([zod.literal(7),zod.literal(30),zod.literal(90)]),
+  "totals": zod.array(zod.object({
+  "event": zod.enum(['quote_preview', 'trustline_approval', 'buy_approval', 'buy_completed', 'buy_unfilled', 'buy_failed', 'buy_rejected', 'buy_expired', 'buy_wallet_mismatch', 'trustline_rejected', 'trustline_expired', 'trustline_wallet_mismatch']),
+  "count": zod.number().int().min(getHermitBuyFunnelResponseTotalsItemCountMin)
+}))
 })
 
 

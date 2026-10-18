@@ -12,6 +12,9 @@ export type HermitTradeStatusStatus = typeof HermitTradeStatusStatus[keyof typeo
 export const HermitTradeStatusStatus = {
   pending: 'pending',
   signed: 'signed',
+  completed: 'completed',
+  unfilled: 'unfilled',
+  failed: 'failed',
   rejected: 'rejected',
   expired: 'expired',
   wallet_mismatch: 'wallet_mismatch',

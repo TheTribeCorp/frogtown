@@ -5,6 +5,7 @@ import {
   buildHermitTrustlineTransaction,
   formatIssuedAmount,
   getHermitBuyQuote,
+  getHermitBuyLedgerOutcome,
   createHermitXamanPayload,
   HERMIT_CURRENCY,
   HERMIT_ISSUER,
@@ -128,5 +129,102 @@ test("Xaman creates a mainnet approval payload without assigning the signing acc
     globalThis.fetch = originalFetch;
     delete process.env.XAMAN_API_KEY;
     delete process.env.XAMAN_API_SECRET;
+  }
+});
+
+test("validated XRPL metadata returns the exact HERMIT amount delivered to the member", async () => {
+  const originalFetch = globalThis.fetch;
+  const walletAddress = "rMemberWallet";
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(String(init?.body));
+    assert.equal(request.method, "tx");
+    assert.equal(request.params[0].transaction, "ABCDEF");
+    return new Response(JSON.stringify({
+      result: {
+        validated: true,
+        hash: "ABCDEF",
+        Account: walletAddress,
+        TransactionType: "OfferCreate",
+        TakerGets: "1000000",
+        TakerPays: { currency: HERMIT_CURRENCY, issuer: HERMIT_ISSUER, value: "100" },
+        meta: {
+          TransactionResult: "tesSUCCESS",
+          AffectedNodes: [{
+            ModifiedNode: {
+              LedgerEntryType: "RippleState",
+              FinalFields: {
+                LowLimit: { currency: HERMIT_CURRENCY, issuer: walletAddress, value: "1000000000" },
+                HighLimit: { currency: HERMIT_CURRENCY, issuer: HERMIT_ISSUER, value: "1000000000" },
+                Balance: { currency: HERMIT_CURRENCY, value: "102.1250000000001" },
+              },
+              PreviousFields: {
+                Balance: { currency: HERMIT_CURRENCY, value: "2.125" },
+              },
+            },
+          }],
+        },
+      },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+
+  try {
+    assert.deepEqual(
+      await getHermitBuyLedgerOutcome("ABCDEF", walletAddress),
+      { status: "completed", receivedHermit: "100.0000000000001" },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("validated XRPL trustline balance changes use the correct direction for the high account", async () => {
+  const originalFetch = globalThis.fetch;
+  const walletAddress = "rMemberWallet";
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    result: {
+      validated: true,
+      Account: walletAddress,
+      TransactionType: "OfferCreate",
+      TakerGets: "1000000",
+      TakerPays: { currency: HERMIT_CURRENCY, issuer: HERMIT_ISSUER },
+      meta: {
+        TransactionResult: "tesSUCCESS",
+        AffectedNodes: [{
+          ModifiedNode: {
+            LedgerEntryType: "RippleState",
+            FinalFields: {
+              LowLimit: { currency: HERMIT_CURRENCY, issuer: HERMIT_ISSUER, value: "1000000000" },
+              HighLimit: { currency: HERMIT_CURRENCY, issuer: walletAddress, value: "1000000000" },
+              Balance: { currency: HERMIT_CURRENCY, value: "4.25" },
+            },
+            PreviousFields: {
+              Balance: { currency: HERMIT_CURRENCY, value: "5.5" },
+            },
+          },
+        }],
+      },
+    },
+  }), { status: 200, headers: { "content-type": "application/json" } });
+
+  try {
+    assert.deepEqual(
+      await getHermitBuyLedgerOutcome("ABCDEF", walletAddress),
+      { status: "completed", receivedHermit: "1.25" },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("unvalidated transactions never claim a received amount", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    result: { validated: false },
+  }), { status: 200, headers: { "content-type": "application/json" } });
+
+  try {
+    assert.equal(await getHermitBuyLedgerOutcome("ABCDEF", "rMemberWallet"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
