@@ -44,6 +44,7 @@ import {
   walletProfilesTable,
 } from "@workspace/db";
 import { recordDailyQuestActionInTransaction } from "../lib/gamification";
+import { configuredModeratorWallets, requireModerator } from "../lib/moderator-auth";
 import { requireAuth } from "./swamp";
 
 const router: IRouter = Router();
@@ -260,28 +261,6 @@ async function serializeReaction(postId: string, walletAddress: string) {
 
 function invalidBody(res: Response, message: string) {
   res.status(400).json({ error: message });
-}
-
-function configuredModeratorWallets() {
-  return new Set(
-    (process.env.FROGTOWN_MODERATOR_WALLETS ?? "")
-      .split(",")
-      .map((wallet) => wallet.trim())
-      .filter(Boolean),
-  );
-}
-
-function requireModerator(walletAddress: string, res: Response) {
-  const moderators = configuredModeratorWallets();
-  if (moderators.size === 0) {
-    res.status(503).json({ error: "Moderator access is not configured." });
-    return false;
-  }
-  if (!moderators.has(walletAddress)) {
-    res.status(403).json({ error: "Only configured Frogtown moderators can review reports." });
-    return false;
-  }
-  return true;
 }
 
 async function removeTimelineCommentInTransaction(transaction: TimelineTransaction, commentId: string) {

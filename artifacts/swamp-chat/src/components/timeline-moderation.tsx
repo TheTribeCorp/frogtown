@@ -6,6 +6,8 @@ import {
   getListTimelineModerationHistoryQueryKey,
   getListTimelineModerationReportsQueryKey,
   getListTimelinePostsQueryKey,
+  getListGamificationReferralBurstsQueryKey,
+  useListGamificationReferralBursts,
   useListTimelineModerationHistory,
   useListTimelineModerationReports,
   useResolveTimelineModerationReport,
@@ -24,6 +26,7 @@ export function TimelineModerationPanel({ enabled }: { enabled: boolean }) {
   const client = useQueryClient();
   const [actionError, setActionError] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [referralBurstsOpen, setReferralBurstsOpen] = useState(false);
   const [historyCursor, setHistoryCursor] = useState<string | undefined>();
   const [historyItems, setHistoryItems] = useState<{
     id: string;
@@ -38,6 +41,13 @@ export function TimelineModerationPanel({ enabled }: { enabled: boolean }) {
   const queue = useListTimelineModerationReports({
     query: { enabled, queryKey: getListTimelineModerationReportsQueryKey() },
   });
+  const referralBursts = useListGamificationReferralBursts({
+    query: {
+      enabled: enabled && referralBurstsOpen,
+      queryKey: getListGamificationReferralBurstsQueryKey(),
+      refetchInterval: 60_000,
+    },
+  });
   const historyParams = { cursor: historyCursor, limit: 20 };
   const history = useListTimelineModerationHistory(historyParams, {
     query: {
@@ -50,6 +60,7 @@ export function TimelineModerationPanel({ enabled }: { enabled: boolean }) {
   useEffect(() => {
     setHistoryCursor(undefined);
     setHistoryItems([]);
+    setReferralBurstsOpen(false);
   }, [enabled]);
 
   useEffect(() => {
@@ -135,6 +146,55 @@ export function TimelineModerationPanel({ enabled }: { enabled: boolean }) {
           </div>
         )}
       </div>
+      <details
+        className="border-t border-[hsl(var(--border)/.75)]"
+        onToggle={(event) => setReferralBurstsOpen(event.currentTarget.open)}
+        data-testid="panel-referral-burst-review"
+      >
+        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-medium transition hover:bg-[hsl(var(--muted)/.35)] sm:px-5">
+          <span>Referral activity review</span>
+          <span className="mono text-[9px] text-[hsl(var(--muted-foreground))]">
+            {referralBursts.isLoading ? 'Checking' : `${referralBursts.data?.items.length ?? 0} signals`}
+          </span>
+        </summary>
+        <div className="space-y-3 border-t border-[hsl(var(--border)/.65)] p-4 sm:p-5">
+          <p className="text-[10px] leading-5 text-[hsl(var(--muted-foreground))]">
+            Review-only signals for the rolling 24-hour window: {referralBursts.data?.signupBurstThreshold ?? 5}+ new invites, or {referralBursts.data?.qualificationBurstThreshold ?? 3}+ qualifying rewards among them. These are prompts to review, not proof of abuse; no wallet access or points are blocked automatically.
+          </p>
+          {referralBursts.isLoading ? (
+            <div className="space-y-2" aria-label="Loading referral activity" data-testid="loading-referral-burst-review">
+              <div className="h-16 animate-pulse rounded-xl bg-[hsl(var(--muted))]" />
+              <div className="h-16 animate-pulse rounded-xl bg-[hsl(var(--muted))]" />
+            </div>
+          ) : referralBursts.isError ? (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.05)] p-3 text-xs text-[hsl(var(--destructive))]" role="alert" data-testid="error-referral-burst-review">
+              <span>Referral activity could not be loaded.</span>
+              <button type="button" onClick={() => void referralBursts.refetch()} className="font-medium underline underline-offset-2" data-testid="button-retry-referral-burst-review">Retry</button>
+            </div>
+          ) : !referralBursts.data?.items.length ? (
+            <p className="rounded-xl border border-dashed border-[hsl(var(--border))] px-4 py-6 text-center text-xs text-[hsl(var(--muted-foreground))]" data-testid="empty-referral-burst-review">
+              No referral bursts crossed the review thresholds in this window.
+            </p>
+          ) : (
+            <div className="space-y-2" data-testid="list-referral-bursts">
+              {referralBursts.data.items.map((item) => (
+                <article key={item.referrerWalletAddress} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background)/.55)] p-3.5" data-testid={`item-referral-burst-${item.referrerWalletAddress}`}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <AlertTriangle className="size-3.5 shrink-0 text-[hsl(var(--accent))]" />
+                    <span className="mono text-[10px] font-medium" title={item.referrerWalletAddress}>{compactAddress(item.referrerWalletAddress)}</span>
+                    <span className="ml-auto rounded-full bg-[hsl(var(--accent)/.1)] px-2 py-1 text-[9px] font-medium text-[hsl(var(--accent))]">
+                      {item.signals.map((signal) => signal === 'signup_burst' ? 'Invite burst' : 'Qualification burst').join(' · ')}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[10px] text-[hsl(var(--muted-foreground))]">
+                    {item.recentReferralCount} new {item.recentReferralCount === 1 ? 'wallet' : 'wallets'} · {item.qualifiedReferralCount} qualified · {reportedAt(item.firstReferralAt)} to {reportedAt(item.latestReferralAt)}
+                  </p>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </details>
       <details
         className="border-t border-[hsl(var(--border)/.75)]"
         onToggle={(event) => setHistoryOpen(event.currentTarget.open)}

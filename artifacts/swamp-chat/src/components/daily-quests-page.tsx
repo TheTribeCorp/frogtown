@@ -41,6 +41,12 @@ import { HermitTick } from '@/components/hermit-tick';
 type DailyQuestsPageProps = { walletAddress?: string };
 type FlipChoice = 'heads' | 'tails';
 type HistoryItem = GetGamificationHistoryQueryResult['items'][number];
+const REFERRAL_QUEST_ORDER = [
+  'check_in',
+  'ledger_minute',
+  'community_engagement',
+  'room_spotlight',
+] as const;
 
 const QUEST_COPY = {
   check_in: {
@@ -170,6 +176,12 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
 
   const summary = summaryQuery.data;
   const balance = summary?.points ?? 0;
+  const communityPointsEarned = summary?.communityPointsEarned ?? 0;
+  const communityGoalPoints = summary?.communityGoalPoints ?? 500_000;
+  const communityProgressPercent = Math.min(
+    100,
+    Math.max(0, (communityPointsEarned / communityGoalPoints) * 100),
+  );
   const tasks = summary?.tasks ?? [];
   const doneCount = tasks.filter((task) => task.completed).length;
   const badgeProgress = Math.min(100, Math.max(0, balance));
@@ -181,6 +193,7 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
     ? new URL(`${appBasePath}?ref=${encodeURIComponent(walletAddress)}`, window.location.origin).toString()
     : '';
   const referralRewardPoints = referralsQuery.data?.rewardPoints ?? 2;
+  const myReferralQualification = referralsQuery.data?.myReferralQualification ?? null;
 
   const copyReferralLink = async () => {
     if (!referralUrl) return;
@@ -296,6 +309,38 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
               </div>
             </section>
 
+            <section className="rounded-[1.4rem] border border-[hsl(var(--primary)/.18)] bg-[linear-gradient(120deg,hsl(var(--primary)/.06),hsl(var(--card)/.92)_58%)] p-4 shadow-[0_10px_30px_hsl(155_27%_15%/.035)] sm:p-5" data-testid="panel-community-points-goal">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="mono text-[9px] uppercase tracking-[.18em] text-[hsl(var(--primary))]">A Frogtown milestone</p>
+                  <h2 className="mt-1 text-base font-semibold tracking-[-.035em]">500,000 points, together</h2>
+                </div>
+                <span className="rounded-full bg-[hsl(var(--primary)/.09)] px-2.5 py-1 text-[9px] font-medium text-[hsl(var(--primary))]">
+                  {communityProgressPercent >= 100 ? 'Milestone reached' : `${communityProgressPercent.toFixed(1)}%`}
+                </span>
+              </div>
+              <div
+                className="mt-3 h-2.5 overflow-hidden rounded-full bg-[hsl(var(--muted))]"
+                role="progressbar"
+                aria-label="Community progress toward 500,000 points earned"
+                aria-valuemin={0}
+                aria-valuemax={communityGoalPoints}
+                aria-valuenow={Math.min(communityPointsEarned, communityGoalPoints)}
+                aria-valuetext={`${communityPointsEarned.toLocaleString(undefined, { maximumFractionDigits: 2 })} of ${communityGoalPoints.toLocaleString()} points`}
+                data-testid="bar-community-points-goal"
+              >
+                <div
+                  className="h-full rounded-full bg-[linear-gradient(90deg,hsl(var(--primary)),hsl(var(--sidebar-accent)))] transition-[width] duration-500"
+                  style={{ width: `${communityProgressPercent}%` }}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3 text-[10px]">
+                <span className="mono font-medium tabular-nums" data-testid="text-community-points-earned">{communityPointsEarned.toLocaleString(undefined, { maximumFractionDigits: 2 })} earned</span>
+                <span className="mono text-[hsl(var(--muted-foreground))]">{communityGoalPoints.toLocaleString()} goal</span>
+              </div>
+              <p className="mt-2 text-[9px] leading-4 text-[hsl(var(--muted-foreground))]">Lifetime points awarded across Frogtown. Coin-flip losses don’t pull the community total backward.</p>
+            </section>
+
             <section className="rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.78)] p-4 shadow-[0_10px_30px_hsl(155_27%_15%/.035)] sm:p-5" data-testid="panel-daily-quests">
               <div className="mb-4 flex items-center justify-between gap-3 px-1">
                 <div><p className="mono text-[9px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">Small things, good neighbors</p><h2 className="mt-1 text-lg font-semibold tracking-[-.04em]">Today’s quests</h2></div>
@@ -350,6 +395,61 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
                   </div>
                 </div>
               </div>
+              {myReferralQualification && (
+                <div className="relative mt-4 rounded-xl border border-[hsl(var(--primary)/.18)] bg-[hsl(var(--card)/.74)] p-3.5 sm:p-4" data-testid="panel-my-referral-progress">
+                  {myReferralQualification.status === 'pending' ? (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-semibold">Your invite progress</p>
+                          <p className="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">These quests unlock the reward for the wallet that invited you.</p>
+                        </div>
+                        <span className="mono rounded-full bg-[hsl(var(--primary)/.09)] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--primary))]" data-testid="text-my-referral-progress-count">
+                          {myReferralQualification.completedQuestCount} / {myReferralQualification.requiredQuestCount}
+                        </span>
+                      </div>
+                      <div
+                        className="mt-3 h-2 overflow-hidden rounded-full bg-[hsl(var(--muted))]"
+                        role="progressbar"
+                        aria-label="Daily quest progress toward your referrer's reward"
+                        aria-valuemin={0}
+                        aria-valuemax={myReferralQualification.requiredQuestCount}
+                        aria-valuenow={myReferralQualification.completedQuestCount}
+                      >
+                        <div
+                          className="h-full rounded-full bg-[hsl(var(--primary))] transition-[width] duration-300"
+                          style={{ width: `${Math.min(100, (myReferralQualification.completedQuestCount / myReferralQualification.requiredQuestCount) * 100)}%` }}
+                        />
+                      </div>
+                      <ul className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                        {REFERRAL_QUEST_ORDER.map((questId) => {
+                          const isComplete = myReferralQualification.completedQuestIds.includes(questId);
+                          return (
+                            <li key={questId} className={`flex items-center gap-2 text-[10px] ${isComplete ? 'text-[hsl(var(--primary))]' : 'text-[hsl(var(--muted-foreground))]'}`}>
+                              <span className={`flex size-4 shrink-0 items-center justify-center rounded-full ${isComplete ? 'bg-[hsl(var(--primary)/.12)]' : 'bg-[hsl(var(--muted))]'}`}>
+                                {isComplete ? <Check className="size-2.5" /> : <span className="size-1 rounded-full bg-current" />}
+                              </span>
+                              {QUEST_COPY[questId].title}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <p className="mt-3 border-t border-[hsl(var(--border)/.7)] pt-2.5 text-[10px] leading-4 text-[hsl(var(--muted-foreground))]">
+                        Finish all four today to unlock {referralRewardPoints} points for your referrer. Progress resets at midnight UTC, but your invitation stays pending.
+                      </p>
+                    </>
+                  ) : (
+                    <div role="status" data-testid="status-my-referral-rewarded">
+                      <p className="flex items-center gap-2 text-xs font-semibold text-[hsl(var(--primary))]"><Check className="size-4" />Your referral reward is unlocked</p>
+                      <p className="mt-1 text-[10px] leading-4 text-[hsl(var(--muted-foreground))]">
+                        {myReferralQualification.qualifiedDayKey
+                          ? `Your four-quest day was ${myReferralQualification.qualifiedDayKey} (UTC). The ${referralRewardPoints}-point reward has been sent to your referrer.`
+                          : 'Your referrer’s reward was already granted before the four-quest requirement began.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="relative mt-4 flex flex-col gap-2 sm:flex-row">
                 <input
                   readOnly

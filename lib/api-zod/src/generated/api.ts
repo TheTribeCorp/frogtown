@@ -962,6 +962,8 @@ export const GetGamificationSummaryResponse = zod.object({
   "longestStreak": zod.number().int(),
   "frogBadgeEarned": zod.boolean(),
   "frogBadgeEarnedAt": zod.coerce.date().nullable(),
+  "communityPointsEarned": zod.number().describe('Cumulative points awarded across the community; losses do not reduce this total.'),
+  "communityGoalPoints": zod.literal(500000),
   "tasks": zod.array(zod.object({
   "id": zod.enum(['check_in', 'ledger_minute', 'community_engagement', 'room_spotlight']),
   "completed": zod.boolean(),
@@ -1012,6 +1014,8 @@ export const CheckInGamificationResponse = zod.object({
   "longestStreak": zod.number().int(),
   "frogBadgeEarned": zod.boolean(),
   "frogBadgeEarnedAt": zod.coerce.date().nullable(),
+  "communityPointsEarned": zod.number().describe('Cumulative points awarded across the community; losses do not reduce this total.'),
+  "communityGoalPoints": zod.literal(500000),
   "tasks": zod.array(zod.object({
   "id": zod.enum(['check_in', 'ledger_minute', 'community_engagement', 'room_spotlight']),
   "completed": zod.boolean(),
@@ -1037,8 +1041,11 @@ export const GetGamificationLeaderboardResponse = zod.object({
 
 
 /**
- * @summary Get the authenticated wallet's referral count and top ten referral leaderboard
+ * @summary Get the authenticated wallet's referral standing and qualification progress
  */
+export const getGamificationReferralsResponseMyReferralQualificationOneQualifiedDayKeyRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
 export const GetGamificationReferralsResponse = zod.object({
   "referralCount": zod.number().int(),
   "pendingReferralCount": zod.number().int(),
@@ -1048,6 +1055,32 @@ export const GetGamificationReferralsResponse = zod.object({
   "walletAddress": zod.string(),
   "username": zod.string().nullable(),
   "referralCount": zod.number().int()
+})),
+  "myReferralQualification": zod.union([zod.object({
+  "status": zod.enum(['pending', 'rewarded']),
+  "completedQuestCount": zod.number().int(),
+  "requiredQuestCount": zod.number().int(),
+  "completedQuestIds": zod.array(zod.enum(['check_in', 'ledger_minute', 'community_engagement', 'room_spotlight'])),
+  "qualifiedDayKey": zod.string().regex(getGamificationReferralsResponseMyReferralQualificationOneQualifiedDayKeyRegExp).nullable(),
+  "rewardedAt": zod.coerce.date().nullable()
+}),zod.null()])
+})
+
+
+/**
+ * @summary List unusual referral activity for configured moderators
+ */
+export const ListGamificationReferralBurstsResponse = zod.object({
+  "windowStartedAt": zod.coerce.date(),
+  "signupBurstThreshold": zod.number().int(),
+  "qualificationBurstThreshold": zod.number().int(),
+  "items": zod.array(zod.object({
+  "referrerWalletAddress": zod.string(),
+  "recentReferralCount": zod.number().int(),
+  "qualifiedReferralCount": zod.number().int(),
+  "firstReferralAt": zod.coerce.date(),
+  "latestReferralAt": zod.coerce.date(),
+  "signals": zod.array(zod.enum(['signup_burst', 'qualification_burst']))
 }))
 })
 

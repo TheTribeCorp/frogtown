@@ -612,6 +612,9 @@ export interface GamificationSummary {
   frogBadgeEarned: boolean;
   /** @nullable */
   frogBadgeEarnedAt: string | null;
+  /** Cumulative points awarded across the community; losses do not reduce this total. */
+  communityPointsEarned: number;
+  communityGoalPoints: 500000;
   tasks: GamificationTask[];
 }
 
@@ -637,11 +640,68 @@ export interface ReferralLeaderboardEntry {
   referralCount: number;
 }
 
+export type MyReferralQualificationStatus = typeof MyReferralQualificationStatus[keyof typeof MyReferralQualificationStatus];
+
+
+export const MyReferralQualificationStatus = {
+  pending: 'pending',
+  rewarded: 'rewarded',
+} as const;
+
+export type MyReferralQualificationCompletedQuestIdsItem = typeof MyReferralQualificationCompletedQuestIdsItem[keyof typeof MyReferralQualificationCompletedQuestIdsItem];
+
+
+export const MyReferralQualificationCompletedQuestIdsItem = {
+  check_in: 'check_in',
+  ledger_minute: 'ledger_minute',
+  community_engagement: 'community_engagement',
+  room_spotlight: 'room_spotlight',
+} as const;
+
+export interface MyReferralQualification {
+  status: MyReferralQualificationStatus;
+  completedQuestCount: number;
+  requiredQuestCount: number;
+  completedQuestIds: MyReferralQualificationCompletedQuestIdsItem[];
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  qualifiedDayKey: string | null;
+  /** @nullable */
+  rewardedAt: string | null;
+}
+
 export interface GamificationReferrals {
   referralCount: number;
   pendingReferralCount: number;
   rewardPoints: number;
   leaderboard: ReferralLeaderboardEntry[];
+  myReferralQualification: MyReferralQualification | null;
+}
+
+export type ReferralBurstSignal = typeof ReferralBurstSignal[keyof typeof ReferralBurstSignal];
+
+
+export const ReferralBurstSignal = {
+  signup_burst: 'signup_burst',
+  qualification_burst: 'qualification_burst',
+} as const;
+
+export interface ReferralBurstReviewItem {
+  referrerWalletAddress: string;
+  recentReferralCount: number;
+  qualifiedReferralCount: number;
+  firstReferralAt: string;
+  latestReferralAt: string;
+  signals: ReferralBurstSignal[];
+}
+
+export interface GamificationReferralBurstReview {
+  windowStartedAt: string;
+  signupBurstThreshold: number;
+  qualificationBurstThreshold: number;
+  items: ReferralBurstReviewItem[];
 }
 
 export type GamificationHistoryItemKind = typeof GamificationHistoryItemKind[keyof typeof GamificationHistoryItemKind];

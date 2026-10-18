@@ -1322,16 +1322,46 @@ paths:
     get:
       operationId: getGamificationReferrals
       tags: [gamification]
-      summary: Get the authenticated wallet's referral count and top ten referral leaderboard
+      summary: Get the authenticated wallet's referral standing and qualification progress
       responses:
         "200":
-          description: Referral totals, points earned per new referral, and top referrers
+          description: Referral totals, invited-member progress, and top referrers
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GamificationReferrals"
         "401":
           description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /gamification/moderation/referral-bursts:
+    get:
+      operationId: listGamificationReferralBursts
+      tags: [gamification]
+      summary: List unusual referral activity for configured moderators
+      responses:
+        "200":
+          description: Review-only referral activity signals from the last 24 hours
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GamificationReferralBurstReview"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not a configured moderator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Moderator access is not configured
           content:
             application/json:
               schema:
@@ -2109,11 +2139,18 @@ components:
         frogBadgeEarnedAt:
           type: ["string", "null"]
           format: date-time
+        communityPointsEarned:
+          type: number
+          format: double
+          description: Cumulative points awarded across the community; losses do not reduce this total.
+        communityGoalPoints:
+          type: integer
+          const: 500000
         tasks:
           type: array
           items:
             $ref: "#/components/schemas/GamificationTask"
-      required: [dayKey, points, currentStreak, longestStreak, frogBadgeEarned, frogBadgeEarnedAt, tasks]
+      required: [dayKey, points, currentStreak, longestStreak, frogBadgeEarned, frogBadgeEarnedAt, communityPointsEarned, communityGoalPoints, tasks]
     GamificationLeaderboardEntry:
       type: object
       properties:
@@ -2164,7 +2201,71 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ReferralLeaderboardEntry"
-      required: [referralCount, pendingReferralCount, rewardPoints, leaderboard]
+        myReferralQualification:
+          oneOf:
+            - $ref: "#/components/schemas/MyReferralQualification"
+            - type: "null"
+      required: [referralCount, pendingReferralCount, rewardPoints, leaderboard, myReferralQualification]
+    MyReferralQualification:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, rewarded]
+        completedQuestCount:
+          type: integer
+        requiredQuestCount:
+          type: integer
+        completedQuestIds:
+          type: array
+          items:
+            type: string
+            enum: [check_in, ledger_minute, community_engagement, room_spotlight]
+        qualifiedDayKey:
+          type: ["string", "null"]
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        rewardedAt:
+          type: ["string", "null"]
+          format: date-time
+      required: [status, completedQuestCount, requiredQuestCount, completedQuestIds, qualifiedDayKey, rewardedAt]
+    ReferralBurstSignal:
+      type: string
+      enum: [signup_burst, qualification_burst]
+    ReferralBurstReviewItem:
+      type: object
+      properties:
+        referrerWalletAddress:
+          type: string
+        recentReferralCount:
+          type: integer
+        qualifiedReferralCount:
+          type: integer
+        firstReferralAt:
+          type: string
+          format: date-time
+        latestReferralAt:
+          type: string
+          format: date-time
+        signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReferralBurstSignal"
+      required: [referrerWalletAddress, recentReferralCount, qualifiedReferralCount, firstReferralAt, latestReferralAt, signals]
+    GamificationReferralBurstReview:
+      type: object
+      properties:
+        windowStartedAt:
+          type: string
+          format: date-time
+        signupBurstThreshold:
+          type: integer
+        qualificationBurstThreshold:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReferralBurstReviewItem"
+      required: [windowStartedAt, signupBurstThreshold, qualificationBurstThreshold, items]
     GamificationHistoryItem:
       type: object
       properties:

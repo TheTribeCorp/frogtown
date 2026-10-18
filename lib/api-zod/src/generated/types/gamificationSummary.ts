@@ -15,5 +15,8 @@ export interface GamificationSummary {
   frogBadgeEarned: boolean;
   /** @nullable */
   frogBadgeEarnedAt: Date | null;
+  /** Cumulative points awarded across the community; losses do not reduce this total. */
+  communityPointsEarned: number;
+  communityGoalPoints: 500000;
   tasks: GamificationTask[];
 }

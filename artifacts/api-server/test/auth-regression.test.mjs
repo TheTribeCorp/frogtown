@@ -2007,6 +2007,7 @@ test("referral rewards wait for four daily quest points and one referred wallet 
     const pendingSummary = await beforeCompletion.json();
     assert.equal(pendingSummary.referralCount, 0);
     assert.equal(pendingSummary.pendingReferralCount, 1);
+    assert.equal(pendingSummary.myReferralQualification, null);
 
     await cleanupClient.connect();
     const dayKey = new Date().toISOString().slice(0, 10);
@@ -2019,6 +2020,14 @@ test("referral rewards wait for four daily quest points and one referred wallet 
       [referred, dayKey, ["ledger_minute", "community_engagement", "room_spotlight"]],
     );
 
+    const inviteeProgressResponse = await request("/api/gamification/referrals", { cookie: referredCookie });
+    assert.equal(inviteeProgressResponse.status, 200);
+    const inviteeProgress = (await inviteeProgressResponse.json()).myReferralQualification;
+    assert.equal(inviteeProgress.status, "pending");
+    assert.equal(inviteeProgress.completedQuestCount, 3);
+    assert.equal(inviteeProgress.requiredQuestCount, 4);
+    assert.equal(inviteeProgress.completedQuestIds.length, 3);
+
     const checkIn = await request("/api/gamification/check-in", {
       method: "POST",
       cookie: referredCookie,
@@ -2030,6 +2039,11 @@ test("referral rewards wait for four daily quest points and one referred wallet 
     const rewardedSummary = await afterCompletion.json();
     assert.equal(rewardedSummary.referralCount, 1);
     assert.equal(rewardedSummary.pendingReferralCount, 0);
+    const completedProgressResponse = await request("/api/gamification/referrals", { cookie: referredCookie });
+    const completedProgress = (await completedProgressResponse.json()).myReferralQualification;
+    assert.equal(completedProgress.status, "rewarded");
+    assert.equal(completedProgress.completedQuestCount, 4);
+    assert.equal(completedProgress.qualifiedDayKey, dayKey);
 
     const referrerPoints = await request("/api/gamification/summary", { cookie: referrerCookie });
     assert.equal(referrerPoints.status, 200);
@@ -2068,6 +2082,123 @@ test("referral rewards wait for four daily quest points and one referred wallet 
       throw error;
     } finally {
       await cleanupClient.end();
+    }
+  }
+});
+
+test("referral burst review is moderator-only and never blocks ordinary wallet features", async () => {
+  const referrer = randomWalletAddress();
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  try {
+    await client.connect();
+    const now = new Date();
+    const dayKey = now.toISOString().slice(0, 10);
+    for (let index = 0; index < 5; index += 1) {
+      const createdAt = new Date(now.getTime() - index * 60_000);
+      const rewardedAt = index < 3 ? new Date(createdAt.getTime() + 1_000) : null;
+      await client.query(
+        `INSERT INTO frogtown_referrals
+           (id, referrer_wallet_address, referred_wallet_address, created_at, rewarded_at, qualified_day_key)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [`referral-${randomUUID()}`, referrer, randomWalletAddress(), createdAt, rewardedAt, rewardedAt ? dayKey : null],
+      );
+    }
+
+    const memberReview = await request("/api/gamification/moderation/referral-bursts", {
+      cookie: sessionCookie(walletA),
+    });
+    assert.equal(memberReview.status, 403);
+
+    const memberDailyTasks = await request("/api/gamification/summary", {
+      cookie: sessionCookie(walletA),
+    });
+    assert.equal(memberDailyTasks.status, 200, "non-moderators retain ordinary app access");
+
+    const moderatorReview = await request("/api/gamification/moderation/referral-bursts", {
+      cookie: sessionCookie(walletB),
+    });
+    const moderatorReviewBody = await moderatorReview.text();
+    if (moderatorReview.status !== 200) await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(moderatorReview.status, 200, moderatorReviewBody);
+    const review = JSON.parse(moderatorReviewBody);
+    const flagged = review.items.find((item) => item.referrerWalletAddress === referrer);
+    assert.ok(flagged);
+    assert.equal(flagged.recentReferralCount, 5);
+    assert.equal(flagged.qualifiedReferralCount, 3);
+    assert.deepEqual(flagged.signals, ["signup_burst", "qualification_burst"]);
+    assert.equal(review.signupBurstThreshold, 5);
+    assert.equal(review.qualificationBurstThreshold, 3);
+  } finally {
+    await client.connect().catch(() => {});
+    try {
+      await client.query("DELETE FROM frogtown_referrals WHERE referrer_wallet_address = $1", [referrer]);
+    } finally {
+      await client.end();
+    }
+  }
+});
+
+test("community milestone totals awards and winning gains without subtracting losses", async () => {
+  const wallet = randomWalletAddress();
+  const referrer = randomWalletAddress();
+  const referred = randomWalletAddress();
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  try {
+    const beforeResponse = await request("/api/gamification/summary", {
+      cookie: sessionCookie(walletA),
+    });
+    assert.equal(beforeResponse.status, 200);
+    const before = (await beforeResponse.json()).communityPointsEarned;
+
+    await client.connect();
+    const dayKey = new Date().toISOString().slice(0, 10);
+    await client.query("BEGIN");
+    for (const questId of ["check_in", "ledger_minute", "community_engagement", "room_spotlight"]) {
+      await client.query(
+        `INSERT INTO frogtown_daily_quest_completions (wallet_address, day_key, quest_id, points_hundredths)
+         VALUES ($1, $2, $3, 100)`,
+        [wallet, dayKey, questId],
+      );
+    }
+    await client.query(
+      `INSERT INTO frogtown_referrals
+         (id, referrer_wallet_address, referred_wallet_address, rewarded_at, qualified_day_key)
+       VALUES ($1, $2, $3, now(), $4)`,
+      [`referral-${randomUUID()}`, referrer, referred, dayKey],
+    );
+    await client.query(
+      `INSERT INTO frogtown_coin_flips
+         (id, wallet_address, request_id, choice, result, won, stake_hundredths, payout_hundredths, net_change_hundredths)
+       VALUES
+         ($1, $2, $3, 'heads', 'heads', true, 100, 180, 80),
+         ($4, $2, $5, 'tails', 'heads', false, 100, 0, -100)`,
+      [`flip-${randomUUID()}`, wallet, randomUUID(), `flip-${randomUUID()}`, randomUUID()],
+    );
+    await client.query("COMMIT");
+
+    const afterResponse = await request("/api/gamification/summary", {
+      cookie: sessionCookie(walletA),
+    });
+    assert.equal(afterResponse.status, 200);
+    const after = await afterResponse.json();
+    assert.equal(after.communityGoalPoints, 500_000);
+    assert.ok(Math.abs(after.communityPointsEarned - before - 6.8) < 0.001);
+  } finally {
+    await client.connect().catch(() => {});
+    try {
+      await client.query("BEGIN");
+      await client.query("DELETE FROM frogtown_coin_flips WHERE wallet_address = $1", [wallet]);
+      await client.query("DELETE FROM frogtown_daily_quest_completions WHERE wallet_address = $1", [wallet]);
+      await client.query(
+        "DELETE FROM frogtown_referrals WHERE referrer_wallet_address = $1 OR referred_wallet_address = $2",
+        [referrer, referred],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      await client.end();
     }
   }
 });

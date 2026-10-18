@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { MyReferralQualification } from './myReferralQualification';
 import type { ReferralLeaderboardEntry } from './referralLeaderboardEntry';
 
 export interface GamificationReferrals {
@@ -12,4 +13,5 @@ export interface GamificationReferrals {
   pendingReferralCount: number;
   rewardPoints: number;
   leaderboard: ReferralLeaderboardEntry[];
+  myReferralQualification: MyReferralQualification | null;
 }

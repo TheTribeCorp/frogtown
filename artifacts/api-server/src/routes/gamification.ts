@@ -6,6 +6,7 @@ import {
   GetGamificationLeaderboardResponse,
   GetGamificationReferralsResponse,
   GetGamificationSummaryResponse,
+  ListGamificationReferralBurstsResponse,
   PlayGamificationCoinFlipBody,
   PlayGamificationCoinFlipResponse,
 } from "@workspace/api-zod";
@@ -17,11 +18,13 @@ import {
   getGamificationHistory,
   getGamificationLeaderboard,
   getGamificationSummary,
+  getReferralBurstReview,
   getReferralSummary,
   InsufficientPointsError,
   InvalidGamificationHistoryCursorError,
   playCoinFlip,
 } from "../lib/gamification";
+import { requireModerator } from "../lib/moderator-auth";
 import { requireAuth } from "./swamp";
 
 const router: IRouter = Router();
@@ -115,6 +118,7 @@ router.get("/gamification/referrals", async (req, res): Promise<void> => {
       referralCount: referrals.referralCount,
       pendingReferralCount: referrals.pendingReferralCount,
       rewardPoints: referrals.rewardPoints,
+      myReferralQualification: referrals.myReferralQualification,
       leaderboard: referrals.leaderboard.map((item, index) => ({
         ...item,
         rank: index + 1,
@@ -124,6 +128,17 @@ router.get("/gamification/referrals", async (req, res): Promise<void> => {
   } catch (error) {
     req.log.error({ err: error }, "Could not load referral standings.");
     res.status(500).json({ error: "Unable to load referral standings." });
+  }
+});
+
+router.get("/gamification/moderation/referral-bursts", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress || !requireModerator(walletAddress, res, "review referral activity")) return;
+  try {
+    res.json(ListGamificationReferralBurstsResponse.parse(await getReferralBurstReview()));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not load referral burst review.");
+    res.status(500).json({ error: "Unable to load referral activity review." });
   }
 });
 

@@ -40,6 +40,7 @@ import type {
   ErrorResponse,
   GamificationHistoryPage,
   GamificationLeaderboard,
+  GamificationReferralBurstReview,
   GamificationReferrals,
   GamificationSummary,
   GetGamificationHistoryParams,
@@ -4855,7 +4856,7 @@ export const getGetGamificationReferralsUrl = () => {
 }
 
 /**
- * @summary Get the authenticated wallet's referral count and top ten referral leaderboard
+ * @summary Get the authenticated wallet's referral standing and qualification progress
  */
 export const getGamificationReferrals = async ( options?: Parameters<typeof customFetch>[1]): Promise<GamificationReferrals> => {
 
@@ -4926,7 +4927,7 @@ export function useGetGamificationReferrals<TData = Awaited<ReturnType<typeof ge
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Get the authenticated wallet's referral count and top ten referral leaderboard
+ * @summary Get the authenticated wallet's referral standing and qualification progress
  */
 
 export function useGetGamificationReferrals<TData = Awaited<ReturnType<typeof getGamificationReferrals>>, TError = ErrorType<ErrorResponse>>(
@@ -4935,6 +4936,107 @@ export function useGetGamificationReferrals<TData = Awaited<ReturnType<typeof ge
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetGamificationReferralsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListGamificationReferralBurstsUrl = () => {
+
+
+
+
+  return `/api/gamification/moderation/referral-bursts`
+}
+
+/**
+ * @summary List unusual referral activity for configured moderators
+ */
+export const listGamificationReferralBursts = async ( options?: Parameters<typeof customFetch>[1]): Promise<GamificationReferralBurstReview> => {
+
+  return customFetch<GamificationReferralBurstReview>(getListGamificationReferralBurstsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGamificationReferralBurstsQueryKey = () => {
+    return [
+    `/api/gamification/moderation/referral-bursts`
+    ] as const;
+    }
+
+
+export const getListGamificationReferralBurstsQueryOptions = <TData = Awaited<ReturnType<typeof listGamificationReferralBursts>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGamificationReferralBursts>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGamificationReferralBurstsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGamificationReferralBursts>>> = ({ signal }) => listGamificationReferralBursts({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGamificationReferralBursts>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListGamificationReferralBurstsQueryResult = NonNullable<Awaited<ReturnType<typeof listGamificationReferralBursts>>>
+export type ListGamificationReferralBurstsQueryError = ErrorType<ErrorResponse>
+
+
+export function useListGamificationReferralBursts<TData = Awaited<ReturnType<typeof listGamificationReferralBursts>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGamificationReferralBursts>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listGamificationReferralBursts>>,
+          TError,
+          Awaited<ReturnType<typeof listGamificationReferralBursts>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListGamificationReferralBursts<TData = Awaited<ReturnType<typeof listGamificationReferralBursts>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGamificationReferralBursts>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listGamificationReferralBursts>>,
+          TError,
+          Awaited<ReturnType<typeof listGamificationReferralBursts>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListGamificationReferralBursts<TData = Awaited<ReturnType<typeof listGamificationReferralBursts>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGamificationReferralBursts>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List unusual referral activity for configured moderators
+ */
+
+export function useListGamificationReferralBursts<TData = Awaited<ReturnType<typeof listGamificationReferralBursts>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGamificationReferralBursts>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListGamificationReferralBurstsQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

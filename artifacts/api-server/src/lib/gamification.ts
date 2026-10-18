@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import {
   coinFlipsTable,
   dailyQuestActionsTable,
@@ -11,13 +11,18 @@ import {
   walletProfilesTable,
 } from "@workspace/db";
 import {
+  classifyReferralBurst,
   hasCompletedReferralDailySet,
+  REFERRAL_BURST_WINDOW_MS,
+  REFERRAL_QUALIFICATION_BURST_THRESHOLD,
   REFERRAL_QUALIFYING_QUEST_IDS,
   REFERRAL_REWARD_HUNDREDTHS,
+  REFERRAL_SIGNUP_BURST_THRESHOLD,
 } from "./referral-rules";
 
 const POINT = 100;
 const FROG_BADGE_THRESHOLD = 10_000;
+const COMMUNITY_POINT_GOAL = 500_000;
 const QUEST_IDS = REFERRAL_QUALIFYING_QUEST_IDS;
 type GamificationTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -284,7 +289,7 @@ export async function getGamificationSummary(walletAddress: string) {
     .where(eq(gamificationProfilesTable.walletAddress, walletAddress));
   if (!profile) throw new Error("Unable to load the wallet's Frogtown points profile.");
 
-  const [completions, actions] = await Promise.all([
+  const [completions, actions, communityAwards] = await Promise.all([
     db
       .select({ questId: dailyQuestCompletionsTable.questId })
       .from(dailyQuestCompletionsTable)
@@ -299,6 +304,25 @@ export async function getGamificationSummary(walletAddress: string) {
         eq(dailyQuestActionsTable.walletAddress, walletAddress),
         eq(dailyQuestActionsTable.dayKey, today),
       )),
+    db
+      .select({
+        pointsHundredths: sql<number>`
+          coalesce(
+            (select sum(${dailyQuestCompletionsTable.pointsHundredths}) from ${dailyQuestCompletionsTable}),
+            0
+          )
+          + coalesce(
+            (select count(*) * ${REFERRAL_REWARD_HUNDREDTHS} from ${referralsTable} where ${referralsTable.rewardedAt} is not null),
+            0
+          )
+          + coalesce(
+            (select sum(${coinFlipsTable.netChangeHundredths}) from ${coinFlipsTable} where ${coinFlipsTable.netChangeHundredths} > 0),
+            0
+          )
+        `.mapWith(Number),
+      })
+      .from(gamificationProfilesTable)
+      .limit(1),
   ]);
   const completed = new Set(completions.map((row) => row.questId));
   const actionSet = new Set(actions.map((row) => row.actionType));
@@ -320,6 +344,8 @@ export async function getGamificationSummary(walletAddress: string) {
     longestStreak: profile.longestStreak,
     frogBadgeEarned: Boolean(profile.frogBadgeEarnedAt),
     frogBadgeEarnedAt: profile.frogBadgeEarnedAt?.toISOString() ?? null,
+    communityPointsEarned: pointsValue(communityAwards[0]?.pointsHundredths ?? 0),
+    communityGoalPoints: COMMUNITY_POINT_GOAL,
     tasks,
   };
 }
@@ -344,13 +370,42 @@ export async function getGamificationLeaderboard() {
 }
 
 export async function getReferralSummary(walletAddress: string) {
-  const [ownCounts] = await db
-    .select({
-      successful: sql<number>`count(*) filter (where ${referralsTable.rewardedAt} is not null)`.mapWith(Number),
-      pending: sql<number>`count(*) filter (where ${referralsTable.rewardedAt} is null)`.mapWith(Number),
-    })
-    .from(referralsTable)
-    .where(eq(referralsTable.referrerWalletAddress, walletAddress));
+  const [ownCounts, ownReferral] = await Promise.all([
+    db
+      .select({
+        successful: sql<number>`count(*) filter (where ${referralsTable.rewardedAt} is not null)`.mapWith(Number),
+        pending: sql<number>`count(*) filter (where ${referralsTable.rewardedAt} is null)`.mapWith(Number),
+      })
+      .from(referralsTable)
+      .where(eq(referralsTable.referrerWalletAddress, walletAddress)),
+    db
+      .select({
+        status: sql<"pending" | "rewarded">`case when ${referralsTable.rewardedAt} is null then 'pending' else 'rewarded' end`,
+        rewardedAt: referralsTable.rewardedAt,
+        qualifiedDayKey: referralsTable.qualifiedDayKey,
+      })
+      .from(referralsTable)
+      .where(eq(referralsTable.referredWalletAddress, walletAddress))
+      .limit(1),
+  ]);
+  const ownCount = ownCounts[0];
+  const referralRecord = ownReferral[0];
+  const today = utcDayKey();
+  const completedToday = referralRecord?.status === "pending"
+    ? await db
+      .select({ questId: dailyQuestCompletionsTable.questId })
+      .from(dailyQuestCompletionsTable)
+      .where(and(
+        eq(dailyQuestCompletionsTable.walletAddress, walletAddress),
+        eq(dailyQuestCompletionsTable.dayKey, today),
+        inArray(dailyQuestCompletionsTable.questId, [...REFERRAL_QUALIFYING_QUEST_IDS]),
+      ))
+    : [];
+  const completedQuestIds = referralRecord?.status === "rewarded"
+    ? referralRecord.qualifiedDayKey
+      ? [...REFERRAL_QUALIFYING_QUEST_IDS]
+      : []
+    : completedToday.map((row) => row.questId as (typeof REFERRAL_QUALIFYING_QUEST_IDS)[number]);
   const leaderboard = await db
     .select({
       walletAddress: referralsTable.referrerWalletAddress,
@@ -362,10 +417,57 @@ export async function getReferralSummary(walletAddress: string) {
     .orderBy(desc(sql`count(*) filter (where ${referralsTable.rewardedAt} is not null)`), asc(referralsTable.referrerWalletAddress))
     .limit(10);
   return {
-    referralCount: ownCounts?.successful ?? 0,
-    pendingReferralCount: ownCounts?.pending ?? 0,
+    referralCount: ownCount?.successful ?? 0,
+    pendingReferralCount: ownCount?.pending ?? 0,
     rewardPoints: REFERRAL_REWARD_HUNDREDTHS / POINT,
     leaderboard,
+    myReferralQualification: referralRecord
+      ? {
+        status: referralRecord.status,
+        completedQuestCount: referralRecord.status === "rewarded" && referralRecord.qualifiedDayKey
+          ? REFERRAL_QUALIFYING_QUEST_IDS.length
+          : completedQuestIds.length,
+        requiredQuestCount: REFERRAL_QUALIFYING_QUEST_IDS.length,
+        completedQuestIds,
+        qualifiedDayKey: referralRecord.qualifiedDayKey,
+        rewardedAt: referralRecord.rewardedAt?.toISOString() ?? null,
+      }
+      : null,
+  };
+}
+
+export async function getReferralBurstReview(now = new Date()) {
+  const windowStartedAt = new Date(now.getTime() - REFERRAL_BURST_WINDOW_MS);
+  const recentReferralCount = sql<number>`count(*)::int`.mapWith(Number);
+  const qualifiedReferralCount = sql<number>`count(*) filter (where ${referralsTable.rewardedAt} is not null)::int`.mapWith(Number);
+  const rows = await db
+    .select({
+      referrerWalletAddress: referralsTable.referrerWalletAddress,
+      recentReferralCount,
+      qualifiedReferralCount,
+      firstReferralAt: sql<Date>`min(${referralsTable.createdAt})`.mapWith((value) => new Date(String(value))),
+      latestReferralAt: sql<Date>`max(${referralsTable.createdAt})`.mapWith((value) => new Date(String(value))),
+    })
+    .from(referralsTable)
+    .where(gte(referralsTable.createdAt, windowStartedAt))
+    .groupBy(referralsTable.referrerWalletAddress)
+    .having(sql`
+      count(*) >= ${REFERRAL_SIGNUP_BURST_THRESHOLD}
+      OR count(*) FILTER (WHERE ${referralsTable.rewardedAt} IS NOT NULL) >= ${REFERRAL_QUALIFICATION_BURST_THRESHOLD}
+    `)
+    .orderBy(desc(recentReferralCount), desc(qualifiedReferralCount), asc(referralsTable.referrerWalletAddress))
+    .limit(50);
+
+  return {
+    windowStartedAt: windowStartedAt.toISOString(),
+    signupBurstThreshold: REFERRAL_SIGNUP_BURST_THRESHOLD,
+    qualificationBurstThreshold: REFERRAL_QUALIFICATION_BURST_THRESHOLD,
+    items: rows.map((row) => ({
+      ...row,
+      firstReferralAt: row.firstReferralAt.toISOString(),
+      latestReferralAt: row.latestReferralAt.toISOString(),
+      signals: classifyReferralBurst(row.recentReferralCount, row.qualifiedReferralCount),
+    })),
   };
 }
 
