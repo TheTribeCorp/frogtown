@@ -73,6 +73,7 @@ function ReportControl({
   const [details, setDetails] = useState('');
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [submittedLabel, setSubmittedLabel] = useState('Reported');
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -80,8 +81,9 @@ function ReportControl({
     reportMutation.mutate({
       data: { subjectType, subjectId, category, details: details.trim() || undefined },
     }, {
-      onSuccess: () => {
+      onSuccess: (result) => {
         setSubmitted(true);
+        setSubmittedLabel(result.alreadyReported ? 'Already reported' : 'Report sent');
         setOpen(false);
         onReported();
       },
@@ -89,8 +91,9 @@ function ReportControl({
     });
   };
 
-  if (reportedByMe || submitted) {
-    return <span className="inline-flex items-center gap-1.5 px-2 text-[10px] text-[hsl(var(--muted-foreground))]" aria-label="Already reported"><Flag className="size-3" /> Reported</span>;
+  if (submitted || reportedByMe) {
+    const statusLabel = submitted ? submittedLabel : 'Reported';
+    return <span className="inline-flex items-center gap-1.5 px-2 text-[10px] text-[hsl(var(--muted-foreground))]" aria-label={statusLabel} data-testid={`status-report-${subjectType}-${subjectId}`}><Flag className="size-3" /> {statusLabel}</span>;
   }
 
   return (
@@ -112,6 +115,7 @@ function ReportControl({
             value={category}
             onChange={(event) => setCategory(event.target.value as ReportCategory)}
             className="mt-2 w-full rounded-lg border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-2.5 py-2 text-xs"
+            data-testid={`input-report-category-${subjectType}-${subjectId}`}
           >
             <option value="spam">Spam or scams</option>
             <option value="harassment">Harassment</option>
@@ -129,6 +133,7 @@ function ReportControl({
             placeholder="Optional context"
             rows={2}
             className="mt-2 w-full resize-y rounded-lg border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-2.5 py-2 text-xs"
+            data-testid={`input-report-details-${subjectType}-${subjectId}`}
           />
           {error && <p role="alert" className="mt-2 text-[10px] text-[hsl(var(--destructive))]">{error}</p>}
           <div className="mt-2 flex justify-end gap-2">

@@ -819,7 +819,13 @@ paths:
               $ref: "#/components/schemas/TimelineReportInput"
       responses:
         "201":
-          description: Report recorded or already recorded
+          description: A new report was recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineReportResult"
+        "200":
+          description: This wallet had already reported this content
           content:
             application/json:
               schema:
@@ -838,6 +844,22 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Reported post or comment not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: This wallet has reached the report submission limit
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Report could not be recorded
           content:
             application/json:
               schema:
@@ -2007,7 +2029,9 @@ components:
           type: string
         reported:
           type: boolean
-      required: [subjectType, subjectId, reported]
+        alreadyReported:
+          type: boolean
+      required: [subjectType, subjectId, reported, alreadyReported]
     TimelineModeratorAccess:
       type: object
       properties:

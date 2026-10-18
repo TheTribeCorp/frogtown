@@ -54,19 +54,22 @@ const MAX_PAGE_SIZE = 50;
 const FEED_RATE_WINDOW_MS = 10 * 60 * 1000;
 const MAX_POSTS_PER_WINDOW = 5;
 const MAX_COMMENTS_PER_WINDOW = 15;
+const MAX_REPORTS_PER_WINDOW = 10;
 type TimelineTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 type TimelineCursor = { createdAt: Date; id: string };
 
 class TimelineRateLimitError extends Error {
-  constructor(readonly retryAfterSeconds: number, contentType: "post" | "comment") {
+  constructor(readonly retryAfterSeconds: number, contentType: "post" | "comment" | "report") {
     super(contentType === "post"
       ? "You have shared several posts recently. Please wait a little before posting again."
-      : "You have left several comments recently. Please wait a little before commenting again.");
+      : contentType === "comment"
+        ? "You have left several comments recently. Please wait a little before commenting again."
+        : "You have sent several reports recently. Please wait a little before reporting more content.");
   }
 }
 
-function throwTimelineRateLimit(oldestCreatedAt: string | null, contentType: "post" | "comment"): never {
+function throwTimelineRateLimit(oldestCreatedAt: string | null, contentType: "post" | "comment" | "report"): never {
   const oldestTimestamp = oldestCreatedAt ? Date.parse(oldestCreatedAt) : Number.NaN;
   const retryAt = (Number.isFinite(oldestTimestamp) ? oldestTimestamp : Date.now()) + FEED_RATE_WINDOW_MS;
   const retryAfterSeconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
@@ -76,7 +79,7 @@ function throwTimelineRateLimit(oldestCreatedAt: string | null, contentType: "po
 async function lockTimelineRateLimit(
   tx: TimelineTransaction,
   walletAddress: string,
-  contentType: "post" | "comment",
+  contentType: "post" | "comment" | "report",
 ) {
   const lockScope = `timeline-${contentType}`;
   await tx.execute(sql`
@@ -117,6 +120,23 @@ async function enforceCommentRateLimit(tx: TimelineTransaction, walletAddress: s
     ));
   if (Number(activity?.count ?? 0) >= MAX_COMMENTS_PER_WINDOW) {
     throwTimelineRateLimit(activity?.oldestCreatedAt ?? null, "comment");
+  }
+}
+
+async function enforceReportRateLimit(tx: TimelineTransaction, walletAddress: string) {
+  const cutoff = new Date(Date.now() - FEED_RATE_WINDOW_MS);
+  const [activity] = await tx
+    .select({
+      count: sql<number>`count(*)::int`,
+      oldestCreatedAt: sql<string | null>`min(${timelineContentReportsTable.createdAt})::text`,
+    })
+    .from(timelineContentReportsTable)
+    .where(and(
+      eq(timelineContentReportsTable.walletAddress, walletAddress),
+      gt(timelineContentReportsTable.createdAt, cutoff),
+    ));
+  if (Number(activity?.count ?? 0) >= MAX_REPORTS_PER_WINDOW) {
+    throwTimelineRateLimit(activity?.oldestCreatedAt ?? null, "report");
   }
 }
 
@@ -569,33 +589,64 @@ router.post("/timeline/reports", async (req, res) => {
   }
   const { subjectType, subjectId, category, details } = parsed.data;
   try {
-    const exists = subjectType === "post"
-      ? await postExists(subjectId)
-      : Boolean((await db
-        .select({ id: timelinePostCommentsTable.id })
-        .from(timelinePostCommentsTable)
-        .where(eq(timelinePostCommentsTable.id, subjectId))
-        .limit(1))[0]);
-    if (!exists) {
+    const result = await db.transaction(async (tx) => {
+      await lockTimelineRateLimit(tx, walletAddress, "report");
+      const exists = subjectType === "post"
+        ? Boolean((await tx
+          .select({ id: timelinePostsTable.id })
+          .from(timelinePostsTable)
+          .where(eq(timelinePostsTable.id, subjectId))
+          .limit(1))[0])
+        : Boolean((await tx
+          .select({ id: timelinePostCommentsTable.id })
+          .from(timelinePostCommentsTable)
+          .where(eq(timelinePostCommentsTable.id, subjectId))
+          .limit(1))[0]);
+      if (!exists) return "missing" as const;
+
+      const reportKey = and(
+        eq(timelineContentReportsTable.subjectType, subjectType),
+        eq(timelineContentReportsTable.subjectId, subjectId),
+        eq(timelineContentReportsTable.walletAddress, walletAddress),
+      );
+      const previous = await tx
+        .select({ subjectId: timelineContentReportsTable.subjectId })
+        .from(timelineContentReportsTable)
+        .where(reportKey)
+        .limit(1);
+      if (previous.length > 0) return "duplicate" as const;
+
+      await enforceReportRateLimit(tx, walletAddress);
+      const inserted = await tx
+        .insert(timelineContentReportsTable)
+        .values({
+          subjectType,
+          subjectId,
+          walletAddress,
+          category,
+          details: details?.trim() || null,
+        })
+        .onConflictDoNothing()
+        .returning({ subjectId: timelineContentReportsTable.subjectId });
+      return inserted.length > 0 ? "created" as const : "duplicate" as const;
+    });
+    if (result === "missing") {
       res.status(404).json({ error: "Reported content was not found." });
       return;
     }
-    await db
-      .insert(timelineContentReportsTable)
-      .values({
-        subjectType,
-        subjectId,
-        walletAddress,
-        category,
-        details: details?.trim() || null,
-      })
-      .onConflictDoNothing();
-    res.status(201).json(ReportTimelineContentResponse.parse({
+    const alreadyReported = result === "duplicate";
+    res.status(alreadyReported ? 200 : 201).json(ReportTimelineContentResponse.parse({
       subjectType,
       subjectId,
       reported: true,
+      alreadyReported,
     }));
-  } catch {
+  } catch (error) {
+    if (error instanceof TimelineRateLimitError) {
+      res.setHeader("Retry-After", String(error.retryAfterSeconds));
+      res.status(429).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: "Unable to record this report." });
   }
 });

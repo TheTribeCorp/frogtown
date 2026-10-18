@@ -1382,6 +1382,131 @@ test("timeline paging rejects invalid cursors and reports require an existing su
     body: { subjectType: "post", subjectId: "missing-post", category: "spam" },
   });
   assert.equal(missingSubject.status, 404);
+
+  const oversizedDetails = await request("/api/timeline/reports", {
+    method: "POST",
+    cookie,
+    body: {
+      subjectType: "post",
+      subjectId: "missing-post",
+      category: "spam",
+      details: "x".repeat(1001),
+    },
+  });
+  assert.equal(oversizedDetails.status, 400);
+
+  const commentAuthorCookie = sessionCookie(randomWalletAddress());
+  const commentReporterCookie = sessionCookie(randomWalletAddress());
+  let commentPostId;
+  try {
+    const post = await request("/api/timeline/posts", {
+      method: "POST",
+      cookie: commentAuthorCookie,
+      body: { body: "launch-test comment report target" },
+    });
+    assert.equal(post.status, 201);
+    commentPostId = (await post.json()).id;
+    const comment = await request(`/api/timeline/posts/${commentPostId}/comments`, {
+      method: "POST",
+      cookie: commentAuthorCookie,
+      body: { body: "launch-test comment to report" },
+    });
+    assert.equal(comment.status, 201);
+    const commentId = (await comment.json()).id;
+    const commentReport = await request("/api/timeline/reports", {
+      method: "POST",
+      cookie: commentReporterCookie,
+      body: { subjectType: "comment", subjectId: commentId, category: "harassment" },
+    });
+    assert.equal(commentReport.status, 201);
+    assert.deepEqual(await commentReport.json(), {
+      subjectType: "comment",
+      subjectId: commentId,
+      reported: true,
+      alreadyReported: false,
+    });
+  } finally {
+    if (commentPostId) {
+      await request(`/api/timeline/posts/${commentPostId}`, {
+        method: "DELETE",
+        cookie: commentAuthorCookie,
+      });
+    }
+  }
+});
+
+test("timeline reports bind to the signed-in wallet, deduplicate, and limit concurrent bursts", async () => {
+  const reporter = randomWalletAddress();
+  const spoofedWallet = randomWalletAddress();
+  const subjectIds = Array.from({ length: 11 }, () => `launch-test-report-${randomUUID()}`);
+  const seed = new Client({ connectionString: process.env.DATABASE_URL });
+  await seed.connect();
+
+  try {
+    await seed.query(
+      `INSERT INTO swamp_timeline_posts (id, author_address, body)
+       SELECT post_id, $2, 'launch-test report fixture'
+       FROM unnest($1::text[]) AS source(post_id)`,
+      [subjectIds, randomWalletAddress()],
+    );
+
+    const responses = await Promise.all(subjectIds.map((subjectId) => request("/api/timeline/reports", {
+      method: "POST",
+      cookie: sessionCookie(reporter),
+      body: {
+        subjectType: "post",
+        subjectId,
+        category: "spam",
+        details: "Concurrent report test.",
+        walletAddress: spoofedWallet,
+      },
+    })));
+    const results = await Promise.all(responses.map((response) => response.json()));
+    const statuses = responses.map((response) => response.status).sort((left, right) => left - right);
+    assert.deepEqual(statuses, [...Array(10).fill(201), 429]);
+
+    const limitedIndex = responses.findIndex((response) => response.status === 429);
+    assert.ok(Number(responses[limitedIndex].headers.get("retry-after")) > 0);
+    assert.match(results[limitedIndex].error, /several reports/i);
+
+    const createdIndex = responses.findIndex((response) => response.status === 201);
+    assert.equal(results[createdIndex].reported, true);
+    assert.equal(results[createdIndex].alreadyReported, false);
+    const duplicate = await request("/api/timeline/reports", {
+      method: "POST",
+      cookie: sessionCookie(reporter),
+      body: {
+        subjectType: "post",
+        subjectId: subjectIds[createdIndex],
+        category: "spam",
+        walletAddress: spoofedWallet,
+      },
+    });
+    assert.equal(duplicate.status, 200);
+    assert.deepEqual(await duplicate.json(), {
+      subjectType: "post",
+      subjectId: subjectIds[createdIndex],
+      reported: true,
+      alreadyReported: true,
+    });
+
+    const storedReports = await seed.query(
+      `SELECT subject_id, wallet_address
+       FROM swamp_timeline_content_reports
+       WHERE subject_type = 'post' AND subject_id = ANY($1::text[])`,
+      [subjectIds],
+    );
+    assert.equal(storedReports.rows.length, 10);
+    assert.ok(storedReports.rows.every((report) => report.wallet_address === reporter));
+  } finally {
+    await seed.query(
+      `DELETE FROM swamp_timeline_content_reports
+       WHERE subject_type = 'post' AND subject_id = ANY($1::text[])`,
+      [subjectIds],
+    );
+    await seed.query("DELETE FROM swamp_timeline_posts WHERE id = ANY($1::text[])", [subjectIds]);
+    await seed.end();
+  }
 });
 
 test("group discovery uses persisted counts and does not invent online presence", async () => {

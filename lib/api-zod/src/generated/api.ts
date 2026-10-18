@@ -704,7 +704,8 @@ export const ReportTimelineContentBody = zod.object({
 export const ReportTimelineContentResponse = zod.object({
   "subjectType": zod.enum(['post', 'comment']),
   "subjectId": zod.string(),
-  "reported": zod.boolean()
+  "reported": zod.boolean(),
+  "alreadyReported": zod.boolean()
 })
 
 

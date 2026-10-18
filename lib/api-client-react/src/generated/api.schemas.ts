@@ -463,6 +463,7 @@ export interface TimelineReportResult {
   subjectType: TimelineReportResultSubjectType;
   subjectId: string;
   reported: boolean;
+  alreadyReported: boolean;
 }
 
 export interface TimelineModeratorAccess {
