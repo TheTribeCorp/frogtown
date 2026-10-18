@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import {
   coinFlipsTable,
   dailyQuestActionsTable,
@@ -19,6 +19,7 @@ import {
   REFERRAL_REWARD_HUNDREDTHS,
   REFERRAL_SIGNUP_BURST_THRESHOLD,
 } from "./referral-rules";
+import { getWeeklyCommunityEventDetails } from "./weekly-community-event";
 
 const POINT = 100;
 const FROG_BADGE_THRESHOLD = 10_000;
@@ -347,6 +348,89 @@ export async function getGamificationSummary(walletAddress: string) {
     communityPointsEarned: pointsValue(communityAwards[0]?.pointsHundredths ?? 0),
     communityGoalPoints: COMMUNITY_POINT_GOAL,
     tasks,
+  };
+}
+
+export async function getWeeklyCommunityEvent(walletAddress: string, now = new Date()) {
+  const event = getWeeklyCommunityEventDetails(now);
+  const actionRange = and(
+    gte(dailyQuestActionsTable.dayKey, event.weekStart),
+    lte(dailyQuestActionsTable.dayKey, event.weekEnd),
+    inArray(dailyQuestActionsTable.actionType, ["timeline_post", "room_message"]),
+  );
+  const referralRange = and(
+    isNotNull(referralsTable.rewardedAt),
+    gte(referralsTable.qualifiedDayKey, event.weekStart),
+    lte(referralsTable.qualifiedDayKey, event.weekEnd),
+  );
+  const [communityActions, myActions, communityReferrals, myReferrals] = await Promise.all([
+    db
+      .select({
+        actionType: dailyQuestActionsTable.actionType,
+        memberCount: sql<number>`count(distinct ${dailyQuestActionsTable.walletAddress})::int`.mapWith(Number),
+      })
+      .from(dailyQuestActionsTable)
+      .where(actionRange)
+      .groupBy(dailyQuestActionsTable.actionType),
+    db
+      .select({ actionType: dailyQuestActionsTable.actionType })
+      .from(dailyQuestActionsTable)
+      .where(and(
+        eq(dailyQuestActionsTable.walletAddress, walletAddress),
+        gte(dailyQuestActionsTable.dayKey, event.weekStart),
+        lte(dailyQuestActionsTable.dayKey, event.weekEnd),
+        inArray(dailyQuestActionsTable.actionType, ["timeline_post", "room_message"]),
+      ))
+      .groupBy(dailyQuestActionsTable.actionType),
+    db
+      .select({ count: sql<number>`count(*)::int`.mapWith(Number) })
+      .from(referralsTable)
+      .where(referralRange),
+    db
+      .select({ count: sql<number>`count(*)::int`.mapWith(Number) })
+      .from(referralsTable)
+      .where(and(
+        referralRange,
+        eq(referralsTable.referrerWalletAddress, walletAddress),
+      )),
+  ]);
+
+  const communityActionCounts = new Map(
+    communityActions.map((row) => [row.actionType, row.memberCount]),
+  );
+  const myActionTypes = new Set(myActions.map((row) => row.actionType));
+
+  return {
+    ...event,
+    missions: [
+      {
+        id: "timeline_post" as const,
+        title: "Add your voice to the timeline",
+        description: "Distinct members who post to the timeline this week.",
+        progress: communityActionCounts.get("timeline_post") ?? 0,
+        target: 25,
+        myProgress: myActionTypes.has("timeline_post") ? 1 : 0,
+        action: "timeline" as const,
+      },
+      {
+        id: "room_message" as const,
+        title: "Bring the rooms to life",
+        description: "Distinct members who send a message in a community room this week.",
+        progress: communityActionCounts.get("room_message") ?? 0,
+        target: 25,
+        myProgress: myActionTypes.has("room_message") ? 1 : 0,
+        action: "groups" as const,
+      },
+      {
+        id: "qualified_invite" as const,
+        title: "Welcome active new members",
+        description: "New invitees who finish all four daily quests in one day.",
+        progress: communityReferrals[0]?.count ?? 0,
+        target: 5,
+        myProgress: myReferrals[0]?.count ?? 0,
+        action: "invite" as const,
+      },
+    ],
   };
 }
 

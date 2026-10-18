@@ -131,3 +131,7 @@ export * from './walletSession';
 export * from './walletSessionStatus';
 export * from './walletSessionStatusStatus';
 export * from './walletUsernameInput';
+export * from './weeklyCommunityEvent';
+export * from './weeklyCommunityMission';
+export * from './weeklyCommunityMissionAction';
+export * from './weeklyCommunityMissionId';

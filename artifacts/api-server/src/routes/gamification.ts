@@ -6,6 +6,7 @@ import {
   GetGamificationLeaderboardResponse,
   GetGamificationReferralsResponse,
   GetGamificationSummaryResponse,
+  GetGamificationWeeklyEventResponse,
   ListGamificationReferralBurstsResponse,
   PlayGamificationCoinFlipBody,
   PlayGamificationCoinFlipResponse,
@@ -18,6 +19,7 @@ import {
   getGamificationHistory,
   getGamificationLeaderboard,
   getGamificationSummary,
+  getWeeklyCommunityEvent,
   getReferralBurstReview,
   getReferralSummary,
   InsufficientPointsError,
@@ -36,6 +38,17 @@ router.get("/gamification/summary", async (req, res): Promise<void> => {
     res.json(GetGamificationSummaryResponse.parse(await getGamificationSummary(walletAddress)));
   } catch {
     res.status(500).json({ error: "Unable to load daily quests and points." });
+  }
+});
+
+router.get("/gamification/weekly-event", async (req, res): Promise<void> => {
+  const walletAddress = requireAuth(req, res);
+  if (!walletAddress) return;
+  try {
+    res.json(GetGamificationWeeklyEventResponse.parse(await getWeeklyCommunityEvent(walletAddress)));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not load weekly community event.");
+    res.status(500).json({ error: "Unable to load this week's community event." });
   }
 });
 

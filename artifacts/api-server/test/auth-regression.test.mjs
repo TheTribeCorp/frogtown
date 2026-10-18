@@ -279,6 +279,7 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/timeline/moderation/reports", "GET"],
     ["/api/timeline/moderation/reports/post/post-test", "POST", { action: "dismiss" }],
     ["/api/gamification/summary", "GET"],
+    ["/api/gamification/weekly-event", "GET"],
     ["/api/gamification/check-in", "POST"],
     ["/api/gamification/leaderboard", "GET"],
     ["/api/gamification/coin-flips", "POST", { requestId: randomUUID(), choice: "heads" }],
@@ -1750,6 +1751,15 @@ test("daily quests, points, and coin flips are authenticated, idempotent, and se
   const task = (summary, id) => summary.tasks.find((entry) => entry.id === id);
 
   const initial = await getSummary();
+  const initialEventResponse = await request("/api/gamification/weekly-event", { cookie });
+  assert.equal(initialEventResponse.status, 200);
+  const initialEvent = await initialEventResponse.json();
+  assert.match(initialEvent.weekStart, /^\d{4}-\d{2}-\d{2}$/);
+  assert.match(initialEvent.weekEnd, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(initialEvent.missions.length, 3);
+  assert.ok(initialEvent.missions.every((mission) => !("walletAddress" in mission)));
+  assert.ok(initialEvent.missions.every((mission) => mission.myProgress === 0));
+
   const checkedIn = await request("/api/gamification/check-in", { method: "POST", cookie });
   assert.equal(checkedIn.status, 200);
   const afterCheckIn = await checkedIn.json();
@@ -1765,6 +1775,11 @@ test("daily quests, points, and coin flips are authenticated, idempotent, and se
   });
   assert.equal(ownPostResponse.status, 201);
   const ownPost = await ownPostResponse.json();
+  const eventAfterTimelinePost = await request("/api/gamification/weekly-event", { cookie });
+  assert.equal(eventAfterTimelinePost.status, 200);
+  const updatedEvent = await eventAfterTimelinePost.json();
+  assert.equal(updatedEvent.missions.find((mission) => mission.id === "timeline_post").myProgress, 1);
+
   const ownLike = await request(`/api/timeline/posts/${ownPost.id}/likes`, { method: "POST", cookie });
   assert.equal(ownLike.status, 200);
   const ownComment = await request(`/api/timeline/posts/${ownPost.id}/comments`, {

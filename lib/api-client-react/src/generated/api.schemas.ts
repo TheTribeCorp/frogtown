@@ -757,6 +757,47 @@ export interface GamificationTask {
   target: number;
 }
 
+export type WeeklyCommunityMissionId = typeof WeeklyCommunityMissionId[keyof typeof WeeklyCommunityMissionId];
+
+
+export const WeeklyCommunityMissionId = {
+  timeline_post: 'timeline_post',
+  room_message: 'room_message',
+  qualified_invite: 'qualified_invite',
+} as const;
+
+export type WeeklyCommunityMissionAction = typeof WeeklyCommunityMissionAction[keyof typeof WeeklyCommunityMissionAction];
+
+
+export const WeeklyCommunityMissionAction = {
+  timeline: 'timeline',
+  groups: 'groups',
+  invite: 'invite',
+} as const;
+
+export interface WeeklyCommunityMission {
+  id: WeeklyCommunityMissionId;
+  title: string;
+  description: string;
+  /** @minimum 0 */
+  progress: number;
+  /** @minimum 1 */
+  target: number;
+  /** @minimum 0 */
+  myProgress: number;
+  action: WeeklyCommunityMissionAction;
+}
+
+export interface WeeklyCommunityEvent {
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  weekStart: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  weekEnd: string;
+  title: string;
+  prompt: string;
+  missions: WeeklyCommunityMission[];
+}
+
 export type HermitMarketDataSource = typeof HermitMarketDataSource[keyof typeof HermitMarketDataSource];
 
 

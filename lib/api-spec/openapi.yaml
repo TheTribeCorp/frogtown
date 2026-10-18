@@ -1535,6 +1535,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /gamification/weekly-event:
+    get:
+      operationId: getGamificationWeeklyEvent
+      tags: [gamification]
+      summary: Get this week's community event and shared mission progress
+      responses:
+        "200":
+          description: Current weekly prompt and aggregated community mission progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklyCommunityEvent"
+        "401":
+          description: Wallet session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /gamification/history:
     get:
       operationId: getGamificationHistory
@@ -2558,6 +2576,47 @@ components:
         target:
           type: integer
       required: [id, completed, progress, target]
+    WeeklyCommunityMission:
+      type: object
+      properties:
+        id:
+          type: string
+          enum: [timeline_post, room_message, qualified_invite]
+        title:
+          type: string
+        description:
+          type: string
+        progress:
+          type: integer
+          minimum: 0
+        target:
+          type: integer
+          minimum: 1
+        myProgress:
+          type: integer
+          minimum: 0
+        action:
+          type: string
+          enum: [timeline, groups, invite]
+      required: [id, title, description, progress, target, myProgress, action]
+    WeeklyCommunityEvent:
+      type: object
+      properties:
+        weekStart:
+          type: string
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        weekEnd:
+          type: string
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        title:
+          type: string
+        prompt:
+          type: string
+        missions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeeklyCommunityMission"
+      required: [weekStart, weekEnd, title, prompt, missions]
     HermitMarketData:
       type: object
       properties:

@@ -37,6 +37,7 @@ import {
   type GetGamificationHistoryQueryResult,
 } from '@workspace/api-client-react';
 import { HermitTick } from '@/components/hermit-tick';
+import { WeeklyCommunityEvent } from '@/components/weekly-community-event';
 
 type DailyQuestsPageProps = { walletAddress?: string };
 type FlipChoice = 'heads' | 'tails';
@@ -340,6 +341,13 @@ export function DailyQuestsPage({ walletAddress }: DailyQuestsPageProps) {
               </div>
               <p className="mt-2 text-[9px] leading-4 text-[hsl(var(--muted-foreground))]">Lifetime points awarded across Frogtown. Coin-flip losses don’t pull the community total backward.</p>
             </section>
+
+            <WeeklyCommunityEvent
+              walletAddress={walletAddress}
+              onCopyInvite={() => void copyReferralLink()}
+              inviteCopied={referralCopyState === 'copied'}
+              inviteCopyError={referralCopyState === 'error'}
+            />
 
             <section className="rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card)/.78)] p-4 shadow-[0_10px_30px_hsl(155_27%_15%/.035)] sm:p-5" data-testid="panel-daily-quests">
               <div className="mb-4 flex items-center justify-between gap-3 px-1">

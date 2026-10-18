@@ -1152,6 +1152,35 @@ export const GetGamificationSummaryResponse = zod.object({
 
 
 /**
+ * @summary Get this week's community event and shared mission progress
+ */
+export const getGamificationWeeklyEventResponseWeekStartRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getGamificationWeeklyEventResponseWeekEndRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getGamificationWeeklyEventResponseMissionsItemProgressMin = 0;
+
+
+export const getGamificationWeeklyEventResponseMissionsItemMyProgressMin = 0;
+
+
+
+export const GetGamificationWeeklyEventResponse = zod.object({
+  "weekStart": zod.string().regex(getGamificationWeeklyEventResponseWeekStartRegExp),
+  "weekEnd": zod.string().regex(getGamificationWeeklyEventResponseWeekEndRegExp),
+  "title": zod.string(),
+  "prompt": zod.string(),
+  "missions": zod.array(zod.object({
+  "id": zod.enum(['timeline_post', 'room_message', 'qualified_invite']),
+  "title": zod.string(),
+  "description": zod.string(),
+  "progress": zod.number().int().min(getGamificationWeeklyEventResponseMissionsItemProgressMin),
+  "target": zod.number().int().min(1),
+  "myProgress": zod.number().int().min(getGamificationWeeklyEventResponseMissionsItemMyProgressMin),
+  "action": zod.enum(['timeline', 'groups', 'invite'])
+}))
+})
+
+
+/**
  * @summary List the authenticated wallet's quest awards and coin-flip results
  */
 export const getGamificationHistoryQueryCursorMax = 512;

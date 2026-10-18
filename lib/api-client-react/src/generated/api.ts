@@ -98,7 +98,8 @@ import type {
   WalletProfile,
   WalletSession,
   WalletSessionStatus,
-  WalletUsernameInput
+  WalletUsernameInput,
+  WeeklyCommunityEvent
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -5254,6 +5255,107 @@ export function useGetGamificationSummary<TData = Awaited<ReturnType<typeof getG
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetGamificationSummaryQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetGamificationWeeklyEventUrl = () => {
+
+
+
+
+  return `/api/gamification/weekly-event`
+}
+
+/**
+ * @summary Get this week's community event and shared mission progress
+ */
+export const getGamificationWeeklyEvent = async ( options?: Parameters<typeof customFetch>[1]): Promise<WeeklyCommunityEvent> => {
+
+  return customFetch<WeeklyCommunityEvent>(getGetGamificationWeeklyEventUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGamificationWeeklyEventQueryKey = () => {
+    return [
+    `/api/gamification/weekly-event`
+    ] as const;
+    }
+
+
+export const getGetGamificationWeeklyEventQueryOptions = <TData = Awaited<ReturnType<typeof getGamificationWeeklyEvent>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationWeeklyEvent>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGamificationWeeklyEventQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGamificationWeeklyEvent>>> = ({ signal }) => getGamificationWeeklyEvent({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGamificationWeeklyEvent>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGamificationWeeklyEventQueryResult = NonNullable<Awaited<ReturnType<typeof getGamificationWeeklyEvent>>>
+export type GetGamificationWeeklyEventQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetGamificationWeeklyEvent<TData = Awaited<ReturnType<typeof getGamificationWeeklyEvent>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationWeeklyEvent>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGamificationWeeklyEvent>>,
+          TError,
+          Awaited<ReturnType<typeof getGamificationWeeklyEvent>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGamificationWeeklyEvent<TData = Awaited<ReturnType<typeof getGamificationWeeklyEvent>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationWeeklyEvent>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGamificationWeeklyEvent>>,
+          TError,
+          Awaited<ReturnType<typeof getGamificationWeeklyEvent>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGamificationWeeklyEvent<TData = Awaited<ReturnType<typeof getGamificationWeeklyEvent>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationWeeklyEvent>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get this week's community event and shared mission progress
+ */
+
+export function useGetGamificationWeeklyEvent<TData = Awaited<ReturnType<typeof getGamificationWeeklyEvent>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGamificationWeeklyEvent>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGamificationWeeklyEventQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
