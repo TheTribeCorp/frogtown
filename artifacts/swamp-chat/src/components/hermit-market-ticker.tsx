@@ -54,7 +54,7 @@ export function HermitMarketTicker({ walletAddress }: { walletAddress?: string }
 
   return (
     <div
-      className="flex min-w-0 items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.68)] px-2 py-1.5 sm:gap-3 sm:px-3"
+      className="flex min-w-0 items-center gap-1.5 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.68)] px-1.5 py-1.5 sm:gap-2.5 sm:px-2.5"
       title={market ? `Market capitalization from ${market.source}; updated ${new Date(market.updatedAt).toLocaleTimeString()}.` : 'Live $HERMIT market capitalization'}
       aria-label={market
         ? `$HERMIT market capitalization ${formatMarketCap(market.marketCapUsd)}`
@@ -64,9 +64,9 @@ export function HermitMarketTicker({ walletAddress }: { walletAddress?: string }
       <TrendingUp className={`hidden size-4 shrink-0 sm:block ${market?.isStale ? 'text-[hsl(var(--accent))]' : 'text-[hsl(var(--primary))]'}`} aria-hidden="true" />
       {market ? (
         <>
-          <div className="min-w-0">
-            <p className="mono text-[8px] uppercase tracking-[.14em] text-[hsl(var(--muted-foreground))]">Market cap</p>
-            <p className="mono text-[10px] font-semibold tabular-nums sm:text-[11px]" data-testid="text-hermit-market-cap">{formatMarketCap(market.marketCapUsd)}</p>
+          <div className="shrink-0 rounded-lg bg-[hsl(var(--primary)/.09)] px-2 py-1 ring-1 ring-inset ring-[hsl(var(--primary)/.15)] sm:px-2.5">
+            <p className="mono text-[8px] font-semibold uppercase tracking-[.13em] text-[hsl(var(--primary))]">Market cap</p>
+            <p className="mono text-[12px] font-bold leading-4 tabular-nums text-[hsl(var(--primary))] sm:text-sm" data-testid="text-hermit-market-cap">{formatMarketCap(market.marketCapUsd)}</p>
           </div>
           {market.isStale && <span className="size-1.5 shrink-0 rounded-full bg-[hsl(var(--accent))]" aria-label="Showing cached market data" />}
         </>

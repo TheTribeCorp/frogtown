@@ -297,10 +297,12 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
       <button
         type="button"
         onClick={openDialog}
-        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[hsl(var(--primary))] px-2.5 py-2 text-[10px] font-semibold text-[hsl(var(--primary-foreground))] transition hover:opacity-90 sm:px-3 sm:text-xs"
+        aria-label="Buy $HERMIT with XRP"
+        title="Buy $HERMIT"
+        className="inline-flex shrink-0 items-center rounded-lg bg-[hsl(var(--primary))] px-2 py-1.5 text-[9px] font-semibold text-[hsl(var(--primary-foreground))] transition hover:opacity-90 sm:px-2.5 sm:py-1.5 sm:text-[10px]"
         data-testid="button-buy-hermit"
       >
-        Buy $HERMIT
+        Buy
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
