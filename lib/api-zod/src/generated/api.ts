@@ -97,7 +97,7 @@ export const GetWalletHermitTickResponse = zod.object({
 
 
 /**
- * @summary Get the authenticated wallet's $HERMIT trustline balance
+ * @summary Get the authenticated wallet's $HERMIT and XRP balances
  */
 export const getWalletHermitBalanceQueryRefreshDefault = false;
 
@@ -107,6 +107,8 @@ export const GetWalletHermitBalanceQueryParams = zod.object({
 
 export const GetWalletHermitBalanceResponse = zod.object({
   "balance": zod.string().nullable(),
+  "xrpBalance": zod.string().nullable(),
+  "xrpCheckStatus": zod.enum(['checked', 'unavailable']),
   "trustlineExists": zod.boolean().nullable(),
   "checkStatus": zod.enum(['checked', 'unavailable']),
   "checkedAt": zod.coerce.date()

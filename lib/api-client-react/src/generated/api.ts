@@ -713,7 +713,7 @@ export const getGetWalletHermitBalanceUrl = (params?: GetWalletHermitBalancePara
 }
 
 /**
- * @summary Get the authenticated wallet's $HERMIT trustline balance
+ * @summary Get the authenticated wallet's $HERMIT and XRP balances
  */
 export const getWalletHermitBalance = async (params?: GetWalletHermitBalanceParams, options?: Parameters<typeof customFetch>[1]): Promise<WalletHermitBalance> => {
 
@@ -784,7 +784,7 @@ export function useGetWalletHermitBalance<TData = Awaited<ReturnType<typeof getW
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Get the authenticated wallet's $HERMIT trustline balance
+ * @summary Get the authenticated wallet's $HERMIT and XRP balances
  */
 
 export function useGetWalletHermitBalance<TData = Awaited<ReturnType<typeof getWalletHermitBalance>>, TError = ErrorType<ErrorResponse>>(

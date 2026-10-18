@@ -94,6 +94,14 @@ export interface WalletHermitTick {
   checkedAt: string;
 }
 
+export type WalletHermitBalanceXrpCheckStatus = typeof WalletHermitBalanceXrpCheckStatus[keyof typeof WalletHermitBalanceXrpCheckStatus];
+
+
+export const WalletHermitBalanceXrpCheckStatus = {
+  checked: 'checked',
+  unavailable: 'unavailable',
+} as const;
+
 export type WalletHermitBalanceCheckStatus = typeof WalletHermitBalanceCheckStatus[keyof typeof WalletHermitBalanceCheckStatus];
 
 
@@ -105,6 +113,9 @@ export const WalletHermitBalanceCheckStatus = {
 export interface WalletHermitBalance {
   /** @nullable */
   balance: string | null;
+  /** @nullable */
+  xrpBalance: string | null;
+  xrpCheckStatus: WalletHermitBalanceXrpCheckStatus;
   /** @nullable */
   trustlineExists: boolean | null;
   checkStatus: WalletHermitBalanceCheckStatus;

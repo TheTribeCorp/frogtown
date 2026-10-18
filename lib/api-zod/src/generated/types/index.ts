@@ -120,6 +120,7 @@ export * from './walletEncryptionResetInput';
 export * from './walletEncryptionResetResult';
 export * from './walletHermitBalance';
 export * from './walletHermitBalanceCheckStatus';
+export * from './walletHermitBalanceXrpCheckStatus';
 export * from './walletHermitTick';
 export * from './walletHermitTickCheckStatus';
 export * from './walletHermitTickTick';

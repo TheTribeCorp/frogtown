@@ -181,7 +181,7 @@ paths:
     get:
       operationId: getWalletHermitBalance
       tags: [wallet]
-      summary: Get the authenticated wallet's $HERMIT trustline balance
+      summary: Get the authenticated wallet's $HERMIT and XRP balances
       parameters:
         - in: query
           name: refresh
@@ -1844,6 +1844,11 @@ components:
       properties:
         balance:
           type: ["string", "null"]
+        xrpBalance:
+          type: ["string", "null"]
+        xrpCheckStatus:
+          type: string
+          enum: [checked, unavailable]
         trustlineExists:
           type: ["boolean", "null"]
         checkStatus:
@@ -1852,7 +1857,7 @@ components:
         checkedAt:
           type: string
           format: date-time
-      required: [balance, trustlineExists, checkStatus, checkedAt]
+      required: [balance, xrpBalance, xrpCheckStatus, trustlineExists, checkStatus, checkedAt]
     HermitBuyInput:
       type: object
       properties:

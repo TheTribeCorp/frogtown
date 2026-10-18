@@ -6,10 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { WalletHermitBalanceCheckStatus } from './walletHermitBalanceCheckStatus';
+import type { WalletHermitBalanceXrpCheckStatus } from './walletHermitBalanceXrpCheckStatus';
 
 export interface WalletHermitBalance {
   /** @nullable */
   balance: string | null;
+  /** @nullable */
+  xrpBalance: string | null;
+  xrpCheckStatus: WalletHermitBalanceXrpCheckStatus;
   /** @nullable */
   trustlineExists: boolean | null;
   checkStatus: WalletHermitBalanceCheckStatus;

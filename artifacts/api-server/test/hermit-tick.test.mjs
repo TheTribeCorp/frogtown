@@ -113,9 +113,19 @@ test("a successful XRPL lookup with no $HERMIT trustline has no tick", async () 
 test("authenticated balance lookup returns the trustline amount and uses the shared cache", async () => {
   const originalFetch = globalThis.fetch;
   const wallet = syntheticWallet(3_039);
-  let calls = 0;
-  globalThis.fetch = async () => {
-    calls += 1;
+  let lineCalls = 0;
+  let accountInfoCalls = 0;
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(String(init?.body));
+    if (request.method === "account_info") {
+      accountInfoCalls += 1;
+      assert.equal(request.params[0].account, wallet);
+      assert.equal(request.params[0].ledger_index, "validated");
+      return xrplResponse({
+        result: { validated: true, account_data: { Balance: "12345678" } },
+      });
+    }
+    lineCalls += 1;
     return xrplResponse({
       result: {
         lines: [{
@@ -130,12 +140,17 @@ test("authenticated balance lookup returns the trustline amount and uses the sha
   try {
     const balance = await getWalletHermitBalance(wallet);
     assert.equal(balance.balance, "12345.67");
+    assert.equal(balance.xrpBalance, "12.345678");
+    assert.equal(balance.xrpCheckStatus, "checked");
     assert.equal(balance.trustlineExists, true);
     assert.equal(balance.checkStatus, "checked");
 
     const tick = await getWalletHermitTick(wallet);
     assert.equal(tick.tick, "green");
-    assert.equal(calls, 1, "tick and balance requests share the same short cache");
+    const cachedBalance = await getWalletHermitBalance(wallet);
+    assert.equal(cachedBalance.xrpBalance, "12.345678");
+    assert.equal(lineCalls, 1, "tick and balance requests share the $HERMIT cache");
+    assert.equal(accountInfoCalls, 1, "native XRP balance uses its own short cache");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -151,8 +166,58 @@ test("unavailable balance lookups do not claim a zero balance or missing trustli
   try {
     const balance = await getWalletHermitBalance(wallet, true);
     assert.equal(balance.balance, null);
+    assert.equal(balance.xrpBalance, null);
+    assert.equal(balance.xrpCheckStatus, "unavailable");
     assert.equal(balance.trustlineExists, null);
     assert.equal(balance.checkStatus, "unavailable");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("an unactivated wallet has a checked zero XRP balance", async () => {
+  const originalFetch = globalThis.fetch;
+  const wallet = syntheticWallet(3_041);
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(String(init?.body));
+    if (request.method === "account_info") {
+      return xrplResponse({ result: { error: "actNotFound" } });
+    }
+    return emptyTrustlineResponse();
+  };
+
+  try {
+    const balance = await getWalletHermitBalance(wallet, true);
+    assert.equal(balance.xrpBalance, "0");
+    assert.equal(balance.xrpCheckStatus, "checked");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("XRP lookup failures do not hide a verified $HERMIT balance", async () => {
+  const originalFetch = globalThis.fetch;
+  const wallet = syntheticWallet(3_042);
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(String(init?.body));
+    if (request.method === "account_info") throw new Error("temporary account-info outage");
+    return xrplResponse({
+      result: {
+        lines: [{
+          account: wallet,
+          currency: "4845524D49540000000000000000000000000000",
+          balance: "-2.5",
+        }],
+      },
+    });
+  };
+
+  try {
+    const balance = await getWalletHermitBalance(wallet, true);
+    assert.equal(balance.balance, "2.5");
+    assert.equal(balance.checkStatus, "checked");
+    assert.equal(balance.xrpBalance, null);
+    assert.equal(balance.xrpCheckStatus, "unavailable");
   } finally {
     globalThis.fetch = originalFetch;
   }

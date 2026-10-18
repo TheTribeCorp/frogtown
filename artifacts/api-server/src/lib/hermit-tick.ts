@@ -8,12 +8,22 @@ export type HermitTickCheck = {
 
 export type HermitBalanceCheck = {
   balance: string | null;
+  xrpBalance: string | null;
+  xrpCheckStatus: "checked" | "unavailable";
   trustlineExists: boolean | null;
   checkStatus: "checked" | "unavailable";
   checkedAt: Date;
 };
 
-type HermitHoldingCheck = HermitTickCheck & HermitBalanceCheck;
+type HermitHoldingCheck = HermitTickCheck & {
+  balance: string | null;
+  trustlineExists: boolean | null;
+  checkStatus: "checked" | "unavailable";
+};
+type XrpBalanceCheck = {
+  balance: string | null;
+  checkStatus: "checked" | "unavailable";
+};
 
 export function hermitTickCacheControl(
   checkStatus: HermitTickCheck["checkStatus"],
@@ -52,6 +62,9 @@ type XrplAccountLinesResponse = {
 const cachedChecks = new Map<string, { value: HermitHoldingCheck; expiresAt: number }>();
 const pendingPublicChecks = new Map<string, Promise<HermitHoldingCheck>>();
 const pendingRefreshChecks = new Map<string, Promise<HermitHoldingCheck>>();
+const cachedXrpBalances = new Map<string, { value: XrpBalanceCheck; expiresAt: number }>();
+const pendingPublicXrpBalances = new Map<string, Promise<XrpBalanceCheck>>();
+const pendingRefreshXrpBalances = new Map<string, Promise<XrpBalanceCheck>>();
 
 type LookupPriority = "public" | "refresh";
 type LookupWaiter = {
@@ -286,13 +299,108 @@ export async function getWalletHermitBalance(
   walletAddress: string,
   forceRefresh = false,
 ): Promise<HermitBalanceCheck> {
-  const holding = await getWalletHermitHolding(walletAddress, forceRefresh);
+  const [holding, xrp] = await Promise.all([
+    getWalletHermitHolding(walletAddress, forceRefresh),
+    getWalletXrpBalance(walletAddress, forceRefresh),
+  ]);
   return {
     balance: holding.balance,
+    xrpBalance: xrp.balance,
+    xrpCheckStatus: xrp.checkStatus,
     trustlineExists: holding.trustlineExists,
     checkStatus: holding.checkStatus,
     checkedAt: holding.checkedAt,
   };
+}
+
+function xrpFromDrops(value: unknown): string {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) {
+    throw new Error("XRPL returned an invalid native XRP balance.");
+  }
+  const drops = BigInt(value);
+  const whole = drops / 1_000_000n;
+  const fraction = (drops % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
+  return `${whole.toString()}${fraction ? `.${fraction}` : ""}`;
+}
+
+async function requestXrpBalance(walletAddress: string): Promise<XrpBalanceCheck> {
+  const response = await fetch(XRPL_MAINNET_RPC, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      method: "account_info",
+      params: [{
+        account: walletAddress,
+        ledger_index: "validated",
+        strict: true,
+      }],
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!response.ok) throw new Error(`XRPL account lookup failed with status ${response.status}.`);
+  const payload = await response.json() as {
+    result?: {
+      error?: unknown;
+      validated?: unknown;
+      account_data?: { Balance?: unknown };
+    };
+  };
+  const result = payload.result;
+  if (!result) throw new Error("XRPL returned an invalid account-info response.");
+  if (result.error === "actNotFound") {
+    return { balance: "0", checkStatus: "checked" };
+  }
+  if (result.error || result.validated !== true) {
+    throw new Error("XRPL could not verify the native XRP balance.");
+  }
+  return {
+    balance: xrpFromDrops(result.account_data?.Balance),
+    checkStatus: "checked",
+  };
+}
+
+function rememberXrpBalance(walletAddress: string, value: XrpBalanceCheck) {
+  cachedXrpBalances.delete(walletAddress);
+  while (cachedXrpBalances.size >= MAX_CACHED_WALLETS) {
+    const oldest = cachedXrpBalances.keys().next().value;
+    if (oldest === undefined) break;
+    cachedXrpBalances.delete(oldest);
+  }
+  cachedXrpBalances.set(walletAddress, {
+    value,
+    expiresAt: Date.now() + LOOKUP_CACHE_TTL_MS,
+  });
+}
+
+async function getWalletXrpBalance(
+  walletAddress: string,
+  forceRefresh: boolean,
+): Promise<XrpBalanceCheck> {
+  const registry = forceRefresh ? pendingRefreshXrpBalances : pendingPublicXrpBalances;
+  const existing = registry.get(walletAddress);
+  if (existing) return existing;
+
+  if (!forceRefresh) {
+    const cached = cachedXrpBalances.get(walletAddress);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    if (cached) cachedXrpBalances.delete(walletAddress);
+  }
+
+  let check: Promise<XrpBalanceCheck>;
+  check = withLookupSlot(forceRefresh ? "refresh" : "public", () => requestXrpBalance(walletAddress))
+    .then((value) => {
+      rememberXrpBalance(walletAddress, value);
+      return value;
+    })
+    .catch((): XrpBalanceCheck => ({
+      balance: null,
+      checkStatus: "unavailable",
+    }))
+    .finally(() => {
+      if (registry.get(walletAddress) === check) registry.delete(walletAddress);
+    });
+  registry.set(walletAddress, check);
+  return check;
 }
 
 async function getWalletHermitHolding(
