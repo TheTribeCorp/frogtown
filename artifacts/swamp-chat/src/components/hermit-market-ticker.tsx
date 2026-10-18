@@ -64,7 +64,7 @@ export function HermitMarketTicker({ walletAddress }: { walletAddress?: string }
       <TrendingUp className={`hidden size-4 shrink-0 sm:block ${market?.isStale ? 'text-[hsl(var(--accent))]' : 'text-[hsl(var(--primary))]'}`} aria-hidden="true" />
       {market ? (
         <>
-          <div className="min-w-0">
+          <div className="shrink-0 whitespace-nowrap">
             <p className="mono text-[8px] uppercase tracking-[.14em] text-[hsl(var(--muted-foreground))]">Market cap</p>
             <p className="mono text-[10px] font-semibold tabular-nums sm:text-[11px]" data-testid="text-hermit-market-cap">{formatMarketCap(market.marketCapUsd)}</p>
           </div>
