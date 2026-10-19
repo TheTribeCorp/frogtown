@@ -6,6 +6,7 @@ import {
   normalizeEvmAddress,
   normalizeEvmChainId,
 } from '../src/lib/ladychain-wallet.ts';
+import { authenticateLadyChainProvider } from '../src/lib/ladychain-auth-flow.ts';
 
 test('normalizes EVM addresses and LadyChain chain identifiers', () => {
   assert.equal(normalizeEvmAddress('0xAbCd000000000000000000000000000000000000'), '0xabcd000000000000000000000000000000000000');
@@ -99,4 +100,71 @@ test('rejects the network if the wallet remains on the wrong chain', async () =>
     request: async ({ method }) => method === 'eth_chainId' ? '0x1' : null,
   };
   await assert.rejects(ensureLadyChainNetwork(provider), /Switch your wallet to LadyChain/);
+});
+
+test('completes sign-in when a mobile wallet provider returns to Frogtown', async () => {
+  const address = '0x2222222222222222222222222222222222222222';
+  const requests = [];
+  const provider = {
+    request: async ({ method, params }) => {
+      requests.push({ method, params });
+      if (method === 'eth_chainId') return '0x24d';
+      if (method === 'eth_accounts') return [address];
+      if (method === 'personal_sign') return `0x${'ab'.repeat(65)}`;
+      throw new Error(`Unexpected method: ${method}`);
+    },
+  };
+  let challengePayload;
+  let sessionPayload;
+  const result = await authenticateLadyChainProvider(
+    provider,
+    address,
+    async (payload) => {
+      challengePayload = payload;
+      return { message: 'Sign in to Frogtown', nonce: 'test-nonce' };
+    },
+    async (payload) => {
+      sessionPayload = payload;
+      return { walletAddress: address };
+    },
+  );
+
+  assert.equal(result, address);
+  assert.deepEqual(challengePayload, { data: { address } });
+  assert.equal(sessionPayload.data.address, address);
+  assert.equal(sessionPayload.data.nonce, 'test-nonce');
+  assert.match(sessionPayload.data.signature, /^0x[a-f0-9]{130}$/i);
+  assert.ok(requests.some((request) => request.method === 'personal_sign'));
+});
+
+test('does not create a session if the wallet account changes after returning', async () => {
+  const firstAddress = '0x2222222222222222222222222222222222222222';
+  const changedAddress = '0x3333333333333333333333333333333333333333';
+  let activeAddress = firstAddress;
+  const provider = {
+    request: async ({ method }) => {
+      if (method === 'eth_chainId') return '0x24d';
+      if (method === 'eth_accounts') return [activeAddress];
+      if (method === 'personal_sign') {
+        activeAddress = changedAddress;
+        return `0x${'ab'.repeat(65)}`;
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    },
+  };
+  let sessionCreated = false;
+
+  await assert.rejects(
+    () => authenticateLadyChainProvider(
+      provider,
+      firstAddress,
+      async () => ({ message: 'Sign in to Frogtown', nonce: 'test-nonce' }),
+      async () => {
+        sessionCreated = true;
+        return { walletAddress: firstAddress };
+      },
+    ),
+    /account or network changed/,
+  );
+  assert.equal(sessionCreated, false);
 });

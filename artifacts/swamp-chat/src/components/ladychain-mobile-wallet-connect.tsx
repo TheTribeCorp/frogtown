@@ -9,14 +9,14 @@ import {
 } from '@/lib/ladychain-wallet';
 import { useLadyChainAuthentication } from '@/hooks/use-ladychain-auth';
 
-type Props = {
+export type LadyChainMobileWalletConnectProps = {
   onConnected: (walletAddress: string) => void;
   onCancel: () => void;
   disabled: boolean;
   autoOpen?: boolean;
 };
 
-export function LadyChainMobileWalletConnect(props: Props) {
+export function LadyChainMobileWalletConnect(props: LadyChainMobileWalletConnectProps) {
   return (
     <ReownWalletProvider>
       <LadyChainMobileWalletConnectInner {...props} />
@@ -29,7 +29,7 @@ function LadyChainMobileWalletConnectInner({
   onCancel,
   disabled,
   autoOpen = false,
-}: Props) {
+}: LadyChainMobileWalletConnectProps) {
   const { open } = useAppKit();
   const { address, isConnected } = useAppKitAccount({ namespace: 'eip155' });
   const { walletProvider } = useAppKitProvider('eip155');

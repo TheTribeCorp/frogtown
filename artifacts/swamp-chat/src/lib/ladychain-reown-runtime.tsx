@@ -41,7 +41,20 @@ createAppKit({
     url: origin,
     icons: [`${origin}/images/hermit-mascot.jpg`],
   },
-  features: { analytics: false },
+  defaultAccountTypes: { eip155: 'eoa' },
+  features: {
+    connectMethodsOrder: ['wallet'],
+    analytics: false,
+    email: false,
+    socials: false,
+    history: false,
+    onramp: false,
+    swaps: false,
+    send: false,
+    receive: false,
+    smartSessions: false,
+    pay: false,
+  },
 });
 
 export function ReownWalletProvider({ children }: { children: ReactNode }) {

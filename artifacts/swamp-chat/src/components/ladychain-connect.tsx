@@ -1,15 +1,22 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { ComponentType } from 'react';
 import { ArrowUpRight, LoaderCircle, WalletCards } from 'lucide-react';
 import type { Eip1193Provider } from '@/lib/ladychain-wallet';
 import { getInjectedEvmProviders, setActiveLadyChainProvider, readableLadyChainWalletError } from '@/lib/ladychain-wallet';
 import { mobileWalletConnectionConfigured } from '@/lib/ladychain-appkit';
 import { useLadyChainAuthentication } from '@/hooks/use-ladychain-auth';
+import type { LadyChainMobileWalletConnectProps } from './ladychain-mobile-wallet-connect';
 
-const LazyMobileWalletConnect = lazy(() =>
-  import('./ladychain-mobile-wallet-connect').then((module) => ({
-    default: module.LadyChainMobileWalletConnect,
-  })),
-);
+type MobileWalletConnectModule = typeof import('./ladychain-mobile-wallet-connect');
+let mobileWalletConnectModulePromise: Promise<MobileWalletConnectModule> | undefined;
+
+function loadMobileWalletConnect() {
+  mobileWalletConnectModulePromise ??= import('./ladychain-mobile-wallet-connect').catch((error) => {
+    mobileWalletConnectModulePromise = undefined;
+    throw error;
+  });
+  return mobileWalletConnectModulePromise;
+}
 
 function providerLabel(provider: Eip1193Provider, index: number) {
   if (provider.isSafePal) return 'SafePal';
@@ -27,6 +34,36 @@ export function LadyChainConnect({ onConnected }: { onConnected: (walletAddress:
   const [step, setStep] = useState('');
   const [error, setError] = useState('');
   const [showMobileWalletConnect, setShowMobileWalletConnect] = useState(false);
+  const [MobileWalletConnect, setMobileWalletConnect] = useState<ComponentType<LadyChainMobileWalletConnectProps> | null>(null);
+  const [mobileWalletModuleLoading, setMobileWalletModuleLoading] = useState(false);
+  const [mobileWalletModuleError, setMobileWalletModuleError] = useState(false);
+  const mobileWalletButton = useRef<HTMLButtonElement>(null);
+  const preloaded = useRef(false);
+
+  async function openMobileWalletConnect() {
+    setShowMobileWalletConnect(true);
+    if (MobileWalletConnect) return;
+    setMobileWalletModuleLoading(true);
+    setMobileWalletModuleError(false);
+    try {
+      const module = await loadMobileWalletConnect();
+      setMobileWalletConnect(() => module.LadyChainMobileWalletConnect);
+    } catch {
+      setMobileWalletModuleError(true);
+    } finally {
+      setMobileWalletModuleLoading(false);
+    }
+  }
+
+  function preloadMobileWalletConnect() {
+    if (preloaded.current || !mobileWalletConnectionConfigured) return;
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+    if (connection?.saveData) return;
+    preloaded.current = true;
+    void loadMobileWalletConnect().catch(() => {
+      preloaded.current = false;
+    });
+  }
 
   useEffect(() => {
     const refresh = () => setProviders(getInjectedEvmProviders());
@@ -38,6 +75,26 @@ export function LadyChainConnect({ onConnected }: { onConnected: (walletAddress:
     window.addEventListener('eip6963:announceProvider', announce);
     window.dispatchEvent(new Event('eip6963:requestProvider'));
     return () => window.removeEventListener('eip6963:announceProvider', announce);
+  }, []);
+
+  useEffect(() => {
+    const button = mobileWalletButton.current;
+    if (!mobileWalletConnectionConfigured || !button || typeof IntersectionObserver === 'undefined') return;
+
+    let dwellTimer = 0;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) {
+        window.clearTimeout(dwellTimer);
+        return;
+      }
+      dwellTimer = window.setTimeout(preloadMobileWalletConnect, 900);
+    }, { threshold: 0.35 });
+
+    observer.observe(button);
+    return () => {
+      window.clearTimeout(dwellTimer);
+      observer.disconnect();
+    };
   }, []);
 
   async function connect(provider: Eip1193Provider) {
@@ -101,9 +158,13 @@ export function LadyChainConnect({ onConnected }: { onConnected: (walletAddress:
           {!showMobileWalletConnect && (
             <button
               type="button"
-              onClick={() => setShowMobileWalletConnect(true)}
+              onClick={() => void openMobileWalletConnect()}
+              onPointerEnter={preloadMobileWalletConnect}
+              onFocus={preloadMobileWalletConnect}
+              onTouchStart={preloadMobileWalletConnect}
               disabled={busy}
               className="mt-3 flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-[hsl(var(--primary)/.35)] bg-[hsl(var(--primary)/.08)] px-4 text-left text-sm font-medium transition hover:border-[hsl(var(--primary)/.65)] disabled:opacity-60"
+              ref={mobileWalletButton}
               data-testid="button-open-ladychain-mobile-wallets"
             >
               <span>Connect from any mobile wallet</span>
@@ -111,14 +172,29 @@ export function LadyChainConnect({ onConnected }: { onConnected: (walletAddress:
             </button>
           )}
           {showMobileWalletConnect && (
-            <Suspense fallback={<p className="mt-3 text-xs text-[hsl(var(--muted-foreground))]" role="status">Loading secure wallet selector…</p>}>
-              <LazyMobileWalletConnect
-                onConnected={onConnected}
-                disabled={busy}
-                onCancel={() => setShowMobileWalletConnect(false)}
-                autoOpen
-              />
-            </Suspense>
+            <div className="mt-3">
+              {mobileWalletModuleLoading && !MobileWalletConnect && (
+                <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.8)] px-3 py-3 text-xs text-[hsl(var(--muted-foreground))]" role="status" aria-live="polite">
+                  Loading secure wallet selector…
+                  <button type="button" className="ml-2 underline underline-offset-2" onClick={() => setShowMobileWalletConnect(false)}>Cancel</button>
+                </div>
+              )}
+              {mobileWalletModuleError && (
+                <div className="rounded-xl border border-[hsl(var(--destructive)/.25)] bg-[hsl(var(--destructive)/.06)] px-3 py-3 text-xs text-[hsl(var(--destructive))]" role="alert">
+                  Couldn’t load the wallet selector. Check your connection and try again.
+                  <button type="button" className="ml-2 underline underline-offset-2" onClick={() => void openMobileWalletConnect()}>Retry</button>
+                  <button type="button" className="ml-2 underline underline-offset-2" onClick={() => setShowMobileWalletConnect(false)}>Cancel</button>
+                </div>
+              )}
+              {MobileWalletConnect && (
+                <MobileWalletConnect
+                  onConnected={onConnected}
+                  disabled={busy}
+                  onCancel={() => setShowMobileWalletConnect(false)}
+                  autoOpen
+                />
+              )}
+            </div>
           )}
         </>
       ) : providers.length === 0 ? (
