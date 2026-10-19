@@ -112,6 +112,7 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
   const [refreshingBalance, setRefreshingBalance] = useState(false);
   const handledStatusesRef = useRef(new Set<string>());
   const lastQuoteEventRef = useRef<string | null>(null);
+  const xamanWindowRef = useRef<Window | null>(null);
   const funnelEventMutation = useCreateHermitBuyFunnelEvent({
     request: { credentials: 'same-origin' },
   });
@@ -127,7 +128,8 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
         enabled: open,
         queryKey: balanceKey,
         staleTime: 0,
-        retry: false,
+        retry: 1,
+        refetchOnMount: 'always',
         refetchOnWindowFocus: false,
       },
       request: { credentials: 'same-origin' },
@@ -162,12 +164,53 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
     request: { credentials: 'same-origin' },
   });
   const quote = quoteQuery.data;
+
+  const openXamanWindow = () => {
+    xamanWindowRef.current = window.open('about:blank', '_blank');
+    if (xamanWindowRef.current) {
+      try {
+        xamanWindowRef.current.document.title = 'Opening Xaman';
+        xamanWindowRef.current.document.body.textContent = 'Frogtown is preparing your Xaman approval request…';
+      } catch {
+        // The in-dialog fallback link remains available if the browser blocks this window.
+      }
+    }
+  };
+
+  const finishXamanRequest = (payload: HermitTradePayload) => {
+    const popup = xamanWindowRef.current;
+    xamanWindowRef.current = null;
+    if (popup && !popup.closed) {
+      try {
+        const destination = new URL(payload.deeplink);
+        if (
+          destination.protocol !== 'https:'
+          || !['xumm.app', 'xaman.app'].includes(destination.hostname)
+        ) {
+          throw new Error('Unexpected Xaman link.');
+        }
+        popup.opener = null;
+        popup.location.replace(destination.href);
+        return;
+      } catch {
+        popup.close();
+      }
+    }
+    setBalanceNotice('Your approval request is ready. If Xaman did not open, tap “Open in Xaman” below.');
+  };
+
+  const closeWaitingXamanWindow = () => {
+    xamanWindowRef.current?.close();
+    xamanWindowRef.current = null;
+  };
+
   const trustlineMutation = useCreateHermitTrustlinePayload({
     mutation: {
       onSuccess: (payload) => {
         setActivePayload(payload);
         setTradeStatus(null);
         setBalanceNotice('');
+        finishXamanRequest(payload);
         trackFunnelEvent('trustline_approval');
       },
     },
@@ -178,6 +221,7 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
         setActivePayload(payload);
         setTradeStatus(null);
         setBalanceNotice('');
+        finishXamanRequest(payload);
         trackFunnelEvent('buy_approval');
       },
     },
@@ -273,15 +317,27 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
     }
   }, [activePayload, refreshBalance, statusQuery.data?.status, trackFunnelEvent]);
 
-  const prepareTrustline = () => trustlineMutation.mutate(undefined,
-    {
-      onError: (error) => setBalanceNotice(apiErrorMessage(error, 'Could not prepare the trustline in Xaman.')),
-    },
-  );
-  const prepareBuy = () => buyMutation.mutate(
-    { data: { xrpAmount, slippageBps } },
-    { onError: (error) => setBalanceNotice(apiErrorMessage(error, 'Could not prepare the buy order in Xaman.')) },
-  );
+  const prepareTrustline = () => {
+    openXamanWindow();
+    trustlineMutation.mutate(undefined, {
+      onError: (error) => {
+        closeWaitingXamanWindow();
+        setBalanceNotice(apiErrorMessage(error, 'Could not prepare the trustline in Xaman.'));
+      },
+    });
+  };
+  const prepareBuy = () => {
+    openXamanWindow();
+    buyMutation.mutate(
+      { data: { xrpAmount, slippageBps } },
+      {
+        onError: (error) => {
+          closeWaitingXamanWindow();
+          setBalanceNotice(apiErrorMessage(error, 'Could not prepare the buy order in Xaman.'));
+        },
+      },
+    );
+  };
 
   const busy = trustlineMutation.isPending || buyMutation.isPending;
   const openDialog = () => {
@@ -322,7 +378,9 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
                     <p className="mt-1 break-words font-mono text-sm font-semibold" data-testid="text-hermit-wallet-balance">
                       {currentBalance?.checkStatus === 'checked'
                         ? `${formatHermit(currentBalance.balance)} $HERMIT`
-                        : 'Checking XRPL…'}
+                        : balanceQuery.isFetching || balanceQuery.isPending
+                          ? 'Checking XRPL…'
+                          : 'Unavailable'}
                     </p>
                   </div>
                   <div className="min-w-0">
@@ -330,7 +388,9 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
                     <p className="mt-1 break-words font-mono text-sm font-semibold" data-testid="text-xrp-wallet-balance">
                       {currentBalance?.xrpCheckStatus === 'checked'
                         ? `${formatXrp(currentBalance.xrpBalance)} XRP`
-                        : 'Checking XRPL…'}
+                        : balanceQuery.isFetching || balanceQuery.isPending
+                          ? 'Checking XRPL…'
+                          : 'Unavailable'}
                     </p>
                   </div>
                 </div>
@@ -379,9 +439,12 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
                 </button>
               </section>
             ) : currentBalance?.checkStatus === 'unavailable' ? (
-              <p className="rounded-lg border border-[hsl(var(--destructive)/.35)] p-3 text-sm text-[hsl(var(--destructive))]" role="alert">
-                Frogtown could not check your trustline. Refresh the balance before preparing a trade.
-              </p>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-[hsl(var(--destructive)/.35)] p-3 text-sm text-[hsl(var(--destructive))]" role="alert">
+                <span>Frogtown could not check your $HERMIT balance or trustline.</span>
+                <button type="button" onClick={() => void refreshBalance()} disabled={refreshingBalance} className="shrink-0 font-semibold underline disabled:opacity-50">
+                  Retry
+                </button>
+              </div>
             ) : currentBalance?.trustlineExists === true ? (
               <section className="space-y-3">
                 <label className="block space-y-1.5">
@@ -450,6 +513,12 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
                   <p className="text-xs text-[hsl(var(--destructive))]" role="alert">Enter an amount between 0.01 and 1,000 XRP.</p>
                 ) : null}
 
+                {quote && (
+                  <p className="text-xs leading-5 text-[hsl(var(--muted-foreground))]" role="status">
+                    Quote ready for {quote.xrpAmount} XRP. Continue to open Xaman, review the transaction, and approve it there.
+                  </p>
+                )}
+
                 <div className="flex gap-2 rounded-lg border border-[hsl(var(--accent)/.4)] bg-[hsl(var(--accent)/.08)] p-3 text-xs leading-5">
                   <CircleAlert className="mt-0.5 size-4 shrink-0 text-[hsl(var(--accent))]" />
                   <p>
@@ -465,7 +534,7 @@ export function HermitBuyDialog({ walletAddress, onBalanceUpdate }: HermitBuyDia
                   data-testid="button-prepare-hermit-buy"
                 >
                   {buyMutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-                  Prepare buy order in Xaman
+                  Review buy in Xaman
                 </button>
               </section>
             ) : (
