@@ -133,6 +133,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /wallet/evm/challenges:
+    post:
+      operationId: createLadyChainWalletChallenge
+      tags: [wallet]
+      summary: Create a one-time LadyChain wallet sign-in challenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LadyChainWalletChallengeInput"
+      responses:
+        "201":
+          description: Chain-bound message for the wallet to sign
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LadyChainWalletChallenge"
+        "400":
+          description: Invalid EVM wallet address or request origin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database or session signing configuration unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /wallet/evm/sessions:
+    post:
+      operationId: createLadyChainWalletSession
+      tags: [wallet]
+      summary: Verify a LadyChain wallet signature and create a Frogtown session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LadyChainWalletSessionInput"
+      responses:
+        "200":
+          description: Authenticated LadyChain wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LadyChainWalletSession"
+        "400":
+          description: Invalid, expired, or already-used sign-in challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Wallet signature did not match the requested address
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /wallets/{walletAddress}/hermit-tick:
     get:
       operationId: getWalletHermitTick
@@ -1520,12 +1580,14 @@ components:
       schema:
         type: string
         minLength: 25
+        maxLength: 42
     WalletAddressPath:
       name: walletAddress
       in: path
       required: true
       schema:
         type: string
+        maxLength: 42
     BlockedWalletAddress:
       name: blockedWalletAddress
       in: path
@@ -1533,6 +1595,7 @@ components:
       schema:
         type: string
         minLength: 25
+        maxLength: 42
     PushSubscriptionId:
       name: subscriptionId
       in: path
@@ -1607,6 +1670,49 @@ components:
         network:
           type: string
       required: [sessionId, status, walletAddress, network]
+    LadyChainWalletChallengeInput:
+      type: object
+      properties:
+        address:
+          type: string
+          pattern: "^0x[a-fA-F0-9]{40}$"
+      required: [address]
+    LadyChainWalletChallenge:
+      type: object
+      properties:
+        nonce:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        message:
+          type: string
+          maxLength: 1000
+        expiresAt:
+          type: string
+          format: date-time
+      required: [nonce, message, expiresAt]
+    LadyChainWalletSessionInput:
+      type: object
+      properties:
+        address:
+          type: string
+          pattern: "^0x[a-fA-F0-9]{40}$"
+        nonce:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        signature:
+          type: string
+          pattern: "^0x[a-fA-F0-9]{130}$"
+      required: [address, nonce, signature]
+    LadyChainWalletSession:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+          pattern: "^0x[a-f0-9]{40}$"
+        network:
+          type: string
+          enum: [LadyChain]
+      required: [walletAddress, network]
     WalletHermitTick:
       type: object
       properties:
@@ -1652,7 +1758,7 @@ components:
       properties:
         walletAddress:
           type: string
-          pattern: "^r[1-9A-HJ-NP-Za-km-z]{24,34}$"
+          pattern: "^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$"
         username:
           type: ["string", "null"]
           minLength: 4
@@ -1700,8 +1806,8 @@ components:
           pattern: "^[A-Za-z0-9_]{4,17}$"
         referrerAddress:
           type: string
-          maxLength: 35
-          pattern: "^r[1-9A-HJ-NP-Za-km-z]{24,34}$"
+          maxLength: 42
+          pattern: "^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$"
         deviceId:
           type: string
           maxLength: 36
@@ -1798,6 +1904,7 @@ components:
         recipientAddress:
           type: string
           minLength: 25
+          maxLength: 42
         body:
           type: string
           minLength: 1
@@ -1842,12 +1949,12 @@ components:
         recipient:
           type: string
           minLength: 4
-          maxLength: 35
-          description: XRPL wallet address or Frogtown username
+          maxLength: 42
+          description: XRPL or LadyChain wallet address, or Frogtown username
         fromWalletAddress:
           type: string
           minLength: 25
-          maxLength: 35
+          maxLength: 42
       required: [recipient, fromWalletAddress]
     BlockedWallet:
       type: object
@@ -1866,7 +1973,8 @@ components:
         blockedWalletAddress:
           type: string
           minLength: 25
-          maxLength: 35
+          maxLength: 42
+          pattern: "^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$"
       required: [blockedWalletAddress]
     Message:
       type: object
@@ -1916,6 +2024,7 @@ components:
         senderAddress:
           type: string
           minLength: 25
+          maxLength: 42
         body:
           type: string
           minLength: 1
@@ -1953,6 +2062,7 @@ components:
         creatorAddress:
           type: string
           minLength: 25
+          maxLength: 42
       required: [name, description, creatorAddress]
     JoinGroupInput:
       type: object
@@ -1960,6 +2070,7 @@ components:
         walletAddress:
           type: string
           minLength: 25
+          maxLength: 42
       required: [walletAddress]
     TimelinePost:
       type: object

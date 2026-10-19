@@ -68,6 +68,41 @@ export interface WalletSessionStatus {
   network: string;
 }
 
+export interface LadyChainWalletChallengeInput {
+  /** @pattern ^0x[a-fA-F0-9]{40}$ */
+  address: string;
+}
+
+export interface LadyChainWalletChallenge {
+  /** @pattern ^[a-f0-9]{64}$ */
+  nonce: string;
+  /** @maxLength 1000 */
+  message: string;
+  expiresAt: string;
+}
+
+export interface LadyChainWalletSessionInput {
+  /** @pattern ^0x[a-fA-F0-9]{40}$ */
+  address: string;
+  /** @pattern ^[a-f0-9]{64}$ */
+  nonce: string;
+  /** @pattern ^0x[a-fA-F0-9]{130}$ */
+  signature: string;
+}
+
+export type LadyChainWalletSessionNetwork = typeof LadyChainWalletSessionNetwork[keyof typeof LadyChainWalletSessionNetwork];
+
+
+export const LadyChainWalletSessionNetwork = {
+  LadyChain: 'LadyChain',
+} as const;
+
+export interface LadyChainWalletSession {
+  /** @pattern ^0x[a-f0-9]{40}$ */
+  walletAddress: string;
+  network: LadyChainWalletSessionNetwork;
+}
+
 /**
  * @nullable
  */
@@ -128,7 +163,7 @@ export interface CurrentWallet {
 }
 
 export interface WalletProfile {
-  /** @pattern ^r[1-9A-HJ-NP-Za-km-z]{24,34}$ */
+  /** @pattern ^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$ */
   walletAddress: string;
   /**
      * @minLength 4
@@ -177,8 +212,8 @@ export interface WalletUsernameInput {
      */
   username: string;
   /**
-     * @maxLength 35
-     * @pattern ^r[1-9A-HJ-NP-Za-km-z]{24,34}$
+     * @maxLength 42
+     * @pattern ^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$
      */
   referrerAddress?: string;
   /**
@@ -243,7 +278,10 @@ export interface ConversationHistoryShare {
 
 export interface ConversationHistoryShareInput {
   messageId: string;
-  /** @minLength 25 */
+  /**
+     * @minLength 25
+     * @maxLength 42
+     */
   recipientAddress: string;
   /**
      * @minLength 1
@@ -291,14 +329,14 @@ export interface Conversation {
 
 export interface DirectConversationInput {
   /**
-     * XRPL wallet address or Frogtown username
+     * XRPL or LadyChain wallet address, or Frogtown username
      * @minLength 4
-     * @maxLength 35
+     * @maxLength 42
      */
   recipient: string;
   /**
      * @minLength 25
-     * @maxLength 35
+     * @maxLength 42
      */
   fromWalletAddress: string;
 }
@@ -312,7 +350,8 @@ export interface BlockedWallet {
 export interface BlockedWalletInput {
   /**
      * @minLength 25
-     * @maxLength 35
+     * @maxLength 42
+     * @pattern ^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$
      */
   blockedWalletAddress: string;
 }
@@ -341,7 +380,10 @@ export interface ReadReceipt {
 
 export interface MessageInput {
   messageId: string;
-  /** @minLength 25 */
+  /**
+     * @minLength 25
+     * @maxLength 42
+     */
   senderAddress: string;
   /** @minLength 1 */
   body: string;
@@ -364,12 +406,18 @@ export interface GroupInput {
   /** @minLength 2 */
   name: string;
   description: string;
-  /** @minLength 25 */
+  /**
+     * @minLength 25
+     * @maxLength 42
+     */
   creatorAddress: string;
 }
 
 export interface JoinGroupInput {
-  /** @minLength 25 */
+  /**
+     * @minLength 25
+     * @maxLength 42
+     */
   walletAddress: string;
 }
 
@@ -903,6 +951,7 @@ refresh?: boolean;
 export type ListConversationsParams = {
 /**
  * @minLength 25
+ * @maxLength 42
  */
 walletAddress: WalletAddressParameter;
 };
@@ -910,6 +959,7 @@ walletAddress: WalletAddressParameter;
 export type ListConversationMessagesParams = {
 /**
  * @minLength 25
+ * @maxLength 42
  */
 walletAddress: WalletAddressParameter;
 };
@@ -926,6 +976,7 @@ cursor?: string;
 export type ListGroupsParams = {
 /**
  * @minLength 25
+ * @maxLength 42
  */
 walletAddress: WalletAddressParameter;
 };

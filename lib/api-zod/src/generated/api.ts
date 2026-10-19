@@ -74,6 +74,51 @@ export const GetWalletSessionResponse = zod.object({
 
 
 /**
+ * @summary Create a one-time LadyChain wallet sign-in challenge
+ */
+export const createLadyChainWalletChallengeBodyAddressRegExp = new RegExp('^0x[a-fA-F0-9]{40}$');
+
+
+export const CreateLadyChainWalletChallengeBody = zod.object({
+  "address": zod.string().regex(createLadyChainWalletChallengeBodyAddressRegExp)
+})
+
+export const createLadyChainWalletChallengeResponseNonceRegExp = new RegExp('^[a-f0-9]{64}$');
+export const createLadyChainWalletChallengeResponseMessageMax = 1000;
+
+
+
+export const CreateLadyChainWalletChallengeResponse = zod.object({
+  "nonce": zod.string().regex(createLadyChainWalletChallengeResponseNonceRegExp),
+  "message": zod.string().max(createLadyChainWalletChallengeResponseMessageMax),
+  "expiresAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Verify a LadyChain wallet signature and create a Frogtown session
+ */
+export const createLadyChainWalletSessionBodyAddressRegExp = new RegExp('^0x[a-fA-F0-9]{40}$');
+export const createLadyChainWalletSessionBodyNonceRegExp = new RegExp('^[a-f0-9]{64}$');
+export const createLadyChainWalletSessionBodySignatureRegExp = new RegExp('^0x[a-fA-F0-9]{130}$');
+
+
+export const CreateLadyChainWalletSessionBody = zod.object({
+  "address": zod.string().regex(createLadyChainWalletSessionBodyAddressRegExp),
+  "nonce": zod.string().regex(createLadyChainWalletSessionBodyNonceRegExp),
+  "signature": zod.string().regex(createLadyChainWalletSessionBodySignatureRegExp)
+})
+
+export const createLadyChainWalletSessionResponseWalletAddressRegExp = new RegExp('^0x[a-f0-9]{40}$');
+
+
+export const CreateLadyChainWalletSessionResponse = zod.object({
+  "walletAddress": zod.string().regex(createLadyChainWalletSessionResponseWalletAddressRegExp),
+  "network": zod.enum(['LadyChain'])
+})
+
+
+/**
  * @summary Check a wallet's $HERMIT holder tick on XRPL
  */
 export const getWalletHermitTickPathWalletAddressRegExp = new RegExp('^r[1-9A-HJ-NP-Za-km-z]{24,34}$');
@@ -127,7 +172,7 @@ export const GetCurrentWalletResponse = zod.object({
 /**
  * @summary Get the signed-in wallet's Frogtown username
  */
-export const getWalletProfileResponseWalletAddressRegExp = new RegExp('^r[1-9A-HJ-NP-Za-km-z]{24,34}$');
+export const getWalletProfileResponseWalletAddressRegExp = new RegExp('^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$');
 export const getWalletProfileResponseUsernameMin = 4;
 export const getWalletProfileResponseUsernameMax = 17;
 
@@ -149,10 +194,10 @@ export const saveWalletUsernameBodyUsernameMax = 17;
 
 
 export const saveWalletUsernameBodyUsernameRegExp = new RegExp('^[A-Za-z0-9_]{4,17}$');
-export const saveWalletUsernameBodyReferrerAddressMax = 35;
+export const saveWalletUsernameBodyReferrerAddressMax = 42;
 
 
-export const saveWalletUsernameBodyReferrerAddressRegExp = new RegExp('^r[1-9A-HJ-NP-Za-km-z]{24,34}$');
+export const saveWalletUsernameBodyReferrerAddressRegExp = new RegExp('^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$');
 export const saveWalletUsernameBodyDeviceIdMax = 36;
 
 
@@ -165,7 +210,7 @@ export const SaveWalletUsernameBody = zod.object({
   "deviceId": zod.string().max(saveWalletUsernameBodyDeviceIdMax).regex(saveWalletUsernameBodyDeviceIdRegExp).optional()
 })
 
-export const saveWalletUsernameResponseOneWalletAddressRegExp = new RegExp('^r[1-9A-HJ-NP-Za-km-z]{24,34}$');
+export const saveWalletUsernameResponseOneWalletAddressRegExp = new RegExp('^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$');
 export const saveWalletUsernameResponseOneUsernameMin = 4;
 export const saveWalletUsernameResponseOneUsernameMax = 17;
 
@@ -208,8 +253,12 @@ export const LogoutWalletResponse = zod.void()
 /**
  * @summary Get a wallet's registered public encryption key
  */
+export const getWalletEncryptionKeyPathWalletAddressMax = 42;
+
+
+
 export const GetWalletEncryptionKeyParams = zod.object({
-  "walletAddress": zod.coerce.string()
+  "walletAddress": zod.coerce.string().max(getWalletEncryptionKeyPathWalletAddressMax)
 })
 
 export const GetWalletEncryptionKeyResponse = zod.object({
@@ -267,12 +316,14 @@ export const ListBlockedWalletsResponse = zod.array(ListBlockedWalletsResponseIt
  * @summary Block a wallet from direct messaging
  */
 export const blockWalletBodyBlockedWalletAddressMin = 25;
-export const blockWalletBodyBlockedWalletAddressMax = 35;
+export const blockWalletBodyBlockedWalletAddressMax = 42;
 
+
+export const blockWalletBodyBlockedWalletAddressRegExp = new RegExp('^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$');
 
 
 export const BlockWalletBody = zod.object({
-  "blockedWalletAddress": zod.string().min(blockWalletBodyBlockedWalletAddressMin).max(blockWalletBodyBlockedWalletAddressMax)
+  "blockedWalletAddress": zod.string().min(blockWalletBodyBlockedWalletAddressMin).max(blockWalletBodyBlockedWalletAddressMax).regex(blockWalletBodyBlockedWalletAddressRegExp)
 })
 
 export const BlockWalletResponse = zod.object({
@@ -286,11 +337,12 @@ export const BlockWalletResponse = zod.object({
  * @summary Remove a wallet block
  */
 export const unblockWalletPathBlockedWalletAddressMin = 25;
+export const unblockWalletPathBlockedWalletAddressMax = 42;
 
 
 
 export const UnblockWalletParams = zod.object({
-  "blockedWalletAddress": zod.coerce.string().min(unblockWalletPathBlockedWalletAddressMin)
+  "blockedWalletAddress": zod.coerce.string().min(unblockWalletPathBlockedWalletAddressMin).max(unblockWalletPathBlockedWalletAddressMax)
 })
 
 export const UnblockWalletResponse = zod.void()
@@ -300,11 +352,12 @@ export const UnblockWalletResponse = zod.void()
  * @summary List conversations for a wallet address
  */
 export const listConversationsQueryWalletAddressMin = 25;
+export const listConversationsQueryWalletAddressMax = 42;
 
 
 
 export const ListConversationsQueryParams = zod.object({
-  "walletAddress": zod.coerce.string().min(listConversationsQueryWalletAddressMin)
+  "walletAddress": zod.coerce.string().min(listConversationsQueryWalletAddressMin).max(listConversationsQueryWalletAddressMax)
 })
 
 export const ListConversationsResponseItem = zod.object({
@@ -329,15 +382,15 @@ export const ListConversationsResponse = zod.array(ListConversationsResponseItem
  * @summary Start or return a direct conversation
  */
 export const createDirectConversationBodyRecipientMin = 4;
-export const createDirectConversationBodyRecipientMax = 35;
+export const createDirectConversationBodyRecipientMax = 42;
 
 export const createDirectConversationBodyFromWalletAddressMin = 25;
-export const createDirectConversationBodyFromWalletAddressMax = 35;
+export const createDirectConversationBodyFromWalletAddressMax = 42;
 
 
 
 export const CreateDirectConversationBody = zod.object({
-  "recipient": zod.string().min(createDirectConversationBodyRecipientMin).max(createDirectConversationBodyRecipientMax).describe('XRPL wallet address or Frogtown username'),
+  "recipient": zod.string().min(createDirectConversationBodyRecipientMin).max(createDirectConversationBodyRecipientMax).describe('XRPL or LadyChain wallet address, or Frogtown username'),
   "fromWalletAddress": zod.string().min(createDirectConversationBodyFromWalletAddressMin).max(createDirectConversationBodyFromWalletAddressMax)
 })
 
@@ -414,11 +467,12 @@ export const ListConversationMessagesParams = zod.object({
 })
 
 export const listConversationMessagesQueryWalletAddressMin = 25;
+export const listConversationMessagesQueryWalletAddressMax = 42;
 
 
 
 export const ListConversationMessagesQueryParams = zod.object({
-  "walletAddress": zod.coerce.string().min(listConversationMessagesQueryWalletAddressMin)
+  "walletAddress": zod.coerce.string().min(listConversationMessagesQueryWalletAddressMin).max(listConversationMessagesQueryWalletAddressMax)
 })
 
 export const ListConversationMessagesResponseItem = zod.object({
@@ -443,13 +497,14 @@ export const SendMessageParams = zod.object({
 })
 
 export const sendMessageBodySenderAddressMin = 25;
+export const sendMessageBodySenderAddressMax = 42;
 
 
 
 
 export const SendMessageBody = zod.object({
   "messageId": zod.string().uuid(),
-  "senderAddress": zod.string().min(sendMessageBodySenderAddressMin),
+  "senderAddress": zod.string().min(sendMessageBodySenderAddressMin).max(sendMessageBodySenderAddressMax),
   "body": zod.string().min(1)
 })
 
@@ -551,6 +606,7 @@ export const CreateConversationHistoryShareParams = zod.object({
 })
 
 export const createConversationHistoryShareBodyRecipientAddressMin = 25;
+export const createConversationHistoryShareBodyRecipientAddressMax = 42;
 
 export const createConversationHistoryShareBodyBodyMax = 200000;
 
@@ -558,7 +614,7 @@ export const createConversationHistoryShareBodyBodyMax = 200000;
 
 export const CreateConversationHistoryShareBody = zod.object({
   "messageId": zod.string().uuid(),
-  "recipientAddress": zod.string().min(createConversationHistoryShareBodyRecipientAddressMin),
+  "recipientAddress": zod.string().min(createConversationHistoryShareBodyRecipientAddressMin).max(createConversationHistoryShareBodyRecipientAddressMax),
   "body": zod.string().min(1).max(createConversationHistoryShareBodyBodyMax)
 })
 
@@ -574,11 +630,12 @@ export const CreateConversationHistoryShareResponse = zod.object({
  * @summary List public and joined groups
  */
 export const listGroupsQueryWalletAddressMin = 25;
+export const listGroupsQueryWalletAddressMax = 42;
 
 
 
 export const ListGroupsQueryParams = zod.object({
-  "walletAddress": zod.coerce.string().min(listGroupsQueryWalletAddressMin)
+  "walletAddress": zod.coerce.string().min(listGroupsQueryWalletAddressMin).max(listGroupsQueryWalletAddressMax)
 })
 
 export const ListGroupsResponseItem = zod.object({
@@ -601,13 +658,14 @@ export const ListGroupsResponse = zod.array(ListGroupsResponseItem)
 export const createGroupBodyNameMin = 2;
 
 export const createGroupBodyCreatorAddressMin = 25;
+export const createGroupBodyCreatorAddressMax = 42;
 
 
 
 export const CreateGroupBody = zod.object({
   "name": zod.string().min(createGroupBodyNameMin),
   "description": zod.string(),
-  "creatorAddress": zod.string().min(createGroupBodyCreatorAddressMin)
+  "creatorAddress": zod.string().min(createGroupBodyCreatorAddressMin).max(createGroupBodyCreatorAddressMax)
 })
 
 export const CreateGroupResponse = zod.object({
@@ -631,11 +689,12 @@ export const JoinGroupParams = zod.object({
 })
 
 export const joinGroupBodyWalletAddressMin = 25;
+export const joinGroupBodyWalletAddressMax = 42;
 
 
 
 export const JoinGroupBody = zod.object({
-  "walletAddress": zod.string().min(joinGroupBodyWalletAddressMin)
+  "walletAddress": zod.string().min(joinGroupBodyWalletAddressMin).max(joinGroupBodyWalletAddressMax)
 })
 
 export const JoinGroupResponse = zod.object({

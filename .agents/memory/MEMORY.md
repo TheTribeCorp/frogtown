@@ -9,3 +9,4 @@
 - [Frogtown email monitoring](frogtown-email-monitoring.md) — scheduled GitHub Actions health checks can use failed-run email notifications without another monitoring credential.
 - [Drizzle aggregate timestamps](frogtown-drizzle-aggregate-timestamps.md) — raw SQL min/max timestamps may decode as strings; add an explicit decoder before calling Date methods.
 - [Frogtown $HERMIT purchases](frogtown-hermit-purchasing.md) — no in-app purchase controls; ticker shows only market cap while login refreshes holder data.
+- [Frogtown cross-chain identities](frogtown-cross-chain-identities.md) — EVM wallets are first-class identities; canonicalize addresses and keep $HERMIT checks XRPL-only.

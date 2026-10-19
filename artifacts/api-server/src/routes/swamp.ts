@@ -1,7 +1,8 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, notExists, notInArray, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { verifyMessage } from "viem";
 import {
   AcceptConversationRequestParams,
   BlockWalletBody,
@@ -19,6 +20,10 @@ import {
   GetWalletProfileResponse,
   GetWalletEncryptionKeyParams,
   GetWalletSessionParams,
+  CreateLadyChainWalletChallengeBody,
+  CreateLadyChainWalletChallengeResponse,
+  CreateLadyChainWalletSessionBody,
+  CreateLadyChainWalletSessionResponse,
   JoinGroupBody,
   JoinGroupParams,
   MarkConversationReadBody,
@@ -51,6 +56,13 @@ import {
 import { hashReferralDeviceId } from "../lib/referral-rules";
 import { getWalletHermitTick, hermitTickCacheControl } from "../lib/hermit-tick";
 import { normalizeUsername } from "../lib/wallet-username";
+import { createLadyChainSignInMessage } from "../lib/ladychain-auth";
+import {
+  isEvmWalletAddress as isEvmAddress,
+  isWalletIdentity as isWalletAddress,
+  isXrplWalletAddress as isXrplAddress,
+  normalizeWalletIdentity as normalizeWalletAddress,
+} from "../lib/wallet-identity";
 import {
   conversationMembersTable,
   conversationsTable,
@@ -60,6 +72,7 @@ import {
   messagesTable,
   messageHistorySharesTable,
   walletKeysTable,
+  walletAuthChallengesTable,
 } from "@workspace/db";
 import { pushSubscriptionsTable, walletProfilesTable } from "@workspace/db/schema";
 import { isWebPushConfigured, sendNewMessagePush } from "../lib/web-push";
@@ -74,8 +87,6 @@ const AUTH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_PUSH_SUBSCRIPTIONS_PER_WALLET = 8;
 const HISTORY_SHARE_SCAN_LIMIT = 100;
 const HISTORY_SHARE_WORK_LIMIT = 20;
-
-const isWalletAddress = (value: string) => /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(value);
 
 type HistoryShareWorkCursor = {
   conversationId: string;
@@ -112,11 +123,15 @@ function decodeHistoryShareWorkCursor(value: string, conversationId: string): Hi
       || (parsed.terminal !== undefined && typeof parsed.terminal !== "boolean")
       || (terminal ? parsed.recipientAddress !== "" : !isWalletAddress(parsed.recipientAddress))
     ) return null;
+    const normalizedRecipientAddress = terminal
+      ? ""
+      : normalizeWalletAddress(parsed.recipientAddress as string);
+    if (!terminal && !isWalletAddress(normalizedRecipientAddress)) return null;
     return {
       conversationId,
       sentAt,
       messageId: parsed.messageId,
-      recipientAddress: parsed.recipientAddress,
+      recipientAddress: normalizedRecipientAddress,
       terminal,
     };
   } catch {
@@ -418,10 +433,12 @@ function hasValidRecipientEnvelope(body: string, memberWallets: string[]): boole
   }
 
   const entries = envelope.entries as Record<string, unknown>;
-  const expectedWallets = new Set(memberWallets);
+  const expectedWallets = new Set(memberWallets.map(normalizeWalletAddress));
   const recipientWallets = Object.keys(entries);
   if (
     recipientWallets.length !== expectedWallets.size
+    || recipientWallets.some((walletAddress) =>
+      !isWalletAddress(walletAddress) || normalizeWalletAddress(walletAddress) !== walletAddress)
     || recipientWallets.some((walletAddress) => !expectedWallets.has(walletAddress))
   ) {
     return false;
@@ -455,7 +472,7 @@ function envelopeIncludesRecipient(body: string, walletAddress: string): boolean
       || envelope.entries === null
       || Array.isArray(envelope.entries)
     ) return false;
-    const entry = (envelope.entries as Record<string, unknown>)[walletAddress];
+    const entry = (envelope.entries as Record<string, unknown>)[normalizeWalletAddress(walletAddress)];
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
     const cipherEntry = entry as Record<string, unknown>;
     const iv = decodeCanonicalBase64Url(cipherEntry.iv);
@@ -512,6 +529,13 @@ async function ensureSeedGroups() {
 
 function requireAddress(value: string) {
   if (!isWalletAddress(value)) {
+    throw new Error("Enter a valid wallet address.");
+  }
+  return normalizeWalletAddress(value);
+}
+
+function requireXrplAddress(value: string) {
+  if (!isXrplAddress(value)) {
     throw new Error("Enter a valid XRPL wallet address.");
   }
   return value;
@@ -554,14 +578,14 @@ function getAuthenticatedWallet(req: Request) {
       expiresAt?: number;
     };
     if (!parsed.walletAddress || !parsed.expiresAt || parsed.expiresAt <= Date.now()) return null;
-    return isWalletAddress(parsed.walletAddress) ? parsed.walletAddress : null;
+    return isWalletAddress(parsed.walletAddress) ? normalizeWalletAddress(parsed.walletAddress) : null;
   } catch {
     return null;
   }
 }
 
 function setAuthCookie(res: Response, walletAddress: string) {
-  res.cookie(AUTH_COOKIE, encodeSession(walletAddress), {
+  res.cookie(AUTH_COOKIE, encodeSession(normalizeWalletAddress(walletAddress)), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -573,7 +597,7 @@ function setAuthCookie(res: Response, walletAddress: string) {
 export function requireAuth(req: Request, res: Response) {
   const walletAddress = getAuthenticatedWallet(req);
   if (!walletAddress) {
-    res.status(401).json({ error: "Your wallet session has expired. Connect with Xaman again." });
+    res.status(401).json({ error: "Your wallet session has expired. Connect your wallet again." });
     return null;
   }
   return walletAddress;
@@ -669,7 +693,7 @@ router.get("/wallet/sessions/:sessionId", async (req, res) => {
     const walletAddress = payload.response?.account ?? null;
     const connected = payload.meta?.resolved === true && payload.meta?.signed === true && walletAddress;
     if (connected) {
-      requireAddress(walletAddress);
+      requireXrplAddress(walletAddress);
       setAuthCookie(res, walletAddress);
     }
     res.json({
@@ -680,6 +704,136 @@ router.get("/wallet/sessions/:sessionId", async (req, res) => {
     });
   } catch {
     res.status(400).json({ error: "Invalid wallet session." });
+  }
+});
+
+function sameOriginRequest(req: Request): string | null {
+  const origin = req.get("origin");
+  const requestHost = req.get("host")?.toLowerCase();
+  if (!origin || !requestHost) return null;
+  try {
+    const parsed = new URL(origin);
+    const localHttp = parsed.protocol === "http:"
+      && ["localhost", "127.0.0.1"].includes(parsed.hostname);
+    if (
+      parsed.origin !== origin
+      || parsed.host.toLowerCase() !== requestHost
+      || (parsed.protocol !== "https:" && !localHttp)
+      || parsed.username
+      || parsed.password
+    ) return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+router.post("/wallet/evm/challenges", async (req, res): Promise<void> => {
+  const parsed = CreateLadyChainWalletChallengeBody.safeParse(req.body);
+  const origin = sameOriginRequest(req);
+  if (!parsed.success || !isEvmAddress(parsed.data.address) || !origin) {
+    res.status(400).json({ error: "Use this Frogtown page to connect a valid EVM wallet." });
+    return;
+  }
+  if (!sessionSecret()) {
+    res.status(503).json({ error: "Wallet sign-in is not configured for this environment." });
+    return;
+  }
+
+  try {
+    const walletAddress = normalizeWalletAddress(parsed.data.address);
+    const nonce = randomBytes(32).toString("hex");
+    const nonceHash = createHash("sha256").update(nonce).digest("hex");
+    const issuedAt = new Date();
+    const expiresAt = new Date(issuedAt.getTime() + 5 * 60 * 1000);
+    const message = createLadyChainSignInMessage(origin, walletAddress, nonce, issuedAt, expiresAt);
+
+    await db.delete(walletAuthChallengesTable).where(lt(walletAuthChallengesTable.expiresAt, issuedAt));
+    await db.insert(walletAuthChallengesTable).values({
+      nonceHash,
+      walletAddress,
+      origin,
+      message,
+      expiresAt,
+    });
+    res.status(201).json(CreateLadyChainWalletChallengeResponse.parse({
+      nonce,
+      message,
+      expiresAt: expiresAt.toISOString(),
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not create LadyChain wallet sign-in challenge");
+    res.status(503).json({ error: "Wallet sign-in is temporarily unavailable." });
+  }
+});
+
+router.post("/wallet/evm/sessions", async (req, res): Promise<void> => {
+  const parsed = CreateLadyChainWalletSessionBody.safeParse(req.body);
+  const origin = sameOriginRequest(req);
+  if (!parsed.success || !isEvmAddress(parsed.data.address) || !origin) {
+    res.status(400).json({ error: "Use this Frogtown page to submit a valid LadyChain sign-in." });
+    return;
+  }
+  if (!sessionSecret()) {
+    res.status(503).json({ error: "Wallet sign-in is not configured for this environment." });
+    return;
+  }
+
+  const walletAddress = normalizeWalletAddress(parsed.data.address);
+  const nonceHash = createHash("sha256").update(parsed.data.nonce).digest("hex");
+  try {
+    const [challenge] = await db
+      .select()
+      .from(walletAuthChallengesTable)
+      .where(and(
+        eq(walletAuthChallengesTable.nonceHash, nonceHash),
+        eq(walletAuthChallengesTable.walletAddress, walletAddress),
+        eq(walletAuthChallengesTable.origin, origin),
+        gt(walletAuthChallengesTable.expiresAt, new Date()),
+      ))
+      .limit(1);
+    if (!challenge) {
+      res.status(400).json({ error: "This sign-in expired or was already used. Please reconnect your wallet." });
+      return;
+    }
+
+    let signatureValid = false;
+    try {
+      signatureValid = await verifyMessage({
+        address: walletAddress as `0x${string}`,
+        message: challenge.message,
+        signature: parsed.data.signature as `0x${string}`,
+      });
+    } catch {
+      signatureValid = false;
+    }
+    if (!signatureValid) {
+      res.status(401).json({ error: "The wallet signature did not match this address." });
+      return;
+    }
+
+    const consumed = await db
+      .delete(walletAuthChallengesTable)
+      .where(and(
+        eq(walletAuthChallengesTable.nonceHash, nonceHash),
+        eq(walletAuthChallengesTable.walletAddress, walletAddress),
+        eq(walletAuthChallengesTable.origin, origin),
+        gt(walletAuthChallengesTable.expiresAt, new Date()),
+      ))
+      .returning({ nonceHash: walletAuthChallengesTable.nonceHash });
+    if (consumed.length === 0) {
+      res.status(400).json({ error: "This sign-in expired or was already used. Please reconnect your wallet." });
+      return;
+    }
+
+    setAuthCookie(res, walletAddress);
+    res.json(CreateLadyChainWalletSessionResponse.parse({
+      walletAddress,
+      network: "LadyChain",
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not verify LadyChain wallet sign-in");
+    res.status(503).json({ error: "Wallet sign-in is temporarily unavailable." });
   }
 });
 
@@ -722,7 +876,7 @@ router.get("/wallets/:walletAddress/hermit-tick", async (req, res): Promise<void
 router.get("/wallet/me", (req, res) => {
   const walletAddress = requireAuth(req, res);
   if (!walletAddress) return;
-  res.json({ walletAddress, network: "XRPL Mainnet" });
+  res.json({ walletAddress, network: isXrplAddress(walletAddress) ? "XRPL Mainnet" : "LadyChain" });
 });
 
 router.get("/wallet/profile", async (req, res): Promise<void> => {
@@ -788,10 +942,11 @@ router.put("/wallet/profile", async (req, res): Promise<void> => {
         const deviceEligible = await claimReferralDeviceInTransaction(tx, walletAddress, deviceIdHash);
         let referralStatus: ReferralSetupStatus = "not_referred";
         if (parsed.data.referrerAddress) {
+          const referrerAddress = normalizeWalletAddress(parsed.data.referrerAddress);
           referralStatus = deviceIdHash
             ? await createReferralInTransaction(
               tx,
-              parsed.data.referrerAddress,
+              referrerAddress,
               walletAddress,
               deviceEligible,
             )
@@ -844,10 +999,10 @@ router.post("/wallet/blocks", async (req, res): Promise<void> => {
   if (!walletAddress) return;
   const parsed = BlockWalletBody.safeParse(req.body);
   if (!parsed.success || !isWalletAddress(parsed.data.blockedWalletAddress)) {
-    res.status(400).json({ error: "Enter a valid XRPL wallet address to block." });
+    res.status(400).json({ error: "Enter a valid XRPL or LadyChain wallet address to block." });
     return;
   }
-  const blockedWalletAddress = parsed.data.blockedWalletAddress;
+  const blockedWalletAddress = normalizeWalletAddress(parsed.data.blockedWalletAddress);
   if (walletAddress === blockedWalletAddress) {
     res.status(400).json({ error: "You cannot block your own wallet." });
     return;
@@ -915,10 +1070,10 @@ router.delete("/wallet/blocks/:blockedWalletAddress", async (req, res): Promise<
   if (!walletAddress) return;
   const parsed = UnblockWalletParams.safeParse(req.params);
   if (!parsed.success || !isWalletAddress(parsed.data.blockedWalletAddress)) {
-    res.status(400).json({ error: "Enter a valid XRPL wallet address." });
+    res.status(400).json({ error: "Enter a valid wallet address." });
     return;
   }
-  const blockedWalletAddress = parsed.data.blockedWalletAddress;
+  const blockedWalletAddress = normalizeWalletAddress(parsed.data.blockedWalletAddress);
   if (walletAddress === blockedWalletAddress) {
     res.status(400).json({ error: "Invalid blocked wallet." });
     return;
@@ -1134,10 +1289,14 @@ router.get("/wallet/keys/:walletAddress", async (req, res): Promise<void> => {
   if (!sessionWallet) return;
   const parsedParams = GetWalletEncryptionKeyParams.safeParse(req.params);
   if (!parsedParams.success) {
-    res.status(400).json({ error: "Enter a valid XRPL wallet address." });
+    res.status(400).json({ error: "Enter a valid wallet address." });
     return;
   }
-  const walletAddress = parsedParams.data.walletAddress;
+  if (!isWalletAddress(parsedParams.data.walletAddress)) {
+    res.status(400).json({ error: "Enter a valid wallet address." });
+    return;
+  }
+  const walletAddress = normalizeWalletAddress(parsedParams.data.walletAddress);
   const keys = await db
     .select({ walletAddress: walletKeysTable.walletAddress, publicKey: walletKeysTable.publicKey })
     .from(walletKeysTable)
@@ -1404,7 +1563,7 @@ router.post("/conversations", async (req, res): Promise<void> => {
       fromWalletAddress: requestBody.fromWalletAddress,
     });
     if (!parsedInput.success) {
-      res.status(400).json({ error: "Enter a valid Frogtown username or XRPL address." });
+      res.status(400).json({ error: "Enter a valid Frogtown username or XRPL/LadyChain wallet address." });
       return;
     }
     const input = parsedInput.data;
@@ -1417,7 +1576,7 @@ router.post("/conversations", async (req, res): Promise<void> => {
     let recipientWalletAddress: string;
     let recipientUsername: string | null = null;
     if (isWalletAddress(recipientIdentifier)) {
-      recipientWalletAddress = recipientIdentifier;
+      recipientWalletAddress = normalizeWalletAddress(recipientIdentifier);
       const [profile] = await db
         .select({ username: walletProfilesTable.username })
         .from(walletProfilesTable)
@@ -1429,7 +1588,7 @@ router.post("/conversations", async (req, res): Promise<void> => {
         ? recipientIdentifier.slice(1)
         : recipientIdentifier);
       if (!username) {
-        res.status(400).json({ error: "Enter a 4–17 character username or valid XRPL address." });
+        res.status(400).json({ error: "Enter a 4–17 character username or a valid wallet address." });
         return;
       }
       const [profile] = await db
@@ -2043,7 +2202,8 @@ router.post("/conversations/:conversationId/history-shares", async (req, res): P
     return;
   }
   const { conversationId } = parsedParams.data;
-  const { messageId, recipientAddress, body } = parsedBody.data;
+  const { messageId, body } = parsedBody.data;
+  const recipientAddress = normalizeWalletAddress(parsedBody.data.recipientAddress);
   if (!isWalletAddress(recipientAddress) || !hasValidRecipientEnvelope(body, [recipientAddress])) {
     res.status(400).json({ error: "History shares must be encrypted only for the named recipient." });
     return;

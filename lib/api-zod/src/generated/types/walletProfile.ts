@@ -7,7 +7,7 @@
  */
 
 export interface WalletProfile {
-  /** @pattern ^r[1-9A-HJ-NP-Za-km-z]{24,34}$ */
+  /** @pattern ^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$ */
   walletAddress: string;
   /**
      * @minLength 4

@@ -10,6 +10,7 @@ import type { WalletAddressParameter } from './walletAddressParameter';
 export type ListGroupsParams = {
 /**
  * @minLength 25
+ * @maxLength 42
  */
 walletAddress: WalletAddressParameter;
 };

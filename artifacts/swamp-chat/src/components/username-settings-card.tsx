@@ -76,7 +76,7 @@ export function UsernameSettingsCard({ walletAddress }: { walletAddress: string 
           <p className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">Your public name</p>
           <h3 className="mt-1 text-lg font-semibold tracking-[-.03em]">Frogtown username</h3>
           <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">
-            Members can find you by this username or your XRPL wallet address.
+            Members can find you by this username or your wallet address.
           </p>
         </div>
       </div>

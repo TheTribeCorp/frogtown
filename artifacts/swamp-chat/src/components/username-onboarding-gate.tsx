@@ -120,12 +120,17 @@ export function UsernameOnboardingGate({
         <p className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--primary))]">One wallet · one name</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-[-.05em]">Choose your username</h1>
         <p className="mt-2 text-sm leading-6 text-[hsl(var(--muted-foreground))]">
-          Your community can find and message you with this name or your XRPL wallet address.
+          Your community can find and message you with this name or your wallet address.
         </p>
         <p className="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]">
           Signed in as <span className="mono">{shortWallet(walletAddress)}</span>{' '}
           <HermitTick walletAddress={walletAddress} currentWallet className="inline-flex size-4 align-middle" />
         </p>
+        {walletAddress.toLowerCase().startsWith('0x') && (
+          <p className="mt-2 text-[11px] leading-5 text-[hsl(var(--muted-foreground))]">
+            $HERMIT holder stars are checked on XRPL; LadyChain wallets can still use Frogtown with no token check.
+          </p>
+        )}
 
         <Form {...form}>
           <form

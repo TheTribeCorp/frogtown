@@ -9,7 +9,8 @@
 export interface BlockedWalletInput {
   /**
      * @minLength 25
-     * @maxLength 35
+     * @maxLength 42
+     * @pattern ^(r[1-9A-HJ-NP-Za-km-z]{24,34}|0x[a-fA-F0-9]{40})$
      */
   blockedWalletAddress: string;
 }

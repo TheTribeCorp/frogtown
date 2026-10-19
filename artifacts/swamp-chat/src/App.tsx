@@ -83,6 +83,7 @@ import { TimelinePage } from '@/components/timeline-page';
 import { DailyQuestsPage } from '@/components/daily-quests-page';
 import { HermitMarketTicker } from '@/components/hermit-market-ticker';
 import { HermitTick } from '@/components/hermit-tick';
+import { LadyChainConnect } from '@/components/ladychain-connect';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { UsernameOnboardingGate } from '@/components/username-onboarding-gate';
 import { UsernameSettingsCard } from '@/components/username-settings-card';
@@ -552,24 +553,27 @@ function WalletEntry() {
     },
   });
   const status = statusQuery.data;
+  const finishSignIn = useCallback((walletAddress: string) => {
+    const requestedPath = window.sessionStorage.getItem('frogtown-signin-return-to');
+    window.sessionStorage.removeItem('frogtown-signin-return-to');
+    const destination = requestedPath && ['/', '/groups', '/timeline', '/settings', '/settings/recovery'].includes(requestedPath)
+      ? requestedPath
+      : '/';
+    setWalletAddress(walletAddress);
+    setLocation(destination);
+    setNotice({ message: 'Wallet connected. Welcome to Frogtown.', tone: 'success' });
+    setSession(null);
+  }, [setLocation, setWalletAddress]);
 
   useEffect(() => {
     if (status?.status === 'connected' && status.walletAddress) {
-      const requestedPath = window.sessionStorage.getItem('frogtown-signin-return-to');
-      window.sessionStorage.removeItem('frogtown-signin-return-to');
-      const destination = requestedPath && ['/', '/groups', '/timeline', '/settings', '/settings/recovery'].includes(requestedPath)
-        ? requestedPath
-        : '/';
-      setWalletAddress(status.walletAddress);
-      setLocation(destination);
-      setNotice({ message: 'Wallet connected. Welcome to Frogtown.', tone: 'success' });
-      setSession(null);
+      finishSignIn(status.walletAddress);
     }
     if (status?.status === 'expired') {
       setNotice({ message: 'That Xaman session expired. Start a fresh sign-in.', tone: 'error' });
       setSession(null);
     }
-  }, [setLocation, setWalletAddress, status?.status, status?.walletAddress]);
+  }, [finishSignIn, status?.status, status?.walletAddress]);
 
   const connect = () => {
     setNotice(null);
@@ -585,10 +589,10 @@ function WalletEntry() {
         <section className="ft-entry-scene" aria-labelledby="frogtown-welcome-title">
           <header className="ft-entry-header">
             <FrogtownMark glyph="F" />
-            <span className="ft-entry-network"><span className="ft-entry-network-dot" /> XRPL / $HERMIT</span>
+            <span className="ft-entry-network"><span className="ft-entry-network-dot" /> XRPL / LADYCHAIN</span>
           </header>
           <div className="ft-entry-intro">
-            <p className="ft-entry-kicker"><span /> $HERMIT community / XRPL</p>
+            <p className="ft-entry-kicker"><span /> $HERMIT community / XRPL + LADYCHAIN</p>
             <h1 id="frogtown-welcome-title">Good people.<br /><span>Good signals.</span></h1>
             <p className="ft-entry-lede">A little more human side of the ledger. Find your people, settle into a room, and make yourself at home.</p>
             <div className="ft-entry-spaces" aria-label="Frogtown spaces">
@@ -638,7 +642,7 @@ function WalletEntry() {
             </div>
           </div>
           <footer className="ft-entry-scene-foot">
-            <span>Made for the XRPL, open to every wallet.</span>
+            <span>Built for XRPL and LadyChain.</span>
             <span className="ft-entry-asterisk" aria-hidden="true">*</span>
           </footer>
         </section>
@@ -655,12 +659,12 @@ function WalletEntry() {
           <div className="ft-entry-access-body">
             <div className="ft-entry-welcome"><span /> Welcome in</div>
             <h2 id="frogtown-entry-title">Your people<br />are <span>around here.</span></h2>
-            <p className="ft-entry-access-copy">Connect any XRPL wallet to step inside. $HERMIT ownership is not required — your wallet address is your Frogtown identity.</p>
+            <p className="ft-entry-access-copy">Connect with Xaman on XRPL or an EVM wallet on LadyChain. $HERMIT ownership is not required — your wallet address is your Frogtown identity.</p>
             {!session ? (
               <div className="ft-entry-connect-card">
                 <div className="ft-entry-connect-intro">
                   <div className="ft-entry-wallet-icon"><WalletCards className="size-5" /></div>
-                  <div><strong>Connect with Xaman</strong><span>Secure wallet sign-in, then you’re in.</span></div>
+                  <div><strong>Connect with Xaman</strong><span>Sign in with your XRPL wallet.</span></div>
                 </div>
                 <button
                   onClick={connect}
@@ -691,6 +695,7 @@ function WalletEntry() {
                 <button className="ft-entry-cancel" onClick={() => setSession(null)} data-testid="button-cancel-wallet" type="button">Cancel and start over <ChevronRight className="size-3.5" /></button>
               </div>
             )}
+            <LadyChainConnect onConnected={finishSignIn} />
 
             <div className="ft-entry-promise-list" id="frogtown-entry-promises">
               <div className="ft-entry-promise">
@@ -704,7 +709,7 @@ function WalletEntry() {
             </div>
           </div>
           <footer className="ft-entry-access-foot">
-            <span>Wallet address = your identity</span><span>FROGTOWN <b>·</b> XRPL</span>
+            <span>Wallet address = your identity</span><span>FROGTOWN <b>·</b> XRPL + LADYCHAIN</span>
           </footer>
         </section>
       </div>
@@ -722,8 +727,8 @@ function DirectChatDialog({ onClose, onCreated }: { onClose: () => void; onCreat
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setError('');
-    if (recipient.trim().length < 4 || recipient.trim().length > 35) {
-      setError('Enter a 4–17 character username or a complete XRPL address.');
+    if (recipient.trim().length < 4 || recipient.trim().length > 42) {
+      setError('Enter a 4–17 character username or a complete wallet address.');
       return;
     }
     createDirect.mutate({ data: { recipient: recipient.trim(), fromWalletAddress: walletAddress } }, {
@@ -736,9 +741,9 @@ function DirectChatDialog({ onClose, onCreated }: { onClose: () => void; onCreat
   };
   return <Modal title="Start a direct line" eyebrow="private / one-to-one" onClose={onClose}>
     <form onSubmit={submit}>
-      <label className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]" htmlFor="direct-recipient">Username or XRPL address</label>
+      <label className="mono text-[10px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]" htmlFor="direct-recipient">Username or wallet address</label>
       <div className="relative mt-2"><AtSign className="absolute left-3 top-3.5 size-4 text-[hsl(var(--muted-foreground))]" /><input id="direct-recipient" autoFocus value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="@username or r… address" className="w-full rounded-xl border border-[hsl(var(--input))] bg-[hsl(var(--card))] py-3 pl-10 pr-3 text-sm outline-none transition placeholder:text-[hsl(var(--muted-foreground)/.6)] focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary)/.13)]" data-testid="input-direct-recipient" /></div>
-      <p className="mt-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send to a Frogtown username or XRPL wallet address. This starts a private-message request; the recipient can accept, decline, or block you.</p>
+      <p className="mt-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send to a Frogtown username or XRPL/LadyChain wallet address. This starts a private-message request; the recipient can accept, decline, or block you.</p>
       {error && <p className="mt-3 flex items-center gap-2 text-xs text-[hsl(var(--destructive))]" data-testid="text-direct-error"><CircleAlert className="size-3.5" />{error}</p>}
       <button disabled={createDirect.isPending} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-4 py-3 text-sm font-medium text-[hsl(var(--card))] transition hover:bg-[hsl(var(--primary))] disabled:opacity-60" data-testid="button-start-direct-chat">{createDirect.isPending ? <RefreshCw className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} {createDirect.isPending ? 'Sending request…' : 'Send message request'}</button>
     </form>
@@ -1489,7 +1494,7 @@ function MessagePane({
       setOutboxError(errorMessage(error, 'Frogtown could not remove the saved encrypted message.'));
     }
   };
-  if (!conversation) return <div className="hidden min-w-0 flex-1 items-center justify-center p-8 md:flex"><div className="max-w-sm text-center"><div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[hsl(var(--secondary)/.35)] text-[hsl(var(--foreground))]"><MessageCircle className="size-6" /></div><h2 className="mt-5 text-2xl font-semibold tracking-[-.05em]">Pick a conversation</h2><p className="mt-2 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Your private lines live here. Start one with any XRPL address.</p></div></div>;
+  if (!conversation) return <div className="hidden min-w-0 flex-1 items-center justify-center p-8 md:flex"><div className="max-w-sm text-center"><div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[hsl(var(--secondary)/.35)] text-[hsl(var(--foreground))]"><MessageCircle className="size-6" /></div><h2 className="mt-5 text-2xl font-semibold tracking-[-.05em]">Pick a conversation</h2><p className="mt-2 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Your private lines live here. Start one with any XRPL or LadyChain address.</p></div></div>;
   return <section className="flex min-h-[520px] min-w-0 flex-1 flex-col bg-[hsl(var(--background)/.42)]" data-testid="message-pane">
       {conversation.type === 'group' && <div className="mx-4 mt-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.7)] px-4 py-2.5 text-xs leading-5 text-[hsl(var(--muted-foreground))]" role="note" data-testid="status-group-history-policy">Older group messages may be shared with new members by an existing member’s device. They stay end-to-end encrypted; Frogtown cannot read them.</div>}
       {conversation.type === 'group' && decryptedMessages.some((message) => message.historyPending) && <div className="mx-4 mt-3 rounded-xl border border-[hsl(var(--primary)/.2)] bg-[hsl(var(--primary)/.06)] px-4 py-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]" role="status" data-testid="status-group-history-sharing">Older messages are end-to-end encrypted. They will appear when an existing member opens this room and their device shares them; Frogtown cannot read them.</div>}
@@ -1894,7 +1899,7 @@ function SettingsPage() {
 
 function LockedPage({ title }: { title: string }) {
   const [location, setLocation] = useLocation();
-  return <div className="swamp-app noise flex min-h-[100dvh] items-center justify-center p-6"><div className="max-w-md text-center"><div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[hsl(var(--secondary))] shadow-[4px_4px_0_hsl(var(--accent))]"><LockKeyhole className="size-6" /></div><p className="mono mt-7 text-[10px] uppercase tracking-[.2em] text-[hsl(var(--muted-foreground))]">wallet required</p><h1 className="mt-3 text-4xl font-semibold tracking-[-.07em]">{title} starts at the door.</h1><p className="mt-4 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Connect with Xaman to enter Frogtown, the wallet-connected home for $HERMIT and the XRPL community.</p><button onClick={() => setLocation('/')} className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-5 py-3 text-sm font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))]">Connect wallet <ArrowRight className="size-4" /></button><p className="mono mt-5 text-[10px] text-[hsl(var(--muted-foreground))]">{location}</p></div></div>;
+  return <div className="swamp-app noise flex min-h-[100dvh] items-center justify-center p-6"><div className="max-w-md text-center"><div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[hsl(var(--secondary))] shadow-[4px_4px_0_hsl(var(--accent))]"><LockKeyhole className="size-6" /></div><p className="mono mt-7 text-[10px] uppercase tracking-[.2em] text-[hsl(var(--muted-foreground))]">wallet required</p><h1 className="mt-3 text-4xl font-semibold tracking-[-.07em]">{title} starts at the door.</h1><p className="mt-4 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Connect with Xaman on XRPL or an EVM wallet on LadyChain to enter Frogtown.</p><button onClick={() => setLocation('/')} className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[hsl(var(--foreground))] px-5 py-3 text-sm font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))]">Connect wallet <ArrowRight className="size-4" /></button><p className="mono mt-5 text-[10px] text-[hsl(var(--muted-foreground))]">{location}</p></div></div>;
 }
 
 function HomePage() {
@@ -2361,8 +2366,8 @@ function App() {
   useEffect(() => {
     const url = new URL(window.location.href);
     const referrerAddress = url.searchParams.get('ref');
-    if (referrerAddress && /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(referrerAddress)) {
-      window.sessionStorage.setItem('frogtown-referrer-wallet', referrerAddress);
+    if (referrerAddress && (/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(referrerAddress) || /^0x[a-fA-F0-9]{40}$/.test(referrerAddress))) {
+      window.sessionStorage.setItem('frogtown-referrer-wallet', referrerAddress.startsWith('0x') ? referrerAddress.toLowerCase() : referrerAddress);
       url.searchParams.delete('ref');
       window.history.replaceState(window.history.state, '', url.toString());
     }

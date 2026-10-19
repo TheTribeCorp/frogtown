@@ -10,6 +10,9 @@ export interface GroupInput {
   /** @minLength 2 */
   name: string;
   description: string;
-  /** @minLength 25 */
+  /**
+     * @minLength 25
+     * @maxLength 42
+     */
   creatorAddress: string;
 }

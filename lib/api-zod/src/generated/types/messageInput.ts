@@ -8,7 +8,10 @@
 
 export interface MessageInput {
   messageId: string;
-  /** @minLength 25 */
+  /**
+     * @minLength 25
+     * @maxLength 42
+     */
   senderAddress: string;
   /** @minLength 1 */
   body: string;

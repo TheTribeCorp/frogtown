@@ -32,7 +32,7 @@ export function HermitMarketTicker({ walletAddress }: { walletAddress?: string }
     { refresh: true },
     {
       query: {
-        enabled: Boolean(walletAddress),
+        enabled: Boolean(walletAddress && !walletAddress.toLowerCase().startsWith('0x')),
         queryKey: hermitBalanceQueryKey(walletAddress ?? 'signed-out', true),
         staleTime: 0,
         refetchOnMount: 'always',

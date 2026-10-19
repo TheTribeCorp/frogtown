@@ -52,6 +52,10 @@ import type {
   HealthStatus,
   HermitMarketData,
   JoinGroupInput,
+  LadyChainWalletChallenge,
+  LadyChainWalletChallengeInput,
+  LadyChainWalletSession,
+  LadyChainWalletSessionInput,
   ListConversationHistoryShareWorkParams,
   ListConversationMessagesParams,
   ListConversationsParams,
@@ -573,6 +577,182 @@ export function useGetWalletSession<TData = Awaited<ReturnType<typeof getWalletS
 
 
 
+
+export const getCreateLadyChainWalletChallengeUrl = () => {
+
+
+
+
+  return `/api/wallet/evm/challenges`
+}
+
+/**
+ * @summary Create a one-time LadyChain wallet sign-in challenge
+ */
+export const createLadyChainWalletChallenge = async (ladyChainWalletChallengeInput: LadyChainWalletChallengeInput, options?: Parameters<typeof customFetch>[1]): Promise<LadyChainWalletChallenge> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<LadyChainWalletChallenge>(getCreateLadyChainWalletChallengeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(ladyChainWalletChallengeInput)
+  }
+);}
+
+
+
+
+
+export const getCreateLadyChainWalletChallengeMutationKey = () => ['createLadyChainWalletChallenge'] as const;
+
+export const getCreateLadyChainWalletChallengeMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLadyChainWalletChallenge>>, TError,CreateLadyChainWalletChallengeMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createLadyChainWalletChallenge>>, TError,CreateLadyChainWalletChallengeMutationVariables, TContext> => {
+
+const mutationKey = getCreateLadyChainWalletChallengeMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createLadyChainWalletChallenge>>, CreateLadyChainWalletChallengeMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createLadyChainWalletChallenge(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateLadyChainWalletChallengeMutationResult = NonNullable<Awaited<ReturnType<typeof createLadyChainWalletChallenge>>>
+    export type CreateLadyChainWalletChallengeMutationBody = BodyType<LadyChainWalletChallengeInput>
+    export type CreateLadyChainWalletChallengeMutationError = ErrorType<ErrorResponse>
+    export type CreateLadyChainWalletChallengeMutationVariables = {data: BodyType<LadyChainWalletChallengeInput>}
+
+    /**
+ * @summary Create a one-time LadyChain wallet sign-in challenge
+ */
+export const useCreateLadyChainWalletChallenge = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLadyChainWalletChallenge>>, TError,CreateLadyChainWalletChallengeMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createLadyChainWalletChallenge>>,
+        TError,
+        CreateLadyChainWalletChallengeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateLadyChainWalletChallengeMutationOptions(options), queryClient);
+    }
+
+export const getCreateLadyChainWalletSessionUrl = () => {
+
+
+
+
+  return `/api/wallet/evm/sessions`
+}
+
+/**
+ * @summary Verify a LadyChain wallet signature and create a Frogtown session
+ */
+export const createLadyChainWalletSession = async (ladyChainWalletSessionInput: LadyChainWalletSessionInput, options?: Parameters<typeof customFetch>[1]): Promise<LadyChainWalletSession> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<LadyChainWalletSession>(getCreateLadyChainWalletSessionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(ladyChainWalletSessionInput)
+  }
+);}
+
+
+
+
+
+export const getCreateLadyChainWalletSessionMutationKey = () => ['createLadyChainWalletSession'] as const;
+
+export const getCreateLadyChainWalletSessionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLadyChainWalletSession>>, TError,CreateLadyChainWalletSessionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createLadyChainWalletSession>>, TError,CreateLadyChainWalletSessionMutationVariables, TContext> => {
+
+const mutationKey = getCreateLadyChainWalletSessionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createLadyChainWalletSession>>, CreateLadyChainWalletSessionMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createLadyChainWalletSession(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateLadyChainWalletSessionMutationResult = NonNullable<Awaited<ReturnType<typeof createLadyChainWalletSession>>>
+    export type CreateLadyChainWalletSessionMutationBody = BodyType<LadyChainWalletSessionInput>
+    export type CreateLadyChainWalletSessionMutationError = ErrorType<ErrorResponse>
+    export type CreateLadyChainWalletSessionMutationVariables = {data: BodyType<LadyChainWalletSessionInput>}
+
+    /**
+ * @summary Verify a LadyChain wallet signature and create a Frogtown session
+ */
+export const useCreateLadyChainWalletSession = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLadyChainWalletSession>>, TError,CreateLadyChainWalletSessionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createLadyChainWalletSession>>,
+        TError,
+        CreateLadyChainWalletSessionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateLadyChainWalletSessionMutationOptions(options), queryClient);
+    }
 
 export const getGetWalletHermitTickUrl = (walletAddress: string,
     params?: GetWalletHermitTickParams,) => {

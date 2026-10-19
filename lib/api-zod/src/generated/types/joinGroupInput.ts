@@ -7,6 +7,9 @@
  */
 
 export interface JoinGroupInput {
-  /** @minLength 25 */
+  /**
+     * @minLength 25
+     * @maxLength 42
+     */
   walletAddress: string;
 }

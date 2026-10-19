@@ -11,6 +11,10 @@ const router: IRouter = Router();
 router.get("/wallet/hermit-balance", async (req, res): Promise<void> => {
   const walletAddress = requireAuth(req, res);
   if (!walletAddress) return;
+  if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(walletAddress)) {
+    res.status(400).json({ error: "$HERMIT and XRP balance checks are available for XRPL wallets only." });
+    return;
+  }
 
   const rawRefresh = req.query.refresh;
   if (rawRefresh !== undefined && rawRefresh !== "true" && rawRefresh !== "false") {

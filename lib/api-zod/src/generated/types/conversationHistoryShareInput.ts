@@ -8,7 +8,10 @@
 
 export interface ConversationHistoryShareInput {
   messageId: string;
-  /** @minLength 25 */
+  /**
+     * @minLength 25
+     * @maxLength 42
+     */
   recipientAddress: string;
   /**
      * @minLength 1

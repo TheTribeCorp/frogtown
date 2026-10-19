@@ -12,7 +12,7 @@ export function HermitTick({ walletAddress, currentWallet = false, className = '
   const params = currentWallet ? { refresh: true } : undefined;
   const query = useGetWalletHermitTick(walletAddress, params, {
     query: {
-      enabled: Boolean(walletAddress),
+      enabled: Boolean(walletAddress) && !walletAddress.toLowerCase().startsWith('0x'),
       queryKey: getGetWalletHermitTickQueryKey(walletAddress, params),
       staleTime: currentWallet ? 0 : 5 * 60 * 1000,
       retry: false,
