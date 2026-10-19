@@ -8,5 +8,4 @@
 - [Frogtown Vercel rollout](frogtown-vercel-rollout.md) — keep Replit production and its PostgreSQL data live until Vercel has been verified; no data move without confirmation.
 - [Frogtown email monitoring](frogtown-email-monitoring.md) — scheduled GitHub Actions health checks can use failed-run email notifications without another monitoring credential.
 - [Drizzle aggregate timestamps](frogtown-drizzle-aggregate-timestamps.md) — raw SQL min/max timestamps may decode as strings; add an explicit decoder before calling Date methods.
-- [Frogtown $HERMIT purchases](frogtown-hermit-purchasing.md) — keep token buys non-custodial and require each member to approve the XRPL trade in Xaman.
-- [Frogtown purchase analytics](frogtown-purchase-analytics.md) — purchase-flow reporting may store only fixed step labels and daily aggregate counts, never wallet or transaction identifiers.
+- [Frogtown $HERMIT purchases](frogtown-hermit-purchasing.md) — Frogtown only provides the external token address; buy outside the app and rescan holdings at login.

@@ -254,12 +254,6 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/wallet/keys", "PUT", { publicKey: "not-a-key" }],
     ["/api/wallet/keys/reset", "POST", { publicKey: "not-a-key" }],
     ["/api/wallet/hermit-balance", "GET"],
-    ["/api/wallet/hermit-buy-quote?xrpAmount=1", "GET"],
-    ["/api/wallet/hermit-trustline", "POST"],
-    ["/api/wallet/hermit-buy", "POST", { xrpAmount: "1", slippageBps: 500 }],
-    ["/api/wallet/hermit-transactions/11111111-1111-4111-8111-111111111111", "GET"],
-    ["/api/wallet/hermit-buy-funnel-events", "POST", { event: "quote_preview" }],
-    ["/api/wallet/hermit-buy-funnel", "GET"],
     ["/api/wallets/" + walletA + "/hermit-tick?refresh=true", "GET"],
     ["/api/groups?walletAddress=" + walletA, "GET"],
     ["/api/groups", "POST", { name: "test", description: "", creatorAddress: walletA }],
@@ -290,22 +284,18 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     assert.equal(response.status, 401, `${method} ${pathname} should require a wallet session`);
   }
 
-  const invalidBuy = await request("/api/wallet/hermit-buy", {
-    method: "POST",
-    cookie: validCookie,
-    body: { xrpAmount: "1001", slippageBps: 500 },
-  });
-  assert.equal(invalidBuy.status, 400, "buy amount validation should reject oversized orders");
-  const invalidQuote = await request("/api/wallet/hermit-buy-quote?xrpAmount=0.001", {
-    cookie: validCookie,
-  });
-  assert.equal(invalidQuote.status, 400, "quote validation should reject tiny orders");
-  const invalidFunnelEvent = await request("/api/wallet/hermit-buy-funnel-events", {
-    method: "POST",
-    cookie: validCookie,
-    body: { event: "anything-else", walletAddress: walletA, txid: "private-transaction-data" },
-  });
-  assert.equal(invalidFunnelEvent.status, 400, "funnel analytics should only accept fixed event labels");
+  const retiredPurchaseRoutes = [
+    ["/api/wallet/hermit-buy-quote?xrpAmount=1", "GET"],
+    ["/api/wallet/hermit-trustline", "POST"],
+    ["/api/wallet/hermit-buy", "POST"],
+    ["/api/wallet/hermit-transactions/11111111-1111-4111-8111-111111111111", "GET"],
+    ["/api/wallet/hermit-buy-funnel-events", "POST"],
+    ["/api/wallet/hermit-buy-funnel", "GET"],
+  ];
+  for (const [pathname, method] of retiredPurchaseRoutes) {
+    const response = await request(pathname, { method, cookie: validCookie });
+    assert.equal(response.status, 404, `${method} ${pathname} should no longer be available`);
+  }
 
   const authenticatedMismatches = [
     ["/api/conversations?walletAddress=" + walletB, "GET"],

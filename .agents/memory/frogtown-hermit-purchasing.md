@@ -1,10 +1,10 @@
 ---
 name: Frogtown $HERMIT purchases
-description: The user's chosen custody and approval model for in-app $HERMIT purchases.
+description: The user's chosen model for token purchases and holder checks.
 ---
 
-Frogtown's in-app $HERMIT buy flow must prepare an XRPL DEX transaction for the member to approve in Xaman. Frogtown does not custody members' XRP or tokens.
+Frogtown must not execute or prepare $HERMIT buys inside the app. It should show a copyable $HERMIT contract/issuer address so members can buy on an external XRPL platform. On every wallet login, bypass the short balance cache and scan the signed-in wallet's $HERMIT trustline, showing the verified amount and the existing holder star.
 
-**Why:** the user chose Xaman-approved XRPL DEX orders for the BUY action.
+**Why:** the user asked to move buys off-app and check each member's holdings and amount at every login.
 
-**How to apply:** future purchase or checkout work should preserve member-controlled Xaman approval rather than adding custodial execution.
+**How to apply:** keep the public contract address copyable, disable in-app trading endpoints, and use the authenticated wallet balance check with a forced refresh at login.

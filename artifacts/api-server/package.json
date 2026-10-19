@@ -10,7 +10,6 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "test:auth": "pnpm run build && node --test test/auth-regression.test.mjs",
     "test:hermit-tick": "node --experimental-strip-types --test test/hermit-tick.test.mjs",
-    "test:hermit-trading": "node --experimental-strip-types --test test/hermit-trading.test.mjs",
     "test:wallet-username": "node --experimental-strip-types --test test/wallet-username.test.mjs",
     "test:vercel-routing": "node --experimental-strip-types --test test/vercel-path.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"

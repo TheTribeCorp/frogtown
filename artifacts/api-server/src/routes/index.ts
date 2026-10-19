@@ -4,7 +4,7 @@ import swampRouter from "./swamp";
 import timelineRouter from "./timeline";
 import gamificationRouter from "./gamification";
 import hermitMarketRouter from "./hermit-market";
-import hermitTradingRouter from "./hermit-trading";
+import hermitBalanceRouter from "./hermit-balance";
 
 const router: IRouter = Router();
 
@@ -13,6 +13,6 @@ router.use(swampRouter);
 router.use(timelineRouter);
 router.use(gamificationRouter);
 router.use(hermitMarketRouter);
-router.use(hermitTradingRouter);
+router.use(hermitBalanceRouter);
 
 export default router;
