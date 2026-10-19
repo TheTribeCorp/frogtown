@@ -19,7 +19,6 @@ import {
   type TimelinePost,
 } from '@workspace/api-client-react';
 import { TimelineModerationPanel } from '@/components/timeline-moderation';
-import { HermitBuyFunnelPanel } from '@/components/hermit-buy-funnel';
 import { TimelineOwnerActions } from '@/components/timeline-owner-actions';
 import { HermitTick } from '@/components/hermit-tick';
 
@@ -505,10 +504,7 @@ export function TimelinePage({ walletAddress }: { walletAddress: string }) {
             </div>
           ) : (
             moderationAccess.data?.isModerator ? (
-              <>
-                <HermitBuyFunnelPanel />
-                <TimelineModerationPanel enabled />
-              </>
+              <TimelineModerationPanel enabled />
             ) : (
               <TimelineModerationPanel enabled={false} />
             )
