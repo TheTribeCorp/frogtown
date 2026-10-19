@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
-import { zodResolver } from '@hookform/resolvers/zod';
 import {
   getGetWalletProfileQueryKey,
   useGetWalletProfile,
@@ -18,7 +17,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { getReferralInstallationId } from '@/lib/referral-installation';
-import { usernameSchema, usernameSaveErrorMessage, type UsernameFormValues } from '@/lib/username';
+import { usernameFormResolver, usernameSaveErrorMessage, type UsernameFormValues } from '@/lib/username';
 
 export function UsernameSettingsCard({ walletAddress }: { walletAddress: string }) {
   const queryClient = useQueryClient();
@@ -36,7 +35,7 @@ export function UsernameSettingsCard({ walletAddress }: { walletAddress: string 
   });
   const [notice, setNotice] = useState('');
   const form = useForm<UsernameFormValues>({
-    resolver: zodResolver(usernameSchema),
+    resolver: usernameFormResolver,
     defaultValues: { username: '' },
     mode: 'onChange',
   });

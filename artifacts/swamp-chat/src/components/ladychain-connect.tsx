@@ -1,28 +1,15 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { ArrowUpRight, LoaderCircle, WalletCards } from 'lucide-react';
-import {
-  useCreateLadyChainWalletChallenge,
-  useCreateLadyChainWalletSession,
-} from '@workspace/api-client-react';
+import type { Eip1193Provider } from '@/lib/ladychain-wallet';
+import { getInjectedEvmProviders, setActiveLadyChainProvider, readableLadyChainWalletError } from '@/lib/ladychain-wallet';
+import { mobileWalletConnectionConfigured } from '@/lib/ladychain-appkit';
+import { useLadyChainAuthentication } from '@/hooks/use-ladychain-auth';
 
-const LADYCHAIN_ID = '0x24d';
-
-type Eip1193Provider = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  providers?: Eip1193Provider[];
-  isMetaMask?: boolean;
-  isSafePal?: boolean;
-  isCoinbaseWallet?: boolean;
-  isTrust?: boolean;
-  isRabby?: boolean;
-  info?: { name?: string; uuid?: string };
-};
-
-declare global {
-  interface Window {
-    ethereum?: Eip1193Provider;
-  }
-}
+const LazyMobileWalletConnect = lazy(() =>
+  import('./ladychain-mobile-wallet-connect').then((module) => ({
+    default: module.LadyChainMobileWalletConnect,
+  })),
+);
 
 function providerLabel(provider: Eip1193Provider, index: number) {
   if (provider.isSafePal) return 'SafePal';
@@ -33,31 +20,24 @@ function providerLabel(provider: Eip1193Provider, index: number) {
   return provider.info?.name || (index === 0 ? 'EVM wallet' : `EVM wallet ${index + 1}`);
 }
 
-function readableWalletError(error: unknown) {
-  const code = typeof error === 'object' && error !== null && 'code' in error
-    ? Number((error as { code?: unknown }).code)
-    : undefined;
-  if (code === 4001) return 'Wallet connection or sign-in was cancelled.';
-  if (error instanceof Error && error.message) return error.message;
-  return 'Could not connect this wallet. Please try again.';
-}
-
 export function LadyChainConnect({ onConnected }: { onConnected: (walletAddress: string) => void }) {
-  const challengeMutation = useCreateLadyChainWalletChallenge({
-    request: { credentials: 'same-origin' },
-  });
-  const sessionMutation = useCreateLadyChainWalletSession({
-    request: { credentials: 'same-origin' },
-  });
+  const authenticate = useLadyChainAuthentication();
   const [providers, setProviders] = useState<Eip1193Provider[]>([]);
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState('');
   const [error, setError] = useState('');
+  const [showMobileWalletConnect, setShowMobileWalletConnect] = useState(false);
 
   useEffect(() => {
-    const injected = window.ethereum;
-    const choices = injected?.providers?.length ? injected.providers : injected ? [injected] : [];
-    setProviders([...new Set(choices)]);
+    const refresh = () => setProviders(getInjectedEvmProviders());
+    const announce = (event: Event) => {
+      const provider = (event as CustomEvent<{ provider?: Eip1193Provider }>).detail?.provider;
+      if (provider?.request) setProviders((current) => [...new Set([...current, provider])]);
+    };
+    refresh();
+    window.addEventListener('eip6963:announceProvider', announce);
+    window.dispatchEvent(new Event('eip6963:requestProvider'));
+    return () => window.removeEventListener('eip6963:announceProvider', announce);
   }, []);
 
   async function connect(provider: Eip1193Provider) {
@@ -65,68 +45,17 @@ export function LadyChainConnect({ onConnected }: { onConnected: (walletAddress:
     setBusy(true);
     try {
       setStep('Switching your wallet to LadyChain…');
-      const currentChainId = await provider.request({ method: 'eth_chainId' });
-      if (typeof currentChainId !== 'string') {
-        throw new Error('This wallet did not report its current network.');
-      }
-      if (currentChainId.toLowerCase() !== LADYCHAIN_ID) {
-        try {
-          await provider.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: LADYCHAIN_ID }],
-          });
-        } catch (switchError) {
-          const code = typeof switchError === 'object' && switchError !== null && 'code' in switchError
-            ? Number((switchError as { code?: unknown }).code)
-            : undefined;
-          if (code !== 4902) throw switchError;
-          await provider.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: LADYCHAIN_ID,
-              chainName: 'LadyChain',
-              nativeCurrency: { name: 'LADY', symbol: 'LADY', decimals: 18 },
-              rpcUrls: ['https://ladyrpc.us'],
-              blockExplorerUrls: ['https://ladyscan.us'],
-            }],
-          });
-          await provider.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: LADYCHAIN_ID }],
-          });
-        }
-      }
-
-      const activeChainId = await provider.request({ method: 'eth_chainId' });
-      if (typeof activeChainId !== 'string' || activeChainId.toLowerCase() !== LADYCHAIN_ID) {
-        throw new Error('Switch your wallet to LadyChain (chain ID 589) to continue.');
-      }
-
+      setActiveLadyChainProvider(provider);
       setStep('Waiting for wallet approval…');
       const accounts = await provider.request({ method: 'eth_requestAccounts' });
-      if (!Array.isArray(accounts) || typeof accounts[0] !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(accounts[0])) {
+      if (!Array.isArray(accounts) || typeof accounts[0] !== 'string') {
         throw new Error('This wallet did not return a valid EVM address.');
       }
-      const address = accounts[0].toLowerCase();
-
-      setStep('Preparing a secure sign-in…');
-      const challenge = await challengeMutation.mutateAsync({ data: { address } });
-
-      setStep('Approve the free sign-in message in your wallet…');
-      const signature = await provider.request({
-        method: 'personal_sign',
-        params: [challenge.message, address],
-      });
-      if (typeof signature !== 'string' || !/^0x[a-fA-F0-9]{130}$/.test(signature)) {
-        throw new Error('The wallet did not return a valid sign-in signature.');
-      }
-
-      const session = await sessionMutation.mutateAsync({
-        data: { address, nonce: challenge.nonce, signature },
-      });
-      onConnected(session.walletAddress);
+      setStep('Sign the free Frogtown login message…');
+      const walletAddress = await authenticate(provider, accounts[0]);
+      onConnected(walletAddress);
     } catch (connectError) {
-      setError(readableWalletError(connectError));
+      setError(readableLadyChainWalletError(connectError));
       setStep('');
     } finally {
       setBusy(false);
@@ -149,7 +78,7 @@ export function LadyChainConnect({ onConnected }: { onConnected: (walletAddress:
         </div>
       </div>
 
-      {providers.length > 0 ? (
+      {providers.length > 0 && (
         <div className="mt-3 grid gap-2">
           {providers.map((provider, index) => (
             <button
@@ -165,14 +94,41 @@ export function LadyChainConnect({ onConnected }: { onConnected: (walletAddress:
             </button>
           ))}
         </div>
-      ) : (
-        <p className="mt-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.8)] px-3 py-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]" role="status">
-          Open Frogtown in your MetaMask, SafePal, or other EVM wallet’s built-in browser, or use a wallet extension in this browser.
-        </p>
       )}
 
+      {mobileWalletConnectionConfigured ? (
+        <>
+          {!showMobileWalletConnect && (
+            <button
+              type="button"
+              onClick={() => setShowMobileWalletConnect(true)}
+              disabled={busy}
+              className="mt-3 flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-[hsl(var(--primary)/.35)] bg-[hsl(var(--primary)/.08)] px-4 text-left text-sm font-medium transition hover:border-[hsl(var(--primary)/.65)] disabled:opacity-60"
+              data-testid="button-open-ladychain-mobile-wallets"
+            >
+              <span>Connect from any mobile wallet</span>
+              <ArrowUpRight className="size-4 shrink-0" aria-hidden="true" />
+            </button>
+          )}
+          {showMobileWalletConnect && (
+            <Suspense fallback={<p className="mt-3 text-xs text-[hsl(var(--muted-foreground))]" role="status">Loading secure wallet selector…</p>}>
+              <LazyMobileWalletConnect
+                onConnected={onConnected}
+                disabled={busy}
+                onCancel={() => setShowMobileWalletConnect(false)}
+                autoOpen
+              />
+            </Suspense>
+          )}
+        </>
+      ) : providers.length === 0 ? (
+        <p className="mt-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.8)] px-3 py-3 text-xs leading-5 text-[hsl(var(--muted-foreground))]" role="status">
+          Mobile wallet selection is being configured. For now, open Frogtown in your wallet’s built-in browser or use an injected wallet extension.
+        </p>
+      ) : null}
+
       <p className="mt-3 text-[10px] leading-4 text-[hsl(var(--muted-foreground))]">
-        Sign-in only: your wallet approves a short message, not a transaction. Network details: <a className="underline underline-offset-2" href="https://ladyscan.us" target="_blank" rel="noreferrer">LadyScan</a>.
+        After changing accounts, Frogtown asks you to sign in again and switches the session to that account. Sign-in uses a free message, not a transaction. Network details: <a className="underline underline-offset-2" href="https://ladyscan.us" target="_blank" rel="noreferrer">LadyScan</a>.
       </p>
       {step && !error && !busy && <p className="mt-2 text-xs text-[hsl(var(--muted-foreground))]" role="status">{step}</p>}
       {error && <p className="mt-3 rounded-lg border border-[hsl(var(--destructive)/.25)] bg-[hsl(var(--destructive)/.06)] px-3 py-2 text-xs leading-5 text-[hsl(var(--destructive))]" role="alert" data-testid="error-ladychain-connect">{error}</p>}

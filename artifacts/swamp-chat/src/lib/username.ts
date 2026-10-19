@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import type { Resolver } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 export const usernameSchema = z.object({
   username: z.string()
@@ -9,6 +11,10 @@ export const usernameSchema = z.object({
 });
 
 export type UsernameFormValues = z.infer<typeof usernameSchema>;
+
+// Resolver's current peer typing resolves to Zod 4 while the workspace schema is Zod 3.
+// The runtime resolver uses safeParse and supports this Zod 3 schema.
+export const usernameFormResolver = zodResolver(usernameSchema as never) as unknown as Resolver<UsernameFormValues>;
 
 export function usernameSaveErrorMessage(error: unknown) {
   const apiError = error as { status?: number; data?: { error?: string } };

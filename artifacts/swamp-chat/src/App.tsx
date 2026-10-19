@@ -84,6 +84,7 @@ import { DailyQuestsPage } from '@/components/daily-quests-page';
 import { HermitMarketTicker } from '@/components/hermit-market-ticker';
 import { HermitTick } from '@/components/hermit-tick';
 import { LadyChainConnect } from '@/components/ladychain-connect';
+import { LadyChainSessionSync } from '@/components/ladychain-session-sync';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { UsernameOnboardingGate } from '@/components/username-onboarding-gate';
 import { UsernameSettingsCard } from '@/components/username-settings-card';
@@ -544,7 +545,16 @@ function WalletEntry() {
   const [, setLocation] = useLocation();
   const createSession = useCreateWalletSession();
   const [session, setSession] = useState<{ sessionId: string; qrUrl: string; deeplink: string; expiresAt: string } | null>(null);
-  const [notice, setNotice] = useState<{ message: string; tone: 'error' | 'info' | 'success' } | null>(null);
+  const [notice, setNotice] = useState<{ message: string; tone: 'error' | 'info' | 'success' } | null>(() => {
+    try {
+      const message = window.sessionStorage.getItem('frogtown-ladychain-sync-error');
+      if (!message) return null;
+      window.sessionStorage.removeItem('frogtown-ladychain-sync-error');
+      return { message: `Wallet session ended: ${message}`, tone: 'error' };
+    } catch {
+      return null;
+    }
+  });
   const statusQuery = useGetWalletSession(session?.sessionId ?? '', {
     query: {
       enabled: Boolean(session?.sessionId),
@@ -2344,22 +2354,52 @@ function AuthGate() {
     }
   }, [storedAddress, walletQuery.data, walletQuery.error, walletQuery.isError, walletQuery.isSuccess]);
 
-  const setWalletAddress = (address: string) => {
+  const setWalletAddress = useCallback((address: string) => {
     setWalletAddressState(address);
     window.localStorage.setItem('swamp-wallet-address', address);
-  };
-  const disconnect = () => {
-    logoutWallet.mutate(undefined, { onSettled: () => queryClient.clear() });
+  }, []);
+  const logout = logoutWallet.mutate;
+  const disconnect = useCallback(() => {
+    queryClient.clear();
+    logout(undefined, { onSettled: () => queryClient.clear() });
     setWalletAddressState('');
     window.localStorage.removeItem('swamp-wallet-address');
     setAuthReady(true);
-  };
+  }, [logout]);
+
+  useEffect(() => {
+    const onWalletStorage = (event: StorageEvent) => {
+      if (event.key !== 'swamp-wallet-address') return;
+      queryClient.clear();
+      setWalletAddressState(event.newValue ?? '');
+      setAuthReady(true);
+    };
+    window.addEventListener('storage', onWalletStorage);
+    return () => window.removeEventListener('storage', onWalletStorage);
+  }, []);
 
   if (!authReady) {
     return <div className="swamp-app noise flex min-h-[100dvh] items-center justify-center p-6"><div className="flex items-center gap-3 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.8)] px-5 py-4 text-sm text-[hsl(var(--muted-foreground))] shadow-lg"><RefreshCw className="size-4 animate-spin text-[hsl(var(--primary))]" /> Checking wallet session…</div></div>;
   }
 
-  return <WalletContext.Provider value={{ walletAddress, setWalletAddress, disconnect }}><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><ErrorBoundary resetKey={window.location.pathname}><KeyBootstrapGate><UsernameOnboardingGate walletAddress={walletAddress}><RealtimeBridge><RouterView /></RealtimeBridge></UsernameOnboardingGate></KeyBootstrapGate></ErrorBoundary></WouterRouter></WalletContext.Provider>;
+  return (
+    <WalletContext.Provider value={{ walletAddress, setWalletAddress, disconnect }}>
+      <LadyChainSessionSync
+        walletAddress={walletAddress}
+        setWalletAddress={setWalletAddress}
+        disconnect={disconnect}
+      />
+      <WouterRouter key={walletAddress || 'anonymous'} base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+        <ErrorBoundary resetKey={window.location.pathname}>
+          <KeyBootstrapGate>
+            <UsernameOnboardingGate walletAddress={walletAddress}>
+              <RealtimeBridge><RouterView /></RealtimeBridge>
+            </UsernameOnboardingGate>
+          </KeyBootstrapGate>
+        </ErrorBoundary>
+      </WouterRouter>
+    </WalletContext.Provider>
+  );
 }
 
 function App() {

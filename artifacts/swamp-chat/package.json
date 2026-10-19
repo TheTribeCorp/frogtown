@@ -10,6 +10,7 @@
     "test:e2ee": "node --experimental-strip-types --test test/e2ee-recipient.test.mjs test/e2ee-key-trust.test.mjs test/e2ee-backup.test.mjs",
     "test:outbox": "node --experimental-strip-types --test test/message-outbox.test.mjs",
     "test:hermit-tick": "node --experimental-strip-types --test test/hermit-tick-display.test.mjs",
+    "test:ladychain-wallet": "node --experimental-strip-types --test test/ladychain-wallet.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
@@ -75,5 +76,11 @@
     "vite": "catalog:",
     "wouter": "^3.3.5",
     "zod": "catalog:"
+  },
+  "dependencies": {
+    "@reown/appkit": "^1.8.24",
+    "@reown/appkit-adapter-wagmi": "^1.8.24",
+    "viem": "^2.57.7",
+    "wagmi": "^3.7.7"
   }
 }

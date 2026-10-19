@@ -2,7 +2,6 @@ import { useForm } from 'react-hook-form';
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { zodResolver } from '@hookform/resolvers/zod';
 import {
   getGetWalletProfileQueryKey,
   useClaimReferralDeviceInstallation,
@@ -21,7 +20,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { HermitTick } from '@/components/hermit-tick';
 import { getReferralInstallationId } from '@/lib/referral-installation';
-import { usernameSchema, usernameSaveErrorMessage, type UsernameFormValues } from '@/lib/username';
+import { usernameFormResolver, usernameSaveErrorMessage, type UsernameFormValues } from '@/lib/username';
 
 function shortWallet(address: string) {
   return address.length > 15 ? `${address.slice(0, 7)}…${address.slice(-5)}` : address;
@@ -59,7 +58,7 @@ export function UsernameOnboardingGate({
   });
   const deviceClaimAttempt = useRef<string | null>(null);
   const form = useForm<UsernameFormValues>({
-    resolver: zodResolver(usernameSchema),
+    resolver: usernameFormResolver,
     defaultValues: { username: '' },
     mode: 'onChange',
   });
