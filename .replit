@@ -22,3 +22,8 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+VITE_REOWN_PROJECT_ID = "7c35b953f8c151bbb8bff11d1137d170"
