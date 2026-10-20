@@ -7,11 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "frogtown",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/images/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#f6faf6"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "online.frogtown.app",
@@ -27,6 +22,14 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#f6faf6"
+        }
+      ],
       "expo-notifications",
       "expo-sharing"
     ],
