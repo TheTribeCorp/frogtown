@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac, createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { after, before, test } from "node:test";
 import pg from "pg";
@@ -216,6 +216,66 @@ test("preview deployments use a separate session signing secret", async () => {
   } finally {
     previewChild.kill("SIGTERM");
   }
+});
+
+test("native wallet approval is PKCE-bound, same-origin, single-use and separate from browser cookies", async () => {
+  const wallet = randomWalletAddress();
+  const verifier = randomBytes(32).toString("base64url");
+  const codeChallenge = createHash("sha256").update(verifier).digest("base64url");
+  const created = await request("/api/mobile/auth/requests", { method: "POST", body: { codeChallenge } });
+  assert.equal(created.status, 201);
+  const { requestId } = await created.json();
+  const exchange = (proof = verifier) => request("/api/mobile/auth/exchange", {
+    method: "POST", body: { requestId, codeVerifier: proof },
+  });
+  assert.equal((await exchange(randomBytes(32).toString("base64url"))).status, 410);
+  assert.deepEqual(await (await exchange()).json(), { status: "pending" });
+  const approvePath = `/api/mobile/auth/requests/${requestId}/approve`;
+  assert.equal((await request(approvePath, { method: "POST", cookie: sessionCookie(wallet) })).status, 403);
+  assert.equal((await request(approvePath, { method: "POST", origin: "https://attacker.example", cookie: sessionCookie(wallet) })).status, 403);
+  assert.equal((await request(approvePath, { method: "POST", origin: baseUrl })).status, 401);
+  const approval = await request(approvePath, { method: "POST", origin: baseUrl, cookie: sessionCookie(wallet) });
+  assert.equal(approval.status, 200);
+  assert.deepEqual(await approval.json(), { approved: true }, "the browser never receives the native bearer token");
+  assert.equal((await request(approvePath, { method: "POST", origin: baseUrl, cookie: sessionCookie(randomWalletAddress()) })).status, 410);
+  const raced = await Promise.all([exchange(), exchange()]);
+  assert.deepEqual(raced.map((r) => r.status).sort(), [200, 410]);
+  const session = await raced.find((r) => r.status === 200).json();
+  assert.equal(session.walletAddress, wallet);
+  const authenticated = await fetch(`${baseUrl}/api/wallet/me`, { headers: { authorization: `Bearer ${session.token}` } });
+  assert.equal(authenticated.status, 200);
+  assert.equal((await authenticated.json()).walletAddress, wallet);
+  assert.equal((await request("/api/wallet/me", { cookie: `swamp_session_v2=${session.token}` })).status, 401);
+  const browserAsBearer = sessionCookie(wallet).split("=")[1];
+  assert.equal((await fetch(`${baseUrl}/api/wallet/me`, { headers: { authorization: `Bearer ${browserAsBearer}` } })).status, 401);
+  const tampered = `${session.token.slice(0, -4)}AAAA`;
+  assert.equal((await fetch(`${baseUrl}/api/wallet/me`, { headers: { authorization: `Bearer ${tampered}` } })).status, 401);
+});
+
+test("native alert devices hide push tokens and cannot be revoked by another wallet", async () => {
+  const wallet = randomWalletAddress(), other = randomWalletAddress();
+  const path = "/api/mobile/push/devices";
+  assert.equal((await request(path)).status, 401);
+  const cookie = sessionCookie(wallet);
+  assert.equal((await request(path, { method: "POST", cookie, body: { token: "invalid", platform: "ios", name: "Test phone" } })).status, 400);
+  const registered = await request(path, { method: "POST", cookie, body: {
+    token: `ExponentPushToken[test-${randomUUID()}]`, platform: "ios", name: "Test iPhone",
+  } });
+  assert.equal(registered.status, 201);
+  const { id } = await registered.json();
+  try {
+    const devices = await (await request(path, { cookie })).json();
+    assert.equal(devices.length, 1);
+    assert.equal(devices[0].id, id);
+    assert.equal("token" in devices[0], false);
+    assert.equal("walletAddress" in devices[0], false);
+    assert.deepEqual(await (await request(path, { cookie: sessionCookie(other) })).json(), []);
+    assert.equal((await request(`${path}/${id}`, { method: "DELETE", cookie: sessionCookie(other) })).status, 204);
+    assert.equal((await (await request(path, { cookie })).json()).length, 1);
+  } finally {
+    assert.equal((await request(`${path}/${id}`, { method: "DELETE", cookie })).status, 204);
+  }
+  assert.deepEqual(await (await request(path, { cookie })).json(), []);
 });
 
 test("wallet authentication and ownership guards reject unauthenticated or mismatched callers", async () => {
@@ -1097,6 +1157,10 @@ test("forgetting an encrypted backup resets only that wallet's history and prese
     },
   });
   assert.equal(oldPrivateMessage.status, 201);
+  const acceptedBeforeReset = await request(`/api/conversations/${directConversation.id}/request/accept`, {
+    method: "POST", cookie: sessionCookie(member),
+  });
+  assert.equal(acceptedBeforeReset.status, 200, "reset recovery is exercised on an accepted private chat");
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   const freshPublicKey = JSON.stringify({

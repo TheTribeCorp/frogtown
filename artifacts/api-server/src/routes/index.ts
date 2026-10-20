@@ -5,6 +5,7 @@ import timelineRouter from "./timeline";
 import gamificationRouter from "./gamification";
 import hermitMarketRouter from "./hermit-market";
 import hermitBalanceRouter from "./hermit-balance";
+import mobileRouter from "./mobile";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(timelineRouter);
 router.use(gamificationRouter);
 router.use(hermitMarketRouter);
 router.use(hermitBalanceRouter);
+router.use(mobileRouter);
 
 export default router;

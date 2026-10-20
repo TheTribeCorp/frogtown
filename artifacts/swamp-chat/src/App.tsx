@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, createContext, useContext, type ReactNode, type FormEvent } from 'react';
+import { MobileAuthApprovalGate } from './components/mobile-auth-approval';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -2391,11 +2392,13 @@ function AuthGate() {
       />
       <WouterRouter key={walletAddress || 'anonymous'} base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
         <ErrorBoundary resetKey={window.location.pathname}>
+          <MobileAuthApprovalGate walletAddress={walletAddress} onChangeWallet={disconnect}>
           <KeyBootstrapGate>
             <UsernameOnboardingGate walletAddress={walletAddress}>
               <RealtimeBridge><RouterView /></RealtimeBridge>
             </UsernameOnboardingGate>
           </KeyBootstrapGate>
+          </MobileAuthApprovalGate>
         </ErrorBoundary>
       </WouterRouter>
     </WalletContext.Provider>

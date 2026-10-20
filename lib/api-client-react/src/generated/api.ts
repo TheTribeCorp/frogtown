@@ -25,6 +25,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ApproveMobileAuthRequest200,
   BlockedWallet,
   BlockedWalletInput,
   ClaimReferralDeviceInput,
@@ -36,9 +37,13 @@ import type {
   ConversationHistoryShareInput,
   ConversationHistoryShareWorkPage,
   ConversationKey,
+  CreateMobileAuthRequest201,
+  CreateMobileAuthRequestBody,
   CurrentWallet,
   DirectConversationInput,
   ErrorResponse,
+  ExchangeMobileAuthRequest200,
+  ExchangeMobileAuthRequestBody,
   GamificationHistoryPage,
   GamificationLeaderboard,
   GamificationReferralBurstReview,
@@ -65,9 +70,12 @@ import type {
   ListTimelinePostsParams,
   Message,
   MessageInput,
+  MobilePushDevice,
   PushSubscriptionList,
   ReadReceipt,
   ReadReceiptInput,
+  RegisterMobilePushDevice201,
+  RegisterMobilePushDeviceBody,
   SaveWalletUsernameResult,
   TimelineComment,
   TimelineCommentInput,
@@ -5543,5 +5551,518 @@ export const usePlayGamificationCoinFlip = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getPlayGamificationCoinFlipMutationOptions(options), queryClient);
+    }
+
+export const getCreateMobileAuthRequestUrl = () => {
+
+
+
+
+  return `/api/mobile/auth/requests`
+}
+
+/**
+ * @summary Start an S256 PKCE-bound native wallet sign-in
+ */
+export const createMobileAuthRequest = async (createMobileAuthRequestBody: CreateMobileAuthRequestBody, options?: Parameters<typeof customFetch>[1]): Promise<CreateMobileAuthRequest201> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<CreateMobileAuthRequest201>(getCreateMobileAuthRequestUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createMobileAuthRequestBody)
+  }
+);}
+
+
+
+
+
+export const getCreateMobileAuthRequestMutationKey = () => ['createMobileAuthRequest'] as const;
+
+export const getCreateMobileAuthRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMobileAuthRequest>>, TError,CreateMobileAuthRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createMobileAuthRequest>>, TError,CreateMobileAuthRequestMutationVariables, TContext> => {
+
+const mutationKey = getCreateMobileAuthRequestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMobileAuthRequest>>, CreateMobileAuthRequestMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createMobileAuthRequest(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateMobileAuthRequestMutationResult = NonNullable<Awaited<ReturnType<typeof createMobileAuthRequest>>>
+    export type CreateMobileAuthRequestMutationBody = BodyType<CreateMobileAuthRequestBody>
+    export type CreateMobileAuthRequestMutationError = ErrorType<unknown>
+    export type CreateMobileAuthRequestMutationVariables = {data: BodyType<CreateMobileAuthRequestBody>}
+
+    /**
+ * @summary Start an S256 PKCE-bound native wallet sign-in
+ */
+export const useCreateMobileAuthRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMobileAuthRequest>>, TError,CreateMobileAuthRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createMobileAuthRequest>>,
+        TError,
+        CreateMobileAuthRequestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateMobileAuthRequestMutationOptions(options), queryClient);
+    }
+
+export const getApproveMobileAuthRequestUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/mobile/auth/requests/${requestId}/approve`
+}
+
+/**
+ * @summary Explicitly approve native sign-in with a same-origin browser wallet session
+ */
+export const approveMobileAuthRequest = async (requestId: string, options?: Parameters<typeof customFetch>[1]): Promise<ApproveMobileAuthRequest200> => {
+
+  return customFetch<ApproveMobileAuthRequest200>(getApproveMobileAuthRequestUrl(requestId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getApproveMobileAuthRequestMutationKey = () => ['approveMobileAuthRequest'] as const;
+
+export const getApproveMobileAuthRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveMobileAuthRequest>>, TError,ApproveMobileAuthRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approveMobileAuthRequest>>, TError,ApproveMobileAuthRequestMutationVariables, TContext> => {
+
+const mutationKey = getApproveMobileAuthRequestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveMobileAuthRequest>>, ApproveMobileAuthRequestMutationVariables> = (props) => {
+          const {requestId} = props ?? {};
+
+          return  approveMobileAuthRequest(requestId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApproveMobileAuthRequestMutationResult = NonNullable<Awaited<ReturnType<typeof approveMobileAuthRequest>>>
+
+    export type ApproveMobileAuthRequestMutationError = ErrorType<unknown>
+    export type ApproveMobileAuthRequestMutationVariables = {requestId: string}
+
+    /**
+ * @summary Explicitly approve native sign-in with a same-origin browser wallet session
+ */
+export const useApproveMobileAuthRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveMobileAuthRequest>>, TError,ApproveMobileAuthRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof approveMobileAuthRequest>>,
+        TError,
+        ApproveMobileAuthRequestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getApproveMobileAuthRequestMutationOptions(options), queryClient);
+    }
+
+export const getExchangeMobileAuthRequestUrl = () => {
+
+
+
+
+  return `/api/mobile/auth/exchange`
+}
+
+/**
+ * @summary Poll or consume a one-time native sign-in using its private PKCE verifier
+ */
+export const exchangeMobileAuthRequest = async (exchangeMobileAuthRequestBody: ExchangeMobileAuthRequestBody, options?: Parameters<typeof customFetch>[1]): Promise<ExchangeMobileAuthRequest200> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ExchangeMobileAuthRequest200>(getExchangeMobileAuthRequestUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(exchangeMobileAuthRequestBody)
+  }
+);}
+
+
+
+
+
+export const getExchangeMobileAuthRequestMutationKey = () => ['exchangeMobileAuthRequest'] as const;
+
+export const getExchangeMobileAuthRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exchangeMobileAuthRequest>>, TError,ExchangeMobileAuthRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof exchangeMobileAuthRequest>>, TError,ExchangeMobileAuthRequestMutationVariables, TContext> => {
+
+const mutationKey = getExchangeMobileAuthRequestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof exchangeMobileAuthRequest>>, ExchangeMobileAuthRequestMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  exchangeMobileAuthRequest(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExchangeMobileAuthRequestMutationResult = NonNullable<Awaited<ReturnType<typeof exchangeMobileAuthRequest>>>
+    export type ExchangeMobileAuthRequestMutationBody = BodyType<ExchangeMobileAuthRequestBody>
+    export type ExchangeMobileAuthRequestMutationError = ErrorType<unknown>
+    export type ExchangeMobileAuthRequestMutationVariables = {data: BodyType<ExchangeMobileAuthRequestBody>}
+
+    /**
+ * @summary Poll or consume a one-time native sign-in using its private PKCE verifier
+ */
+export const useExchangeMobileAuthRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exchangeMobileAuthRequest>>, TError,ExchangeMobileAuthRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof exchangeMobileAuthRequest>>,
+        TError,
+        ExchangeMobileAuthRequestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getExchangeMobileAuthRequestMutationOptions(options), queryClient);
+    }
+
+export const getListMobilePushDevicesUrl = () => {
+
+
+
+
+  return `/api/mobile/push/devices`
+}
+
+/**
+ * @summary List this wallet's native notification devices without push tokens
+ */
+export const listMobilePushDevices = async ( options?: Parameters<typeof customFetch>[1]): Promise<MobilePushDevice[]> => {
+
+  return customFetch<MobilePushDevice[]>(getListMobilePushDevicesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMobilePushDevicesQueryKey = () => {
+    return [
+    `/api/mobile/push/devices`
+    ] as const;
+    }
+
+
+export const getListMobilePushDevicesQueryOptions = <TData = Awaited<ReturnType<typeof listMobilePushDevices>>, TError = ErrorType<unknown>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMobilePushDevices>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMobilePushDevicesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMobilePushDevices>>> = ({ signal }) => listMobilePushDevices({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMobilePushDevices>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListMobilePushDevicesQueryResult = NonNullable<Awaited<ReturnType<typeof listMobilePushDevices>>>
+export type ListMobilePushDevicesQueryError = ErrorType<unknown>
+
+
+export function useListMobilePushDevices<TData = Awaited<ReturnType<typeof listMobilePushDevices>>, TError = ErrorType<unknown>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMobilePushDevices>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMobilePushDevices>>,
+          TError,
+          Awaited<ReturnType<typeof listMobilePushDevices>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMobilePushDevices<TData = Awaited<ReturnType<typeof listMobilePushDevices>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMobilePushDevices>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMobilePushDevices>>,
+          TError,
+          Awaited<ReturnType<typeof listMobilePushDevices>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMobilePushDevices<TData = Awaited<ReturnType<typeof listMobilePushDevices>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMobilePushDevices>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List this wallet's native notification devices without push tokens
+ */
+
+export function useListMobilePushDevices<TData = Awaited<ReturnType<typeof listMobilePushDevices>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMobilePushDevices>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListMobilePushDevicesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRegisterMobilePushDeviceUrl = () => {
+
+
+
+
+  return `/api/mobile/push/devices`
+}
+
+/**
+ * @summary Register an iOS or Android Expo push token for the authenticated wallet
+ */
+export const registerMobilePushDevice = async (registerMobilePushDeviceBody: RegisterMobilePushDeviceBody, options?: Parameters<typeof customFetch>[1]): Promise<RegisterMobilePushDevice201> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<RegisterMobilePushDevice201>(getRegisterMobilePushDeviceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(registerMobilePushDeviceBody)
+  }
+);}
+
+
+
+
+
+export const getRegisterMobilePushDeviceMutationKey = () => ['registerMobilePushDevice'] as const;
+
+export const getRegisterMobilePushDeviceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerMobilePushDevice>>, TError,RegisterMobilePushDeviceMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof registerMobilePushDevice>>, TError,RegisterMobilePushDeviceMutationVariables, TContext> => {
+
+const mutationKey = getRegisterMobilePushDeviceMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof registerMobilePushDevice>>, RegisterMobilePushDeviceMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  registerMobilePushDevice(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegisterMobilePushDeviceMutationResult = NonNullable<Awaited<ReturnType<typeof registerMobilePushDevice>>>
+    export type RegisterMobilePushDeviceMutationBody = BodyType<RegisterMobilePushDeviceBody>
+    export type RegisterMobilePushDeviceMutationError = ErrorType<unknown>
+    export type RegisterMobilePushDeviceMutationVariables = {data: BodyType<RegisterMobilePushDeviceBody>}
+
+    /**
+ * @summary Register an iOS or Android Expo push token for the authenticated wallet
+ */
+export const useRegisterMobilePushDevice = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerMobilePushDevice>>, TError,RegisterMobilePushDeviceMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof registerMobilePushDevice>>,
+        TError,
+        RegisterMobilePushDeviceMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRegisterMobilePushDeviceMutationOptions(options), queryClient);
+    }
+
+export const getRevokeMobilePushDeviceUrl = (deviceId: string,) => {
+
+
+
+
+  return `/api/mobile/push/devices/${deviceId}`
+}
+
+/**
+ * @summary Revoke a native notification device belonging to the current wallet
+ */
+export const revokeMobilePushDevice = async (deviceId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRevokeMobilePushDeviceUrl(deviceId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeMobilePushDeviceMutationKey = () => ['revokeMobilePushDevice'] as const;
+
+export const getRevokeMobilePushDeviceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeMobilePushDevice>>, TError,RevokeMobilePushDeviceMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeMobilePushDevice>>, TError,RevokeMobilePushDeviceMutationVariables, TContext> => {
+
+const mutationKey = getRevokeMobilePushDeviceMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeMobilePushDevice>>, RevokeMobilePushDeviceMutationVariables> = (props) => {
+          const {deviceId} = props ?? {};
+
+          return  revokeMobilePushDevice(deviceId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeMobilePushDeviceMutationResult = NonNullable<Awaited<ReturnType<typeof revokeMobilePushDevice>>>
+
+    export type RevokeMobilePushDeviceMutationError = ErrorType<unknown>
+    export type RevokeMobilePushDeviceMutationVariables = {deviceId: string}
+
+    /**
+ * @summary Revoke a native notification device belonging to the current wallet
+ */
+export const useRevokeMobilePushDevice = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeMobilePushDevice>>, TError,RevokeMobilePushDeviceMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeMobilePushDevice>>,
+        TError,
+        RevokeMobilePushDeviceMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeMobilePushDeviceMutationOptions(options), queryClient);
     }
 

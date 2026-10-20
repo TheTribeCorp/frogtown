@@ -1228,3 +1228,89 @@ export const PlayGamificationCoinFlipResponse = zod.object({
 })
 
 
+/**
+ * @summary Start an S256 PKCE-bound native wallet sign-in
+ */
+export const createMobileAuthRequestBodyCodeChallengeRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+
+
+export const CreateMobileAuthRequestBody = zod.object({
+  "codeChallenge": zod.string().regex(createMobileAuthRequestBodyCodeChallengeRegExp)
+})
+
+export const CreateMobileAuthRequestResponse = zod.object({
+  "requestId": zod.string(),
+  "loginPath": zod.string(),
+  "expiresAt": zod.string()
+})
+
+
+/**
+ * @summary Explicitly approve native sign-in with a same-origin browser wallet session
+ */
+export const ApproveMobileAuthRequestParams = zod.object({
+  "requestId": zod.coerce.string()
+})
+
+export const ApproveMobileAuthRequestResponse = zod.object({
+  "approved": zod.boolean()
+})
+
+
+/**
+ * @summary Poll or consume a one-time native sign-in using its private PKCE verifier
+ */
+export const ExchangeMobileAuthRequestBody = zod.object({
+  "requestId": zod.string(),
+  "codeVerifier": zod.string()
+})
+
+export const ExchangeMobileAuthRequestResponse = zod.object({
+  "status": zod.enum(['pending', 'connected']),
+  "walletAddress": zod.string().optional(),
+  "token": zod.string().optional(),
+  "expiresAt": zod.string().optional()
+})
+
+
+/**
+ * @summary List this wallet's native notification devices without push tokens
+ */
+export const ListMobilePushDevicesResponseItem = zod.object({
+  "id": zod.string(),
+  "platform": zod.enum(['ios', 'android']),
+  "name": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+export const ListMobilePushDevicesResponse = zod.array(ListMobilePushDevicesResponseItem)
+
+
+/**
+ * @summary Register an iOS or Android Expo push token for the authenticated wallet
+ */
+export const registerMobilePushDeviceBodyNameMax = 60;
+
+
+
+export const RegisterMobilePushDeviceBody = zod.object({
+  "token": zod.string(),
+  "platform": zod.enum(['ios', 'android']),
+  "name": zod.string().min(1).max(registerMobilePushDeviceBodyNameMax)
+})
+
+export const RegisterMobilePushDeviceResponse = zod.object({
+  "id": zod.string()
+})
+
+
+/**
+ * @summary Revoke a native notification device belonging to the current wallet
+ */
+export const RevokeMobilePushDeviceParams = zod.object({
+  "deviceId": zod.coerce.string()
+})
+
+export const RevokeMobilePushDeviceResponse = zod.void()
+
+

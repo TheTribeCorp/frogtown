@@ -5,6 +5,13 @@ import { StatusBar } from 'expo-status-bar';
 import { Platform, ScrollView, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { useState } from 'react';
+import { useSession } from '@/providers/session';
+import { Button, Label } from '@/components/ui';
+import { InboxScreen } from '@/components/inbox';
+import { errorText } from '@/lib/api';
+import * as WebBrowser from 'expo-web-browser';
+import { SessionGate } from '@/components/session-gate';
 
 const highlights = [
   { icon: 'lock-closed-outline' as const, title: 'Private by design', detail: 'Your encrypted chats stay yours.' },
@@ -12,10 +19,14 @@ const highlights = [
   { icon: 'chatbubble-ellipses-outline' as const, title: 'Room for everyone', detail: 'Find your people in Frogtown.' },
 ];
 
-export default function FrogtownMobileWelcome() {
+function FrogtownMobileWelcome() {
   const colors = useColors();
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
+  const session = useSession();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (session.wallet) return <InboxScreen />;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -41,6 +52,20 @@ export default function FrogtownMobileWelcome() {
             </View>
           </View>
 
+          <View style={{ gap: 12, marginBottom: 22 }}>
+            <Button title={session.pending ? 'Return to wallet sign-in' : 'Sign in with Xaman or LadyChain'} busy={busy} onPress={() => {
+              setBusy(true); setError('');
+              void (session.pending ? WebBrowser.openBrowserAsync(session.pending.loginUrl) : session.beginSignIn())
+                .catch((e) => setError(errorText(e))).finally(() => setBusy(false));
+            }} />
+            {session.pending && <>
+              <Label>Approve in your browser, then return here. Waiting for wallet approval…</Label>
+              <Button secondary title="Check approval" onPress={() => void session.checkSignIn()} />
+              <Button secondary title="Cancel sign-in" onPress={() => void session.cancelSignIn()} />
+            </>}
+            {error || session.error ? <Label>{error || session.error}</Label> : null}
+            <Label muted>Your wallet signs a free identity request. Frogtown never asks for your seed phrase.</Label>
+          </View>
           <LinearGradient
             colors={[colors.forest, colors.forestDeep]}
             start={{ x: 0, y: 0 }}
@@ -80,7 +105,7 @@ export default function FrogtownMobileWelcome() {
             <Text style={[styles.sectionLabel, { color: colors.primary }]}>THE MOBILE EDITION</Text>
             <Text style={[styles.heading, { color: colors.foreground }]}>Frogtown, in your pocket.</Text>
             <Text style={[styles.body, { color: colors.mutedForeground }]}>
-              The website stays live while we build the native iOS and Android experience around the same community.
+              Your community, private messages, and group conversations — connected to the same Frogtown account.
             </Text>
           </View>
 
@@ -113,9 +138,9 @@ export default function FrogtownMobileWelcome() {
               <Ionicons name="construct-outline" size={17} color={colors.secondaryForeground} />
             </View>
             <View style={styles.statusCopy}>
-              <Text style={[styles.statusTitle, { color: colors.foreground }]}>Native app foundation</Text>
+              <Text style={[styles.statusTitle, { color: colors.foreground }]}>One account. Your devices.</Text>
               <Text style={[styles.statusDetail, { color: colors.mutedForeground }]}>
-                Wallet sign-in and chat access are being connected next. This preview does not sign you in yet.
+                Connect your wallet in the secure browser, then restore your encrypted backup to access existing chats.
               </Text>
             </View>
           </View>
@@ -127,6 +152,10 @@ export default function FrogtownMobileWelcome() {
       </SafeAreaView>
     </View>
   );
+}
+
+export default function MobileHome() {
+  return <SessionGate><FrogtownMobileWelcome /></SessionGate>;
 }
 
 const styles = StyleSheet.create({

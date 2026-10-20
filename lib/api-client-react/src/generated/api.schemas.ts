@@ -5,6 +5,22 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type MobilePushDevicePlatform = typeof MobilePushDevicePlatform[keyof typeof MobilePushDevicePlatform];
+
+
+export const MobilePushDevicePlatform = {
+  ios: 'ios',
+  android: 'android',
+} as const;
+
+export interface MobilePushDevice {
+  id: string;
+  platform: MobilePushDevicePlatform;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type HealthStatusStatus = typeof HealthStatusStatus[keyof typeof HealthStatusStatus];
 
 
@@ -1021,5 +1037,62 @@ cursor?: string;
  * @maximum 50
  */
 limit?: number;
+};
+
+export type CreateMobileAuthRequestBody = {
+  /** @pattern ^[A-Za-z0-9_-]{43}$ */
+  codeChallenge: string;
+};
+
+export type CreateMobileAuthRequest201 = {
+  requestId: string;
+  loginPath: string;
+  expiresAt: string;
+};
+
+export type ApproveMobileAuthRequest200 = {
+  approved: boolean;
+};
+
+export type ExchangeMobileAuthRequestBody = {
+  requestId: string;
+  codeVerifier: string;
+};
+
+export type ExchangeMobileAuthRequest200Status = typeof ExchangeMobileAuthRequest200Status[keyof typeof ExchangeMobileAuthRequest200Status];
+
+
+export const ExchangeMobileAuthRequest200Status = {
+  pending: 'pending',
+  connected: 'connected',
+} as const;
+
+export type ExchangeMobileAuthRequest200 = {
+  status: ExchangeMobileAuthRequest200Status;
+  walletAddress?: string;
+  token?: string;
+  expiresAt?: string;
+};
+
+export type RegisterMobilePushDeviceBodyPlatform = typeof RegisterMobilePushDeviceBodyPlatform[keyof typeof RegisterMobilePushDeviceBodyPlatform];
+
+
+export const RegisterMobilePushDeviceBodyPlatform = {
+  ios: 'ios',
+  android: 'android',
+} as const;
+
+export type RegisterMobilePushDeviceBody = {
+  token: string;
+  platform: RegisterMobilePushDeviceBodyPlatform;
+  /**
+     * @minLength 1
+     * @maxLength 60
+     */
+  name: string;
+};
+
+export type RegisterMobilePushDevice201 = {
+  id: string;
 };
 

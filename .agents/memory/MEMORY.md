@@ -11,3 +11,4 @@
 - [Frogtown $HERMIT purchases](frogtown-hermit-purchasing.md) — no in-app purchase controls; ticker shows only market cap while login refreshes holder data.
 - [Frogtown cross-chain identities](frogtown-cross-chain-identities.md) — Reauthenticate EVM account changes, clear wallet-scoped caches, and keep $HERMIT checks XRPL-only.
 - [LadyChain wallet loading](frogtown-ladychain-wallet-loading.md) — keep AppKit off the initial page and prewarm on user intent; avoid forced chunks that cycle or duplicate dependencies.
+- [Native mobile security](frogtown-native-mobile.md) — keep the website; share browser wallet verification, not browser cookies or private keys; native push needs installed-build credentials.

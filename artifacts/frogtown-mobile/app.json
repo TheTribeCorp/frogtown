@@ -13,13 +13,19 @@
       "backgroundColor": "#f6faf6"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "online.frogtown.app"
     },
-    "android": {},
+    "android": { "package": "online.frogtown.app" },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-notifications",
+      "expo-sharing"
+    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

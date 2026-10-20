@@ -1534,6 +1534,132 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /mobile/auth/requests:
+    post:
+      operationId: createMobileAuthRequest
+      tags: [mobile]
+      summary: Start an S256 PKCE-bound native wallet sign-in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                codeChallenge: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }
+              required: [codeChallenge]
+      responses:
+        "201":
+          description: App sign-in request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requestId: { type: string }
+                  loginPath: { type: string }
+                  expiresAt: { type: string }
+                required: [requestId, loginPath, expiresAt]
+  /mobile/auth/requests/{requestId}/approve:
+    post:
+      operationId: approveMobileAuthRequest
+      tags: [mobile]
+      summary: Explicitly approve native sign-in with a same-origin browser wallet session
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Approved; return to Frogtown Mobile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  approved: { type: boolean }
+                required: [approved]
+  /mobile/auth/exchange:
+    post:
+      operationId: exchangeMobileAuthRequest
+      tags: [mobile]
+      summary: Poll or consume a one-time native sign-in using its private PKCE verifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                requestId: { type: string }
+                codeVerifier: { type: string }
+              required: [requestId, codeVerifier]
+      responses:
+        "200":
+          description: Pending or securely exchanged session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [pending, connected] }
+                  walletAddress: { type: string }
+                  token: { type: string }
+                  expiresAt: { type: string }
+                required: [status]
+  /mobile/push/devices:
+    get:
+      operationId: listMobilePushDevices
+      tags: [mobile]
+      summary: List this wallet's native notification devices without push tokens
+      responses:
+        "200":
+          description: Registered devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MobilePushDevice"
+    post:
+      operationId: registerMobilePushDevice
+      tags: [mobile]
+      summary: Register an iOS or Android Expo push token for the authenticated wallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+                platform: { type: string, enum: [ios, android] }
+                name: { type: string, minLength: 1, maxLength: 60 }
+              required: [token, platform, name]
+      responses:
+        "201":
+          description: Registered notification device
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                required: [id]
+  /mobile/push/devices/{deviceId}:
+    delete:
+      operationId: revokeMobilePushDevice
+      tags: [mobile]
+      summary: Revoke a native notification device belonging to the current wallet
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Device revoked or already absent
 components:
   parameters:
     SessionId:
@@ -1604,6 +1730,15 @@ components:
         type: string
         pattern: "^[a-f0-9]{64}$"
   schemas:
+    MobilePushDevice:
+      type: object
+      properties:
+        id: { type: string }
+        platform: { type: string, enum: [ios, android] }
+        name: { type: string }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+      required: [id, platform, name, createdAt, updatedAt]
     HealthStatus:
       type: object
       description: Public API and database availability status

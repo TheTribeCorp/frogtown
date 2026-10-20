@@ -3,6 +3,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { pushSubscriptionsTable } from "@workspace/db/schema";
 import { logger } from "./logger";
+import { sendNativeMessagePush } from "./native-push";
 
 export function isWebPushConfigured(): boolean {
   return Boolean(process.env.FROGTOWN_VAPID_PUBLIC_KEY && process.env.FROGTOWN_VAPID_PRIVATE_KEY);
@@ -34,9 +35,10 @@ export async function sendNewMessagePush(
   messageId: string,
   requestSubject: string,
 ): Promise<void> {
-  if (!configureWebPush(requestSubject)) return;
   const recipients = [...new Set(recipientWallets.filter((wallet) => wallet !== senderAddress))];
   if (recipients.length === 0) return;
+  await sendNativeMessagePush(recipients, conversationId, messageId);
+  if (!configureWebPush(requestSubject)) return;
 
   try {
     const subscriptions = await db

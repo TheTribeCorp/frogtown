@@ -76,6 +76,7 @@ import {
 } from "@workspace/db";
 import { pushSubscriptionsTable, walletProfilesTable } from "@workspace/db/schema";
 import { isWebPushConfigured, sendNewMessagePush } from "../lib/web-push";
+import { readMobileSession } from "../lib/mobile-session";
 
 const router: IRouter = Router();
 
@@ -562,6 +563,11 @@ function readCookie(req: Request) {
 }
 
 function getAuthenticatedWallet(req: Request) {
+  const authorization = req.get("authorization");
+  if (authorization) {
+    return authorization.startsWith("Bearer ")
+      ? readMobileSession(authorization.slice(7)) : null;
+  }
   const token = readCookie(req);
   const secret = sessionSecret();
   if (!token || !secret) return null;
@@ -582,6 +588,11 @@ function getAuthenticatedWallet(req: Request) {
   } catch {
     return null;
   }
+}
+
+export function getBrowserAuthenticatedWallet(req: Request) {
+  if (req.get("authorization")) return null;
+  return getAuthenticatedWallet(req);
 }
 
 function setAuthCookie(res: Response, walletAddress: string) {
@@ -1135,6 +1146,7 @@ router.get("/events", (req, res): void => {
     };
     let pollInFlight = false;
     let cleanedUp = false;
+    let observedResetAt = now.getTime() - 1;
 
     const send = (event: WalletEvent) => {
       if (res.writableEnded || res.destroyed) return;
@@ -1145,6 +1157,19 @@ router.get("/events", (req, res): void => {
       if (pollInFlight || cleanedUp) return;
       pollInFlight = true;
       try {
+        // Serverless streams cannot rely on a process-local or PostgreSQL LISTEN
+        // subscriber. A history cutoff is written only by a fresh-start reset,
+        // unlike key creation, which must not be mistaken for a reset.
+        const [resetMembership] = await db.select({
+          historyStartsAt: conversationMembersTable.historyStartsAt,
+        }).from(conversationMembersTable).where(and(
+          eq(conversationMembersTable.walletAddress, walletAddress),
+          gt(conversationMembersTable.historyStartsAt, new Date(observedResetAt)),
+        )).orderBy(desc(conversationMembersTable.historyStartsAt)).limit(1);
+        if (resetMembership?.historyStartsAt) {
+          observedResetAt = resetMembership.historyStartsAt.getTime();
+          send({ type: "wallet.encryption.reset", walletAddress, resetAt: resetMembership.historyStartsAt.toISOString() });
+        }
         const messageAt = new Date(cursor.messageAt);
         const overlapAt = new Date(Math.max(overlapFloor.getTime(), messageAt.getTime() - 5_000));
         const messageCursorCondition = or(
