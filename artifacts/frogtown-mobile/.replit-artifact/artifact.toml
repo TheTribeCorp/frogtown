@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/frogtown-mobile/"
+title = "Frogtown Mobile"
+description = "A native iOS and Android companion for Frogtown, the wallet-native $HERMIT community app for private chats, community rooms, and the public timeline."
+version = "1.0.0"
+id = "artifacts/frogtown-mobile"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/frogtown-mobile/" ]
+localPort = 19885
+
+[services.development]
+run = "pnpm --filter @workspace/frogtown-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/frogtown-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/frogtown-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "19885"
+BASE_PATH = "/frogtown-mobile/"
