@@ -9,11 +9,11 @@ Keep the website while adding native iOS and Android apps.
 
 **How to apply:** Preserve existing web flows when building native features.
 
-Use `exps://` for Expo Go links through the HTTPS-only Replit Expo preview host; do not assume the CLI's printed `exp://` link is reachable.
+Do not treat successful server-side manifest and bundle downloads as proof that Expo Go can launch on a physical device.
 
-**Why:** The preview host served the Android manifest and bundle over HTTPS while its HTTP port was unreachable. An insecure Expo link can fail before the Android bundle reaches Metro, even when the browser preview works.
+**Why:** Native remote-update downloads can still fail before application code runs despite healthy HTTPS endpoints. Switching link schemes alone did not establish a working native connection.
 
-**How to apply:** Obtain the current preview host rather than remembering a URL. Check manifest and launch-asset availability over HTTPS and provide the secure Expo scheme; do not confuse browser-preview success with a native-device test.
+**How to apply:** Check for an actual Android/iOS bundle request and use Replit's managed phone-preview flow to inspect device access and sign-in. Do not change wallet authentication code to address a pre-launch download error or claim a transport fix without device evidence.
 
 Use the existing system-browser wallet verification with explicit app approval and a private PKCE verifier. Keep native bearer sessions audience-separated from browser cookies. Keep native private keys in OS secure storage, never ordinary app storage or a server. Recovery files must remain interoperable with the website.
 
