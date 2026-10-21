@@ -8,7 +8,7 @@ import {
   createMobileAuthRequest, exchangeMobileAuthRequest, getCurrentWallet,
   getWalletHermitTick, revokeMobilePushDevice,
 } from '@workspace/api-client-react';
-import { apiOrigin, setSessionToken, errorText, statusOf } from '../lib/api';
+import { apiOrigin, walletAuthOrigin, setSessionToken, errorText, statusOf } from '../lib/api';
 import { canonicalKey, pkceChallenge, randomSecret, type Identity } from '../lib/crypto';
 import { ensureIdentity, RecoveryRequired } from '../lib/identity';
 import { readSecure, writeSecure, removeSecure } from '../lib/storage';
@@ -137,11 +137,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [pending, checkSignIn]);
   const beginSignIn = async () => {
     if (!apiOrigin) throw new Error('Set EXPO_PUBLIC_API_URL before building Frogtown Mobile.');
+    if (!walletAuthOrigin) throw new Error('The wallet sign-in website is not configured for this preview.');
     setError('');
     const codeVerifier = randomSecret(Crypto.getRandomBytes);
     const result = await createMobileAuthRequest({ codeChallenge: pkceChallenge(codeVerifier) });
-    const loginUrl = new URL(result.loginPath, apiOrigin).toString();
-    if (new URL(loginUrl).origin !== apiOrigin) throw new Error('The wallet sign-in URL was invalid.');
+    const loginUrl = new URL(result.loginPath, walletAuthOrigin).toString();
+    if (new URL(loginUrl).origin !== walletAuthOrigin) throw new Error('The wallet sign-in URL was invalid.');
     const next = { requestId: result.requestId, expiresAt: result.expiresAt, codeVerifier, loginUrl };
     await writeSecure(PENDING_KEY, JSON.stringify(next)); pendingRef.current = next; setPending(next);
     await WebBrowser.openBrowserAsync(loginUrl);

@@ -3,8 +3,8 @@ name: Frogtown API origin policy
 description: Same-origin browser API access and requirements for any future cross-origin client.
 ---
 
-Keep production browser API calls same-origin. Do not restore reflected credentialed CORS. Native clients use audience-separated bearer sessions, not cross-origin browser cookies. The Expo browser development preview may use only its exact configured workspace origin without credentialed CORS.
+Keep browser API calls same-origin and do not restore reflected credentialed CORS. In the Expo web preview, use the current preview origin for `/api` requests but keep wallet approval pointed at Frogtown’s main web origin. Native clients use an explicit API origin and audience-separated bearer sessions, not browser cookies.
 
-**Why:** The Frogtown web client uses relative `/api` routes, so arbitrary credentialed origins are unnecessary and broaden the session-cookie attack surface. Native networking does not require browser CORS; only the separate development browser preview does.
+**Why:** Replit’s Expo web preview and the main Frogtown web app can have different hosts. Mixing the API host with the page host causes browser fetch failures or sends wallet approval to the wrong app. Arbitrary credentialed origins also broaden the session-cookie attack surface.
 
-**How to apply:** Configure exact trusted origins rather than reflecting origins. Keep browser wallet approval cookie-authenticated and same-origin, even when the requesting client is native.
+**How to apply:** Keep browser API calls relative/same-origin; if a cross-origin preview is unavoidable, allow only its exact configured development origin and never cookies. Build the native wallet-approval URL from Frogtown’s web origin, while native API calls use the explicit API origin and bearer token.
