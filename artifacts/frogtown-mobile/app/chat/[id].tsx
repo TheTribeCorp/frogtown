@@ -207,7 +207,9 @@ function ChatContent() {
         keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: 16, gap: 10 }}
         onViewableItemsChanged={onVisible} viewabilityConfig={viewability}
-        ListEmptyComponent={!chat.isLoading ? <Label muted>No messages yet. Start the conversation.</Label> : null}
+        ListEmptyComponent={!chat.isLoading
+          ? <View style={{ transform: [{ scaleY: -1 }] }}><Label muted>No messages yet. Start the conversation.</Label></View>
+          : null}
         renderItem={({ item }) => <View style={{ alignSelf: item.isMine ? 'flex-end' : 'flex-start', maxWidth: '88%', padding: 13, borderRadius: 17, backgroundColor: item.isMine ? c.primary : c.card, borderWidth: 1, borderColor: item.isMine ? c.primary : c.border }}>
            {!item.isMine && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 5 }}>
              <Text style={{ color: c.primary, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>{item.senderUsername ? `@${item.senderUsername}` : `${item.senderAddress.slice(0, 7)}…${item.senderAddress.slice(-5)}`}</Text>

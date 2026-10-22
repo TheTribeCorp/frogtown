@@ -92,6 +92,11 @@ jobs:
             echo "::error::Use a release tag such as android-v1.0.0."
             exit 1
           fi
+          app_version="$(node -p "require('./artifacts/frogtown-mobile/app.json').expo.version")"
+          if [[ "${RELEASE_TAG#android-v}" != "$app_version" ]]; then
+            echo "::error::Release tag version must match the version in artifacts/frogtown-mobile/app.json ($app_version)."
+            exit 1
+          fi
           missing=()
           for name in \
             ANDROID_RELEASE_KEYSTORE_BASE64 \
@@ -127,12 +132,16 @@ jobs:
           pnpm --filter @workspace/db run push
           pnpm run typecheck:libs
           pnpm --filter @workspace/frogtown-mobile run typecheck
-          pnpm --filter @workspace/scripts exec tsx --test ../artifacts/frogtown-mobile/test/crypto.test.mjs ../artifacts/frogtown-mobile/test/member-search.test.mjs ../artifacts/frogtown-mobile/test/signed-in-actions.test.mjs
+          pnpm --filter @workspace/scripts exec tsx --test ../artifacts/frogtown-mobile/test/crypto.test.mjs ../artifacts/frogtown-mobile/test/member-search.test.mjs ../artifacts/frogtown-mobile/test/android-release.test.mjs ../artifacts/frogtown-mobile/test/signed-in-actions.test.mjs
           pnpm --filter @workspace/api-server run test:auth
 
       - name: Generate the Android project
         working-directory: artifacts/frogtown-mobile
         run: pnpm exec expo prebuild --platform android --no-install --skip-dependency-update expo,react,react-native
+
+      - name: Configure smaller architecture-specific APKs and universal fallback
+        working-directory: artifacts/frogtown-mobile
+        run: node scripts/configure-android-apk-splits.mjs
 
       - name: Configure release signing
         working-directory: artifacts/frogtown-mobile
@@ -154,12 +163,31 @@ jobs:
         working-directory: artifacts/frogtown-mobile/android
         run: |
           set -euo pipefail
-          apk="app/build/outputs/apk/release/app-release.apk"
-          test -s "$apk"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$apk"
-          cp "$apk" "$RUNNER_TEMP/Frogtown.apk"
+          release_dir="app/build/outputs/apk/release"
+          for variant in arm64-v8a armeabi-v7a; do
+            apk="$release_dir/app-${variant}-release.apk"
+            test -s "$apk"
+            contained_abis="$(unzip -Z -1 "$apk" | awk -F/ '$1 == "lib" && $3 ~ /\.so$/ { print $2 }' | sort -u | paste -sd, -)"
+            if [[ "$contained_abis" != "$variant" ]]; then
+              echo "::error::Expected the $variant APK to contain only $variant native libraries; found: $contained_abis"
+              exit 1
+            fi
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$apk"
+            cp "$apk" "$RUNNER_TEMP/Frogtown-${variant}.apk"
+          done
+          universal="$release_dir/app-universal-release.apk"
+          test -s "$universal"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$universal"
+          cp "$universal" "$RUNNER_TEMP/Frogtown.apk"
           cd "$RUNNER_TEMP"
-          sha256sum Frogtown.apk > Frogtown.apk.sha256
+          arm64_size="$(stat -c%s Frogtown-arm64-v8a.apk)"
+          universal_size="$(stat -c%s Frogtown.apk)"
+          if (( arm64_size >= universal_size )); then
+            echo "::error::The arm64 APK must be smaller than the universal fallback."
+            exit 1
+          fi
+          sha256sum Frogtown.apk Frogtown-arm64-v8a.apk Frogtown-armeabi-v7a.apk > Frogtown-android-sha256.txt
+          ls -lh Frogtown.apk Frogtown-arm64-v8a.apk Frogtown-armeabi-v7a.apk
 
       - name: Save APK build artifact
         uses: actions/upload-artifact@v4
@@ -167,7 +195,9 @@ jobs:
           name: frogtown-android-apk
           path: |
             ${{ runner.temp }}/Frogtown.apk
-            ${{ runner.temp }}/Frogtown.apk.sha256
+            ${{ runner.temp }}/Frogtown-arm64-v8a.apk
+            ${{ runner.temp }}/Frogtown-armeabi-v7a.apk
+            ${{ runner.temp }}/Frogtown-android-sha256.txt
           if-no-files-found: error
           retention-days: 14
 
@@ -177,15 +207,18 @@ jobs:
         run: |
           set -euo pipefail
           title="Frogtown Android ${RELEASE_TAG}"
-          notes="Signed Frogtown Android APK. Install only if you trust this release. Future updates must use the same Frogtown signing key."
+          notes="Signed Frogtown Android APKs. Download the arm64 build for most modern phones, armeabi-v7a for 32-bit phones, or Frogtown.apk as a universal fallback. APK sizes and SHA-256 checksums are provided. Future updates must use the same Frogtown signing key."
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/Frogtown.apk" "$RUNNER_TEMP/Frogtown.apk.sha256" --clobber
+            gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/Frogtown.apk" "$RUNNER_TEMP/Frogtown-arm64-v8a.apk" "$RUNNER_TEMP/Frogtown-armeabi-v7a.apk" "$RUNNER_TEMP/Frogtown-android-sha256.txt" --clobber
           else
-            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/Frogtown.apk" "$RUNNER_TEMP/Frogtown.apk.sha256" \
+            gh release create "$RELEASE_TAG" \
               --title "$title" \
               --notes "$notes" \
-              --target "$GITHUB_SHA"
+              --target "$GITHUB_SHA" \
+              --draft
+            gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/Frogtown.apk" "$RUNNER_TEMP/Frogtown-arm64-v8a.apk" "$RUNNER_TEMP/Frogtown-armeabi-v7a.apk" "$RUNNER_TEMP/Frogtown-android-sha256.txt"
           fi
+          gh release edit "$RELEASE_TAG" --draft=false
 
       - name: Remove temporary signing key
         if: always()

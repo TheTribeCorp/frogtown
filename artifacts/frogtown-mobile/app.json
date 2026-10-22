@@ -2,7 +2,7 @@
   "expo": {
     "name": "Frogtown",
     "slug": "frogtown-mobile",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "frogtown",
@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "online.frogtown.app",
-      "versionCode": 2
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/images/favicon.png"

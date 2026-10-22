@@ -32,6 +32,7 @@ import { Button, Field, Label, Panel, ui } from './ui';
 import { MobileTimelineScreen } from './mobile-timeline';
 import { MobileQuestsScreen } from './mobile-quests';
 import { HermitHolderStar } from './hermit-holder-star';
+import { AndroidUpdateNotice } from './android-update-notice';
 
 type MainSection = 'chats' | 'groups' | 'timeline' | 'quests';
 
@@ -168,6 +169,7 @@ export function InboxScreen() {
         refreshing={currentQuery.isRefetching}
         onRefresh={() => void currentQuery.refetch()}
         ListHeaderComponent={<View style={{ gap: 12, marginBottom: 8 }}>
+          <AndroidUpdateNotice />
           {backupNeeded && isChats && <Panel><Label>Keep your chats recoverable. Create an encrypted backup for this phone.</Label><Button secondary title="Create my recovery backup" onPress={() => router.push('/settings')} /></Panel>}
           {isChats && incomingRequests.length > 0 && <Panel>
             <Text style={[ui.subtitle, { color: c.foreground }]}>Private-message requests · {incomingRequests.length}</Text>

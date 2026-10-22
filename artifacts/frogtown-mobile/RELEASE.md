@@ -92,6 +92,11 @@ Increment `android.versionCode` in `app.json` for every subsequent APK release.
 Keep the package ID and signing key unchanged. The APK is stored as a GitHub
 Release asset rather than in Git history or Vercel's static deployment.
 
+The release workflow publishes signature-verified arm64-v8a and armeabi-v7a
+APK downloads plus the universal `Frogtown.apk` fallback. The mobile inbox
+checks GitHub's latest public Android release periodically and offers the
+compatible smaller package, its download size, and the universal fallback.
+
 The public Android application ID remains `online.frogtown.app`.
 
 Native alerts use Expo's push relay to APNs/FCM. Payloads contain generic copy and
