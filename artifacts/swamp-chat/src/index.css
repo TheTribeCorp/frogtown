@@ -273,6 +273,26 @@ button { cursor: pointer; }
 .ft-entry-social-link:focus-visible { outline: 2px solid var(--ft-leaf); outline-offset: 3px; }
 .ft-entry-social-link svg { width: 14px; height: 14px; }
 .ft-entry-social-x { display: grid; width: 16px; height: 16px; place-items: center; color: var(--ft-leaf); font-size: 15px; line-height: 1; }
+.ft-entry-download-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.ft-entry-download-button {
+  display: inline-flex;
+  min-width: 132px;
+  min-height: 48px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 11px;
+  border: 1px solid rgba(242, 246, 228, .2);
+  border-radius: 13px;
+  color: rgba(247, 249, 236, .94);
+  background: rgba(247, 249, 236, .055);
+  text-align: left;
+  opacity: 1;
+}
+.ft-entry-download-button:disabled { cursor: default; opacity: 1; }
+.ft-entry-download-button svg { width: 17px; height: 17px; flex: 0 0 auto; color: var(--ft-leaf); }
+.ft-entry-download-button > span { display: flex; flex-direction: column; gap: 2px; }
+.ft-entry-download-button strong { font-size: 10px; font-weight: 600; }
+.ft-entry-download-button small { color: rgba(247, 249, 236, .65); font-size: 9px; }
 .ft-entry-art { min-height: 320px; position: relative; z-index: 1; flex: 1; margin-top: 6px; }
 .ft-entry-orbit { position: absolute; left: 48%; top: 50%; border: 1px solid rgba(188, 227, 146, .17); border-radius: 50%; transform: translate(-50%, -50%); }
 .ft-entry-orbit-one { width: 340px; height: 270px; transform: translate(-50%, -50%) rotate(-19deg); }

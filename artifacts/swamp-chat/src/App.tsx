@@ -29,6 +29,7 @@ import {
   Rss,
   Search,
   Send,
+  Smartphone,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -699,6 +700,26 @@ function WalletEntry() {
                 <span>Follow on X</span>
                 <ArrowUpRight aria-hidden="true" />
               </a>
+            </div>
+            <div className="ft-entry-download-links" aria-label="Frogtown app downloads">
+              <button
+                className="ft-entry-download-button"
+                type="button"
+                disabled
+                aria-label="Frogtown for Android — coming soon"
+              >
+                <Smartphone aria-hidden="true" />
+                <span><strong>Android app</strong><small>Coming soon</small></span>
+              </button>
+              <button
+                className="ft-entry-download-button"
+                type="button"
+                disabled
+                aria-label="Frogtown for iOS — coming soon"
+              >
+                <Smartphone aria-hidden="true" />
+                <span><strong>iOS app</strong><small>Coming soon</small></span>
+              </button>
             </div>
           </div>
 
