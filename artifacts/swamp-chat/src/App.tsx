@@ -416,11 +416,13 @@ function Notice({ message, tone = 'info', onClose }: { message: string; tone?: '
   );
 }
 
-function FrogtownMark({ compact = false, glyph = '≈' }: { compact?: boolean; glyph?: string }) {
+const mascotImageUrl = `${import.meta.env.BASE_URL}images/hermit-mascot.jpg`;
+
+function FrogtownMark({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`flex items-center gap-2.5 ${compact ? '' : 'select-none'}`}>
-      <div className="relative flex size-9 items-center justify-center rounded-xl bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] shadow-[3px_3px_0_hsl(var(--accent))]">
-        <span className="mono text-lg font-medium tracking-[-.2em]">{glyph}</span>
+      <div className="relative size-9 rounded-xl shadow-[3px_3px_0_hsl(var(--accent))]">
+        <img src={mascotImageUrl} alt="" className="size-9 rounded-xl object-cover ring-1 ring-white/20" />
         <span className="absolute -bottom-1 -right-1 size-2 rounded-full bg-[hsl(var(--sidebar-accent))]" />
       </div>
       {!compact && <span className="text-lg font-bold tracking-[-.04em] text-[hsl(var(--sidebar-foreground))]">Frogtown</span>}
@@ -599,7 +601,7 @@ function WalletEntry() {
       <div className="ft-entry-shell">
         <section className="ft-entry-scene" aria-labelledby="frogtown-welcome-title">
           <header className="ft-entry-header">
-            <FrogtownMark glyph="F" />
+            <FrogtownMark />
             <span className="ft-entry-network"><span className="ft-entry-network-dot" /> XRPL / LADYCHAIN</span>
           </header>
           <div className="ft-entry-intro">
@@ -631,7 +633,7 @@ function WalletEntry() {
             </div>
             <div className="ft-entry-mascot-wrap">
               <div className="ft-entry-mascot-glow" />
-              <img className="ft-entry-mascot" src="/images/hermit-mascot.jpg" alt="$HERMIT frog mascot wearing a red hood" />
+              <img className="ft-entry-mascot" src={mascotImageUrl} alt="$HERMIT frog mascot wearing a red hood" />
               <span className="ft-entry-mascot-sticker">one ledger<br />many voices</span>
             </div>
             <div className="ft-entry-bubble ft-entry-bubble-top"><span /> Room for your kind of weird.</div>
