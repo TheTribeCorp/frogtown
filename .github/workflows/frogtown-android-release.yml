@@ -1,0 +1,157 @@
+name: Frogtown Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag for the APK, for example android-v1.0.0
+        required: true
+        default: android-v1.0.0
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frogtown-android-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and publish signed Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      EXPO_PUBLIC_API_URL: https://www.frogtown.online
+      ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/frogtown-release-key.jks
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Check out Frogtown
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build targets
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.1.12297006"
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check required signing secrets
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in \
+            ANDROID_RELEASE_KEYSTORE_BASE64 \
+            ANDROID_RELEASE_STORE_PASSWORD \
+            ANDROID_RELEASE_KEY_ALIAS \
+            ANDROID_RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Add these repository Actions secrets before building: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Restore and validate the signing key
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          keytool -list \
+            -keystore "$ANDROID_KEYSTORE_PATH" \
+            -storepass "$ANDROID_RELEASE_STORE_PASSWORD" \
+            -alias "$ANDROID_RELEASE_KEY_ALIAS" >/dev/null
+
+      - name: Run mobile and API regression checks
+        run: |
+          pnpm --filter @workspace/frogtown-mobile run typecheck
+          pnpm --filter @workspace/scripts exec tsx --test ../artifacts/frogtown-mobile/test/crypto.test.mjs
+          pnpm --filter @workspace/api-server run test:auth
+
+      - name: Generate the Android project
+        working-directory: artifacts/frogtown-mobile
+        run: pnpm exec expo prebuild --platform android --no-install --skip-dependency-update expo,react,react-native
+
+      - name: Configure release signing
+        working-directory: artifacts/frogtown-mobile
+        env:
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: node scripts/configure-android-release-signing.mjs
+
+      - name: Build release APK
+        working-directory: artifacts/frogtown-mobile/android
+        env:
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+
+      - name: Verify APK signature and prepare download
+        working-directory: artifacts/frogtown-mobile/android
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/release/app-release.apk"
+          test -s "$apk"
+          apksigner verify "$apk"
+          cp "$apk" "$RUNNER_TEMP/Frogtown.apk"
+
+      - name: Save APK build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frogtown-android-apk
+          path: ${{ runner.temp }}/Frogtown.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish APK to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title="Frogtown Android ${RELEASE_TAG}"
+          notes="Signed Frogtown Android APK. Install only if you trust this release. Future updates must use the same Frogtown signing key."
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/Frogtown.apk" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/Frogtown.apk" \
+              --title "$title" \
+              --notes "$notes" \
+              --target "$GITHUB_SHA"
+          fi

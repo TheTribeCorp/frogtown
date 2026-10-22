@@ -36,12 +36,57 @@ bundle ID and Android package name are set; keep them stable.
 
 ### Android
 
-Use the Frogtown Expo preview on a physical Android phone for internal functional
-testing. This tests Android-compatible UI and encrypted chat, but it is Expo Go,
-not an installed Frogtown app: remote notifications and cold-start wallet return
-must be tested in an installed native build. Replit's mobile publishing flow
-does not currently produce an Android store/internal-track release. Do not
-represent Expo Go as a completed Android push test.
+The Android APK is built on GitHub Actions and published as a GitHub Release.
+The website's Android download button points to the latest release asset, so the
+button becomes a working direct download after the first successful release.
+
+#### One-time signing setup
+
+The upload key is permanent: losing or replacing it prevents existing APK users
+from installing future updates over their current app. Keep a secure backup and
+never commit the key or its password.
+
+1. On a trusted computer with JDK 17 or later, generate a key:
+
+   ```sh
+   keytool -genkeypair -v -keystore frogtown-upload.jks -storetype JKS \
+     -alias frogtown-upload -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+   Save the keystore password, key password, and alias in a password manager.
+2. Base64-encode `frogtown-upload.jks` without line breaks. On macOS/Linux:
+
+   ```sh
+   base64 < frogtown-upload.jks | tr -d '\n'
+   ```
+
+   On PowerShell:
+
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("frogtown-upload.jks"))
+   ```
+3. In the GitHub repository, open **Settings → Secrets and variables → Actions**
+   and create these repository secrets:
+
+   - `ANDROID_RELEASE_KEYSTORE_BASE64` — the base64 output
+   - `ANDROID_RELEASE_STORE_PASSWORD` — the keystore password
+   - `ANDROID_RELEASE_KEY_ALIAS` — `frogtown-upload` (or the alias chosen)
+   - `ANDROID_RELEASE_KEY_PASSWORD` — the key password
+
+   Never paste these values into a chat, issue, commit, or workflow log.
+4. Sync the project changes to GitHub. In **Actions → Frogtown Android APK**,
+   choose **Run workflow** and use `android-v1.0.0` as the first release tag.
+5. After the workflow succeeds, verify the APK is attached to the release. The
+   homepage download button uses:
+   `https://github.com/TheTribeCorp/frogtown/releases/latest/download/Frogtown.apk`
+6. Install the APK on a physical Android phone. Android will ask the user to
+   allow installation from the browser. Test wallet return, private/group
+   encrypted message send and receive, app restart/outbox recovery, and alerts.
+   APK signing verification alone does not verify these device behaviors.
+
+Increment `android.versionCode` in `app.json` for every subsequent APK release.
+Keep the package ID and signing key unchanged. The APK is stored as a GitHub
+Release asset rather than in Git history or Vercel's static deployment.
 
 The public Android application ID remains `online.frogtown.app`.
 
