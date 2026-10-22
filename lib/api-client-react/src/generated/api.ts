@@ -56,6 +56,8 @@ import type {
   GroupInput,
   GroupInvite,
   GroupInviteJoinInput,
+  GroupInvitePreview,
+  GroupInvitePreviewInput,
   HealthStatus,
   HermitMarketData,
   JoinGroupInput,
@@ -78,6 +80,7 @@ import type {
   ReadReceiptInput,
   RegisterMobilePushDevice201,
   RegisterMobilePushDeviceBody,
+  RemovedGroupMember,
   SaveWalletUsernameResult,
   TimelineComment,
   TimelineCommentInput,
@@ -3459,6 +3462,347 @@ export const useDeleteGroup = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getDeleteGroupMutationOptions(options), queryClient);
+    }
+
+export const getRemoveGroupMemberUrl = (conversationId: string,
+    walletAddress: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/members/${walletAddress}`
+}
+
+/**
+ * @summary Remove a group member and prevent them from rejoining until restored
+ */
+export const removeGroupMember = async (conversationId: string,
+    walletAddress: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRemoveGroupMemberUrl(conversationId,walletAddress),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveGroupMemberMutationKey = () => ['removeGroupMember'] as const;
+
+export const getRemoveGroupMemberMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeGroupMember>>, TError,RemoveGroupMemberMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeGroupMember>>, TError,RemoveGroupMemberMutationVariables, TContext> => {
+
+const mutationKey = getRemoveGroupMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeGroupMember>>, RemoveGroupMemberMutationVariables> = (props) => {
+          const {conversationId,walletAddress} = props ?? {};
+
+          return  removeGroupMember(conversationId,walletAddress,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveGroupMemberMutationResult = NonNullable<Awaited<ReturnType<typeof removeGroupMember>>>
+
+    export type RemoveGroupMemberMutationError = ErrorType<ErrorResponse>
+    export type RemoveGroupMemberMutationVariables = {conversationId: string;walletAddress: string}
+
+    /**
+ * @summary Remove a group member and prevent them from rejoining until restored
+ */
+export const useRemoveGroupMember = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeGroupMember>>, TError,RemoveGroupMemberMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeGroupMember>>,
+        TError,
+        RemoveGroupMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveGroupMemberMutationOptions(options), queryClient);
+    }
+
+export const getListRemovedGroupMembersUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/removed-members`
+}
+
+/**
+ * @summary List members removed from a group
+ */
+export const listRemovedGroupMembers = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<RemovedGroupMember[]> => {
+
+  return customFetch<RemovedGroupMember[]>(getListRemovedGroupMembersUrl(conversationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRemovedGroupMembersQueryKey = (conversationId: string,) => {
+    return [
+    `/api/conversations/${conversationId}/removed-members`
+    ] as const;
+    }
+
+
+export const getListRemovedGroupMembersQueryOptions = <TData = Awaited<ReturnType<typeof listRemovedGroupMembers>>, TError = ErrorType<unknown>>(conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRemovedGroupMembers>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRemovedGroupMembersQueryKey(conversationId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRemovedGroupMembers>>> = ({ signal }) => listRemovedGroupMembers(conversationId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: conversationId !== null && conversationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRemovedGroupMembers>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListRemovedGroupMembersQueryResult = NonNullable<Awaited<ReturnType<typeof listRemovedGroupMembers>>>
+export type ListRemovedGroupMembersQueryError = ErrorType<unknown>
+
+
+export function useListRemovedGroupMembers<TData = Awaited<ReturnType<typeof listRemovedGroupMembers>>, TError = ErrorType<unknown>>(
+ conversationId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRemovedGroupMembers>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listRemovedGroupMembers>>,
+          TError,
+          Awaited<ReturnType<typeof listRemovedGroupMembers>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListRemovedGroupMembers<TData = Awaited<ReturnType<typeof listRemovedGroupMembers>>, TError = ErrorType<unknown>>(
+ conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRemovedGroupMembers>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listRemovedGroupMembers>>,
+          TError,
+          Awaited<ReturnType<typeof listRemovedGroupMembers>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListRemovedGroupMembers<TData = Awaited<ReturnType<typeof listRemovedGroupMembers>>, TError = ErrorType<unknown>>(
+ conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRemovedGroupMembers>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List members removed from a group
+ */
+
+export function useListRemovedGroupMembers<TData = Awaited<ReturnType<typeof listRemovedGroupMembers>>, TError = ErrorType<unknown>>(
+ conversationId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRemovedGroupMembers>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListRemovedGroupMembersQueryOptions(conversationId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRestoreGroupMemberUrl = (conversationId: string,
+    walletAddress: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/removed-members/${walletAddress}`
+}
+
+/**
+ * @summary Restore a removed member's eligibility to rejoin
+ */
+export const restoreGroupMember = async (conversationId: string,
+    walletAddress: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRestoreGroupMemberUrl(conversationId,walletAddress),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRestoreGroupMemberMutationKey = () => ['restoreGroupMember'] as const;
+
+export const getRestoreGroupMemberMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreGroupMember>>, TError,RestoreGroupMemberMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof restoreGroupMember>>, TError,RestoreGroupMemberMutationVariables, TContext> => {
+
+const mutationKey = getRestoreGroupMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restoreGroupMember>>, RestoreGroupMemberMutationVariables> = (props) => {
+          const {conversationId,walletAddress} = props ?? {};
+
+          return  restoreGroupMember(conversationId,walletAddress,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestoreGroupMemberMutationResult = NonNullable<Awaited<ReturnType<typeof restoreGroupMember>>>
+
+    export type RestoreGroupMemberMutationError = ErrorType<ErrorResponse>
+    export type RestoreGroupMemberMutationVariables = {conversationId: string;walletAddress: string}
+
+    /**
+ * @summary Restore a removed member's eligibility to rejoin
+ */
+export const useRestoreGroupMember = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreGroupMember>>, TError,RestoreGroupMemberMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof restoreGroupMember>>,
+        TError,
+        RestoreGroupMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRestoreGroupMemberMutationOptions(options), queryClient);
+    }
+
+export const getPreviewGroupInviteUrl = () => {
+
+
+
+
+  return `/api/groups/invite-preview`
+}
+
+/**
+ * @summary Preview a group invite without joining
+ */
+export const previewGroupInvite = async (groupInvitePreviewInput: GroupInvitePreviewInput, options?: Parameters<typeof customFetch>[1]): Promise<GroupInvitePreview> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<GroupInvitePreview>(getPreviewGroupInviteUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(groupInvitePreviewInput)
+  }
+);}
+
+
+
+
+
+export const getPreviewGroupInviteMutationKey = () => ['previewGroupInvite'] as const;
+
+export const getPreviewGroupInviteMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewGroupInvite>>, TError,PreviewGroupInviteMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewGroupInvite>>, TError,PreviewGroupInviteMutationVariables, TContext> => {
+
+const mutationKey = getPreviewGroupInviteMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewGroupInvite>>, PreviewGroupInviteMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewGroupInvite(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewGroupInviteMutationResult = NonNullable<Awaited<ReturnType<typeof previewGroupInvite>>>
+    export type PreviewGroupInviteMutationBody = BodyType<GroupInvitePreviewInput>
+    export type PreviewGroupInviteMutationError = ErrorType<ErrorResponse>
+    export type PreviewGroupInviteMutationVariables = {data: BodyType<GroupInvitePreviewInput>}
+
+    /**
+ * @summary Preview a group invite without joining
+ */
+export const usePreviewGroupInvite = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewGroupInvite>>, TError,PreviewGroupInviteMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof previewGroupInvite>>,
+        TError,
+        PreviewGroupInviteMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPreviewGroupInviteMutationOptions(options), queryClient);
     }
 
 export const getCreateGroupInviteUrl = (groupId: string,) => {

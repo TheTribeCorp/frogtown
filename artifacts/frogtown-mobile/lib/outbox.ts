@@ -30,6 +30,14 @@ export function removePending(wallet: string, messageId: string) {
   writes = operation.catch(() => {});
   return operation;
 }
+export function removeConversationPending(wallet: string, conversationId: string) {
+  const operation = writes.then(async () => {
+    const remaining = (await loadOutbox(wallet)).filter((p) => p.conversationId !== conversationId);
+    await AsyncStorage.setItem(key(wallet), JSON.stringify(remaining));
+  });
+  writes = operation.catch(() => {});
+  return operation;
+}
 export async function clearChatState(wallet: string) {
   await writes;
   const keys = await AsyncStorage.getAllKeys();

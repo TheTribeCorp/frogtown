@@ -84,6 +84,16 @@ export const groupMembersTable = pgTable("swamp_group_members", {
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const groupBansTable = pgTable("swamp_group_bans", {
+  groupId: text("group_id").notNull(),
+  walletAddress: text("wallet_address").notNull(),
+  removedByAddress: text("removed_by_address").notNull(),
+  removedAt: timestamp("removed_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.groupId, table.walletAddress], name: "swamp_group_bans_pk" }),
+  index("swamp_group_bans_group_removed_idx").on(table.groupId, table.removedAt),
+]);
+
 export const groupInvitesTable = pgTable("swamp_group_invites", {
   id: text("id").primaryKey(),
   groupId: text("group_id").notNull(),
@@ -117,6 +127,9 @@ export const insertConversationSchema = createInsertSchema(conversationsTable);
 export const insertMessageSchema = createInsertSchema(messagesTable);
 export const insertGroupSchema = createInsertSchema(groupsTable);
 export const insertGroupMemberSchema = createInsertSchema(groupMembersTable);
+export const insertGroupBanSchema = createInsertSchema(groupBansTable).omit({ removedAt: true });
+export type InsertGroupBan = z.infer<typeof insertGroupBanSchema>;
+export type GroupBan = typeof groupBansTable.$inferSelect;
 export const insertConversationMemberSchema = createInsertSchema(conversationMembersTable);
 export const insertWalletKeySchema = createInsertSchema(walletKeysTable);
 export const insertBlockedWalletSchema = createInsertSchema(blockedWalletsTable);

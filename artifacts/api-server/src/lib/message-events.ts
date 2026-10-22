@@ -11,6 +11,7 @@ export type WalletEvent =
   | { type: "message.read"; conversationId: string }
   | { type: "conversation.updated"; conversationId: string }
   | { type: "conversation.deleted"; conversationId: string; recipientWallets: string[] }
+  | { type: "group.member-removed"; conversationId: string; groupId: string; removedWalletAddress: string }
   | { type: "wallet.encryption.reset"; walletAddress: string; resetAt: string };
 
 type WalletListener = (event: WalletEvent) => void;
@@ -63,6 +64,15 @@ async function relayNotification(payload: string): Promise<void> {
         || !data.recipientWallets.every((wallet) => typeof wallet === "string")
       ) return;
       publishLocally(data.recipientWallets, data);
+      return;
+    }
+    if (data.type === "group.member-removed") {
+      if (
+        typeof data.conversationId !== "string"
+        || typeof data.groupId !== "string"
+        || typeof data.removedWalletAddress !== "string"
+      ) return;
+      publishLocally([data.removedWalletAddress], data);
       return;
     }
     if (typeof data.conversationId !== "string") return;
@@ -170,6 +180,13 @@ export function publishConversationDeleted(
     conversationId,
     recipientWallets,
   });
+}
+
+export function publishGroupMemberRemoved(
+  removedWalletAddress: string,
+  event: Omit<Extract<WalletEvent, { type: "group.member-removed" }>, "type">,
+): Promise<void> {
+  return publishWalletEvent([removedWalletAddress], { ...event, type: "group.member-removed" });
 }
 
 export function publishWalletEncryptionReset(

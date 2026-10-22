@@ -9,6 +9,7 @@ export type ConversationPublicKey = {
   walletAddress: string;
   username?: string | null;
   publicKey: string | null;
+  isGroupCreator?: boolean;
 };
 
 export function getEncryptedMessageRecipients(encryptedBody: string): string[] {

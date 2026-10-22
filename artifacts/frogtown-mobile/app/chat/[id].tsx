@@ -7,7 +7,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Crypto from 'expo-crypto';
 import {
   acceptConversationRequest, declineConversationRequest, blockWallet,
-  deleteGroupMessage, getConversationEncryptionKeys, listConversations, markConversationRead, sendMessage,
+  deleteGroupMessage, getConversationEncryptionKeys, listConversations, listRemovedGroupMembers, markConversationRead,
+  removeGroupMember as removeGroupMemberRequest, restoreGroupMember, sendMessage,
 } from '@workspace/api-client-react';
 import { useSession } from '@/providers/session';
 import { useColors } from '@/hooks/useColors';
@@ -15,7 +16,7 @@ import { HermitHolderStar } from '@/components/hermit-holder-star';
 import { encryptMessage, safetyCode } from '@/lib/crypto';
 import { loadChat, shareGroupHistory, trustKeys } from '@/lib/chat';
 import { ensureIdentity, RecoveryRequired } from '@/lib/identity';
-import { loadOutbox, savePending, removePending, type PendingMessage } from '@/lib/outbox';
+import { loadOutbox, savePending, removePending, removeConversationPending, type PendingMessage } from '@/lib/outbox';
 import { errorText } from '@/lib/api';
 import { Button, Field, Label, ui } from '@/components/ui';
 import { SessionGate } from '@/components/session-gate';
@@ -28,17 +29,26 @@ function ChatContent() {
   const [focused, setFocused] = useState(true);
   const [text, setText] = useState(''), [error, setError] = useState('');
   const [busy, setBusy] = useState(false), [pending, setPending] = useState<PendingMessage | null>(null);
-  const [showSafety, setShowSafety] = useState(false);
+  const [showSafety, setShowSafety] = useState(false), [showMembers, setShowMembers] = useState(false);
   const readPosition = useRef('');
   const focusedRef = useRef(true);
   focusedRef.current = focused;
   const viewability = useRef({ itemVisiblePercentThreshold: 70 }).current;
-  const inbox = useQuery({ queryKey: ['mobile', 'inbox', wallet], queryFn: () => listConversations({ walletAddress: wallet }), enabled: !!wallet });
+  const inbox = useQuery({ queryKey: ['mobile', 'inbox', wallet], queryFn: () => listConversations({ walletAddress: wallet }), enabled: !!wallet, refetchInterval: 3000 });
   const conversation = inbox.data?.find((item) => item.id === id);
   const group = conversation?.type === 'group';
+  const removedMembers = useQuery({
+    queryKey: ['mobile', 'removed-group-members', wallet, id],
+    queryFn: () => listRemovedGroupMembers(id),
+    enabled: Boolean(wallet && group && conversation?.canManageGroup),
+  });
   useEffect(() => {
-    if (inbox.isFetched && !conversation) router.replace('/');
-  }, [inbox.isFetched, conversation, router]);
+    if (!inbox.isFetched || conversation) return;
+    void client.removeQueries({ queryKey: ['mobile', 'messages', wallet, id] });
+    void client.removeQueries({ queryKey: ['mobile', 'removed-group-members', wallet, id] });
+    void removeConversationPending(wallet, id).catch(() => {});
+    router.replace('/');
+  }, [inbox.isFetched, conversation, router, client, wallet, id]);
   useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
   const chat = useQuery({
     queryKey: ['mobile', 'messages', wallet, id],
@@ -106,6 +116,23 @@ function ChatContent() {
     if (Platform.OS === 'web') { if (window.confirm(prompt)) remove(); }
     else Alert.alert('Delete group message?', prompt, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: remove }]);
   };
+  const removeMember = (memberWalletAddress: string) => {
+    if (!group || !conversation?.canManageGroup) return;
+    const prompt = 'Remove this wallet from the group? They will lose server access and be blocked from rejoining until restored. Messages or decrypted text already saved on their device cannot be erased.';
+    const remove = () => void action(async () => {
+      await removeGroupMemberRequest(id, memberWalletAddress);
+      await removedMembers.refetch();
+    });
+    if (Platform.OS === 'web') { if (window.confirm(prompt)) remove(); }
+    else Alert.alert('Remove group member?', prompt, [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: remove }]);
+  };
+  const restoreMember = (memberWalletAddress: string) => {
+    if (!group || !conversation?.canManageGroup) return;
+    void action(async () => {
+      await restoreGroupMember(id, memberWalletAddress);
+      await removedMembers.refetch();
+    });
+  };
   const onVisible = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const visible = viewableItems.map((v) => v.item).filter((m) => m?.readable).sort((a, b) => Date.parse(b.sentAt) - Date.parse(a.sentAt))[0];
     if (!visible || !focusedRef.current || AppState.currentState !== 'active' || readPosition.current === visible.id) return;
@@ -126,6 +153,30 @@ function ChatContent() {
           <Pressable accessibilityRole="button" accessibilityLabel="Verify encryption" onPress={() => setShowSafety(!showSafety)} style={{ padding: 10 }}><Text style={{ color: c.primary }}>Verify</Text></Pressable>
         </View>
         {showSafety && <Label>Compare this code through another trusted channel: {chat.data ? safetyCode(chat.data.keys) : 'Loading…'}</Label>}
+        {group && <View>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: showMembers }} onPress={() => setShowMembers((value) => !value)} style={{ paddingVertical: 6 }}>
+            <Text style={{ color: c.primary, fontSize: 12 }}>{showMembers ? 'Hide' : 'Manage'} room members · {conversation?.memberCount ?? chat.data?.keys.length ?? 0}</Text>
+          </Pressable>
+          {showMembers && <View style={{ gap: 7, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.card }}>
+            {(chat.data?.keys ?? []).map((member) => <View key={member.walletAddress} style={[ui.row, { justifyContent: 'space-between' }]}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={[ui.row, { gap: 5 }]}>
+                  <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 12, flexShrink: 1 }}>{member.username ? `@${member.username}` : `${member.walletAddress.slice(0, 7)}…${member.walletAddress.slice(-5)}`}</Text>
+                  <HermitHolderStar walletAddress={member.walletAddress} size={13} />
+                </View>
+                <Label muted>{member.publicKey ? 'Encryption key ready' : 'Device key not set'}</Label>
+              </View>
+              {conversation?.canManageGroup && member.walletAddress !== wallet && !member.isGroupCreator && <Pressable accessibilityRole="button" onPress={() => removeMember(member.walletAddress)} disabled={busy}><Text style={{ color: c.secondary, fontSize: 11 }}>Remove</Text></Pressable>}
+            </View>)}
+            {conversation?.canManageGroup && <View style={{ borderTopWidth: 1, borderTopColor: c.border, paddingTop: 8, gap: 7 }}>
+              <Label>Removed members · restore to allow them to join again</Label>
+              {removedMembers.isLoading ? <ActivityIndicator color={c.primary} /> : removedMembers.data?.length ? removedMembers.data.map((member) => <View key={member.walletAddress} style={[ui.row, { justifyContent: 'space-between' }]}>
+                <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 11, flex: 1 }}>{member.walletAddress.slice(0, 7)}…{member.walletAddress.slice(-5)}</Text>
+                <Pressable accessibilityRole="button" onPress={() => restoreMember(member.walletAddress)} disabled={busy}><Text style={{ color: c.primary, fontSize: 11 }}>Restore</Text></Pressable>
+              </View>) : <Label muted>No wallets have been removed.</Label>}
+            </View>}
+          </View>}
+        </View>}
         {chat.data?.changed.length ? <>
           <Label>Encryption keys changed for {chat.data.changed.map((k) => k.username || k.walletAddress).join(', ')}. Sending is paused. Compare the safety code outside Frogtown before trusting.</Label>
           <Button secondary title="I verified these new encryption keys" onPress={() => void action(async () => { await trustKeys(wallet, id, chat.data!.keys); })} />

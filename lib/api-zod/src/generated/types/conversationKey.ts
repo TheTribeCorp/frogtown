@@ -12,4 +12,5 @@ export interface ConversationKey {
   username: string | null;
   /** @nullable */
   publicKey: string | null;
+  isGroupCreator: boolean;
 }

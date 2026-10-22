@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, createContext, useContext, type ReactNode, type FormEvent } from 'react';
 import { MobileAuthApprovalGate } from './components/mobile-auth-approval';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   ArrowRight,
@@ -62,6 +62,7 @@ import {
   useCreateGroupInvite,
   useDeleteGroup,
   useDeleteGroupMessage,
+  previewGroupInvite,
   useCreateWalletSession,
   useGetConversationEncryptionKeys,
   useGetCurrentWallet,
@@ -69,7 +70,10 @@ import {
   useGetWalletSession,
   useHealthCheck,
   useJoinGroup,
+  useListRemovedGroupMembers,
+  useRemoveGroupMember,
   useRevokeGroupInvite,
+  useRestoreGroupMember,
   joinGroupByInvite,
   useListConversationMessages,
   useListConversationHistoryShareWork,
@@ -101,6 +105,7 @@ import {
   removePendingEncryptedMessage,
   savePendingEncryptedMessage,
   clearPendingEncryptedMessages,
+  removePendingForConversation,
   type PendingEncryptedMessage,
 } from '@/lib/message-outbox';
 import {
@@ -235,15 +240,44 @@ function RealtimeBridge({ children }: { children: ReactNode }) {
           type?: string;
           walletAddress?: string;
           conversationId?: string;
+          groupId?: string;
           messageId?: string;
           senderAddress?: string;
           isRequest?: boolean;
+          removedWalletAddress?: string;
         };
         if (payload.type === 'wallet.encryption.reset') {
           if (payload.walletAddress === walletAddress) {
             window.dispatchEvent(new CustomEvent(WALLET_ENCRYPTION_RESET_EVENT, {
               detail: { walletAddress: payload.walletAddress, source: 'server' },
             }));
+          }
+          return;
+        }
+        if (payload.type === 'group.member-removed' && payload.conversationId) {
+          void client.invalidateQueries({ queryKey: getListGroupsQueryKey({ walletAddress }) });
+          void client.invalidateQueries({ queryKey: getListConversationsQueryKey({ walletAddress }) });
+          if (payload.removedWalletAddress === walletAddress) {
+            void client.removeQueries({
+              queryKey: getListConversationMessagesQueryKey(payload.conversationId, { walletAddress }),
+            });
+            void client.removeQueries({
+              queryKey: getListConversationHistorySharesQueryKey(payload.conversationId),
+            });
+            void client.removeQueries({
+              queryKey: getListConversationHistoryShareWorkQueryKey(payload.conversationId),
+            });
+            try {
+              removePendingForConversation(walletAddress, payload.conversationId);
+            } catch {
+              // A malformed local retry record must not prevent access revocation.
+            }
+            const selectedConversation = window.sessionStorage.getItem(`swamp-selected-conversation:${walletAddress}`);
+            if (selectedConversation === payload.conversationId) {
+              window.sessionStorage.removeItem(`swamp-selected-conversation:${walletAddress}`);
+              setLocation('/groups');
+            }
+            window.dispatchEvent(new CustomEvent('swamp-group-member-removed', { detail: payload }));
           }
           return;
         }
@@ -915,7 +949,13 @@ function MessagePane({
   const realtimeStatus = useContext(RealtimeContext);
   const client = useQueryClient();
   const deleteGroupMessageMutation = useDeleteGroupMessage();
+  const removeGroupMemberMutation = useRemoveGroupMember();
+  const restoreGroupMemberMutation = useRestoreGroupMember();
+  const removedGroupMembersQuery = useListRemovedGroupMembers(conversation?.id ?? '', {
+    query: { enabled: Boolean(conversation?.type === 'group' && conversation.canManageGroup) },
+  });
   const [deleteMessageError, setDeleteMessageError] = useState('');
+  const [memberActionError, setMemberActionError] = useState('');
   const deleteGroupMessage = (messageId: string) => {
     if (!conversation || conversation.type !== 'group' || !conversation.canManageGroup) return;
     if (!window.confirm('Delete this message for everyone in the group? This also removes any encrypted history copies.')) return;
@@ -926,6 +966,29 @@ function MessagePane({
         void client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
       },
       onError: (error) => setDeleteMessageError(errorMessage(error, 'Could not delete this group message.')),
+    });
+  };
+  const removeGroupMember = (memberWalletAddress: string) => {
+    if (!conversation || conversation.type !== 'group' || !conversation.canManageGroup) return;
+    if (!window.confirm('Remove this wallet from the group? They will lose server access and be blocked from rejoining until restored. Messages or decrypted text already saved on their device cannot be erased.')) return;
+    setMemberActionError('');
+    removeGroupMemberMutation.mutate({ conversationId: conversation.id, walletAddress: memberWalletAddress }, {
+      onSuccess: () => {
+        void client.invalidateQueries({ queryKey: getListGroupsQueryKey({ walletAddress }) });
+        void client.invalidateQueries({ queryKey: getListConversationsQueryKey({ walletAddress }) });
+        void removedGroupMembersQuery.refetch();
+      },
+      onError: (error) => setMemberActionError(errorMessage(error, 'Could not remove this member.')),
+    });
+  };
+  const restoreGroupMember = (memberWalletAddress: string) => {
+    if (!conversation || conversation.type !== 'group' || !conversation.canManageGroup) return;
+    restoreGroupMemberMutation.mutate({ conversationId: conversation.id, walletAddress: memberWalletAddress }, {
+      onSuccess: () => {
+        void removedGroupMembersQuery.refetch();
+        void client.invalidateQueries({ queryKey: getListGroupsQueryKey({ walletAddress }) });
+      },
+      onError: (error) => setMemberActionError(errorMessage(error, 'Could not restore access.')),
     });
   };
   const [draft, setDraft] = useState('');
@@ -1608,10 +1671,41 @@ function MessagePane({
                          </p>
                        </div>
                        <HermitTick walletAddress={member.walletAddress} className="size-3.5 shrink-0" />
+                        {conversation.canManageGroup && member.walletAddress !== walletAddress && !member.isGroupCreator && (
+                          <button
+                            type="button"
+                            disabled={removeGroupMemberMutation.isPending}
+                            onClick={() => removeGroupMember(member.walletAddress)}
+                            className="rounded-md border border-[hsl(var(--border))] px-2 py-1 text-[9px] font-medium text-[hsl(var(--destructive))] hover:border-[hsl(var(--destructive))] disabled:opacity-50"
+                            aria-label={`Remove ${member.username ? `@${member.username}` : shortAddress(member.walletAddress)} from group`}
+                          >
+                            Remove
+                          </button>
+                        )}
                      </li>
                    ))}
                  </ul>
                )}
+                {conversation.canManageGroup && (
+                  <div className="mt-3 border-t border-[hsl(var(--border))] pt-3">
+                    <p className="text-[10px] font-semibold">Removed members</p>
+                    {memberActionError && <p className="mt-2 text-[10px] text-[hsl(var(--destructive))]" role="alert">{memberActionError}</p>}
+                    {removedGroupMembersQuery.isLoading ? (
+                      <p className="mt-2 text-[10px] text-[hsl(var(--muted-foreground))]">Loading removed wallets…</p>
+                    ) : removedGroupMembersQuery.data?.length ? (
+                      <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto">
+                        {removedGroupMembersQuery.data.map((member) => (
+                          <li key={member.walletAddress} className="flex items-center justify-between gap-2 rounded-lg bg-[hsl(var(--muted)/.45)] px-2.5 py-2">
+                            <span className="mono truncate text-[9px]" title={member.walletAddress}>{shortAddress(member.walletAddress)}</span>
+                            <button type="button" disabled={restoreGroupMemberMutation.isPending} onClick={() => restoreGroupMember(member.walletAddress)} className="rounded-md border border-[hsl(var(--border))] px-2 py-1 text-[9px] font-medium hover:border-[hsl(var(--primary))] disabled:opacity-50">Restore</button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-[10px] text-[hsl(var(--muted-foreground))]">No wallets have been removed.</p>
+                    )}
+                  </div>
+                )}
              </div>
            </details>
          ) : otherWalletAddress && !incomingRequest ? (
@@ -1860,6 +1954,8 @@ function GroupsPage({ onOpenGroup }: { onOpenGroup: (conversationId: string) => 
                 <span className="flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]"><Users className="size-3.5" /> {group.memberCount} members</span>
                 {group.isJoined ? (
                   <button onClick={() => onOpenGroup(group.conversationId)} className="flex items-center gap-1 text-xs font-semibold text-[hsl(var(--primary))] hover:underline" data-testid={`button-open-group-${group.id}`}>Open room <ArrowUpRight className="size-3.5" /></button>
+                ) : !group.canJoin ? (
+                  <span className="rounded-lg border border-[hsl(var(--destructive)/.25)] px-3 py-2 text-xs font-medium text-[hsl(var(--destructive))]" data-testid={`status-removed-from-group-${group.id}`}>Access removed</span>
                 ) : (
                   <button onClick={() => join(group.id)} disabled={joinGroup.isPending} className="flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-medium transition hover:border-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.07)] disabled:opacity-50" data-testid={`button-join-group-${group.id}`}>
                     {joinGroup.isPending ? <RefreshCw className="size-3 animate-spin" /> : <DoorOpen className="size-3.5" />} Join
@@ -2012,39 +2108,133 @@ function HomePage() {
   return <AppShell title="Chats" eyebrow="private lines / wallet-native" onNewChat={() => setDialog(true)}><ChatWorkspace onNewChat={() => setDialog(true)} />{dialog && <DirectChatDialog onClose={() => setDialog(false)} onCreated={(id) => { setDialog(false); window.sessionStorage.setItem('swamp-selected-conversation', id); window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: id })); }} />}</AppShell>;
 }
 
+function GroupInvitePreviewPage({
+  token,
+  walletAddress,
+  onContinueToSignIn,
+  onCancel,
+  onJoin,
+  isJoining,
+}: {
+  token: string;
+  walletAddress: string | null;
+  onContinueToSignIn: () => void;
+  onCancel: () => void;
+  onJoin: () => void;
+  isJoining: boolean;
+}) {
+  const preview = useQuery({
+    queryKey: ['group-invite-preview', token],
+    queryFn: () => previewGroupInvite({ token }),
+    enabled: Boolean(token),
+    retry: false,
+  });
+  return (
+    <div className="swamp-app noise flex min-h-[100dvh] items-center justify-center p-5">
+      <main className="w-full max-w-xl rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-xl sm:p-8" aria-labelledby="group-invite-title">
+        <p className="mono text-[10px] uppercase tracking-[.18em] text-[hsl(var(--primary))]">Frogtown group invite</p>
+        {preview.isPending ? (
+          <div className="py-12 text-center text-sm text-[hsl(var(--muted-foreground))]">Checking this invite…</div>
+        ) : preview.isError || !preview.data ? (
+          <>
+            <h1 id="group-invite-title" className="mt-3 text-3xl font-semibold tracking-[-.06em]">This invite is unavailable</h1>
+            <p className="mt-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]">{preview.error ? errorMessage(preview.error, 'This invite may have been revoked or expired.') : 'This invite may have been revoked or expired.'}</p>
+            <button onClick={onCancel} className="mt-7 rounded-xl bg-[hsl(var(--foreground))] px-5 py-3 text-sm font-medium text-[hsl(var(--card))]">Close invite</button>
+          </>
+        ) : (
+          <>
+            <h1 id="group-invite-title" className="mt-3 text-3xl font-semibold tracking-[-.06em]">Preview {preview.data.name}</h1>
+            <p className="mt-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]">{preview.data.description || 'A Frogtown group chat.'}</p>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-[hsl(var(--border))] p-4"><p className="mono text-[9px] uppercase tracking-[.14em] text-[hsl(var(--muted-foreground))]">Members</p><p className="mt-2 text-lg font-semibold">{preview.data.memberCount}</p></div>
+              <div className="rounded-xl border border-[hsl(var(--border))] p-4"><p className="mono text-[9px] uppercase tracking-[.14em] text-[hsl(var(--muted-foreground))]">Created by</p><p className="mt-2 truncate text-sm font-semibold">{preview.data.creatorUsername ? `@${preview.data.creatorUsername}` : shortAddress(preview.data.creatorAddress)}</p></div>
+            </div>
+            <p className="mt-5 rounded-xl bg-[hsl(var(--muted)/.45)] p-4 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Joining lets you receive new encrypted messages. Existing members’ devices may automatically share older encrypted history with you. Frogtown cannot read message contents.</p>
+            {!walletAddress ? (
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <button onClick={onContinueToSignIn} className="flex-1 rounded-xl bg-[hsl(var(--foreground))] px-5 py-3 text-sm font-medium text-[hsl(var(--card))]">Continue to wallet sign-in</button>
+                <button onClick={onCancel} className="rounded-xl border border-[hsl(var(--border))] px-5 py-3 text-sm font-medium">Cancel</button>
+              </div>
+            ) : (
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <button onClick={onJoin} disabled={isJoining} className="flex-1 rounded-xl bg-[hsl(var(--primary))] px-5 py-3 text-sm font-semibold text-[hsl(var(--primary-foreground))] disabled:opacity-60">{isJoining ? 'Joining…' : 'Join group'}</button>
+                <button onClick={onCancel} className="rounded-xl border border-[hsl(var(--border))] px-5 py-3 text-sm font-medium">Not now</button>
+              </div>
+            )}
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+
 function RouterView() {
   const { walletAddress } = useWallet();
   const [location, setLocation] = useLocation();
   const client = useQueryClient();
-  const processedInvite = useRef<string | null>(null);
+  const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get('groupInvite');
+    if (fromUrl) {
+      window.sessionStorage.setItem('frogtown-pending-group-invite', fromUrl);
+      return fromUrl;
+    }
+    return window.sessionStorage.getItem('frogtown-pending-group-invite');
+  });
+  const [inviteDismissed, setInviteDismissed] = useState(false);
+  const [joiningInvite, setJoiningInvite] = useState(false);
   useEffect(() => {
     const url = new URL(window.location.href);
     const token = url.searchParams.get('groupInvite');
-    if (!walletAddress || !token || processedInvite.current === token) return;
-    processedInvite.current = token;
-    void joinGroupByInvite({ token, walletAddress })
-      .then(async (group) => {
-        url.searchParams.delete('groupInvite');
-        window.history.replaceState(window.history.state, '', url.toString());
-        await Promise.all([
-          client.invalidateQueries({ queryKey: getListGroupsQueryKey({ walletAddress }) }),
-          client.invalidateQueries({ queryKey: getListConversationsQueryKey({ walletAddress }) }),
-        ]);
-        window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, group.conversationId);
-        setLocation('/');
-        window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: group.conversationId })), 0);
-      })
-      .catch((error) => {
-        url.searchParams.delete('groupInvite');
-        window.history.replaceState(window.history.state, '', url.toString());
-        window.alert(errorMessage(error, 'This group invite is invalid or has been revoked.'));
-      });
-  }, [walletAddress, client, setLocation]);
+    if (token) {
+      window.sessionStorage.setItem('frogtown-pending-group-invite', token);
+      setPendingInviteToken(token);
+    }
+  }, []);
+  useEffect(() => {
+    if (walletAddress) setInviteDismissed(false);
+  }, [walletAddress]);
+  const clearInvite = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('groupInvite');
+    window.history.replaceState(window.history.state, '', url.toString());
+    window.sessionStorage.removeItem('frogtown-pending-group-invite');
+    setPendingInviteToken(null);
+    setInviteDismissed(false);
+  };
+  const joinInvite = async () => {
+    if (!walletAddress || !pendingInviteToken || joiningInvite) return;
+    setJoiningInvite(true);
+    try {
+      const group = await joinGroupByInvite({ token: pendingInviteToken, walletAddress });
+      clearInvite();
+      await Promise.all([
+        client.invalidateQueries({ queryKey: getListGroupsQueryKey({ walletAddress }) }),
+        client.invalidateQueries({ queryKey: getListConversationsQueryKey({ walletAddress }) }),
+      ]);
+      window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, group.conversationId);
+      setLocation('/');
+      window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: group.conversationId })), 0);
+    } catch (error) {
+      window.alert(errorMessage(error, 'This group invite is invalid, revoked, or your access has been removed.'));
+    } finally {
+      setJoiningInvite(false);
+    }
+  };
   useEffect(() => {
     if (!walletAddress && location !== '/') {
       window.sessionStorage.setItem('frogtown-signin-return-to', location);
     }
   }, [location, walletAddress]);
+  if (pendingInviteToken && !inviteDismissed) {
+    return <GroupInvitePreviewPage
+      token={pendingInviteToken}
+      walletAddress={walletAddress}
+      onContinueToSignIn={() => setInviteDismissed(true)}
+      onCancel={clearInvite}
+      onJoin={() => void joinInvite()}
+      isJoining={joiningInvite}
+    />;
+  }
   if (!walletAddress && location !== '/') return <LockedPage title={location === '/groups' ? 'Group discovery' : location === '/timeline' ? 'Community timeline' : location === '/quests' ? 'Daily quests' : 'Settings'} />;
   return <Switch><Route path="/" component={() => <HomePage />} /><Route path="/groups" component={() => <GroupsPage onOpenGroup={(id) => { window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, id); setLocation('/'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: id })), 0); }} />} /><Route path="/timeline" component={() => <TimelineRoute />} /><Route path="/quests" component={() => <DailyQuestsRoute />} /><Route path="/settings/recovery" component={() => <EncryptionRecoveryRoute />} /><Route path="/settings" component={SettingsPage} /><Route component={() => <HomePage />} /></Switch>;
 }

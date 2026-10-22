@@ -96,6 +96,20 @@ export function removePendingEncryptedMessage(
   storage.setItem(keyForWallet(walletAddress), JSON.stringify(remaining));
 }
 
+export function removePendingForConversation(
+  walletAddress: string,
+  conversationId: string,
+  storage: StorageLike = getSessionStorage(),
+): void {
+  const remaining = loadPendingEncryptedMessages(walletAddress, storage)
+    .filter((message) => message.conversationId !== conversationId);
+  if (remaining.length === 0) {
+    storage.removeItem(keyForWallet(walletAddress));
+    return;
+  }
+  storage.setItem(keyForWallet(walletAddress), JSON.stringify(remaining));
+}
+
 export function clearPendingEncryptedMessages(
   walletAddress: string,
   storage: StorageLike = getSessionStorage(),

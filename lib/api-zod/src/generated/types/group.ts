@@ -18,4 +18,5 @@ export interface Group {
   /** @nullable */
   creatorUsername: string | null;
   canManage: boolean;
+  canJoin: boolean;
 }

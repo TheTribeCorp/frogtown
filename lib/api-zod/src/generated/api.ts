@@ -563,7 +563,8 @@ export const GetConversationEncryptionKeysParams = zod.object({
 export const GetConversationEncryptionKeysResponseItem = zod.object({
   "walletAddress": zod.string(),
   "username": zod.string().nullable(),
-  "publicKey": zod.string().nullable()
+  "publicKey": zod.string().nullable(),
+  "isGroupCreator": zod.boolean()
 })
 export const GetConversationEncryptionKeysResponse = zod.array(GetConversationEncryptionKeysResponseItem)
 
@@ -663,7 +664,8 @@ export const ListGroupsResponseItem = zod.object({
   "conversationId": zod.string(),
   "creatorAddress": zod.string(),
   "creatorUsername": zod.string().nullable(),
-  "canManage": zod.boolean()
+  "canManage": zod.boolean(),
+  "canJoin": zod.boolean()
 })
 export const ListGroupsResponse = zod.array(ListGroupsResponseItem)
 
@@ -694,7 +696,8 @@ export const CreateGroupResponse = zod.object({
   "conversationId": zod.string(),
   "creatorAddress": zod.string(),
   "creatorUsername": zod.string().nullable(),
-  "canManage": zod.boolean()
+  "canManage": zod.boolean(),
+  "canJoin": zod.boolean()
 })
 
 
@@ -724,7 +727,8 @@ export const JoinGroupResponse = zod.object({
   "conversationId": zod.string(),
   "creatorAddress": zod.string(),
   "creatorUsername": zod.string().nullable(),
-  "canManage": zod.boolean()
+  "canManage": zod.boolean(),
+  "canJoin": zod.boolean()
 })
 
 
@@ -736,6 +740,74 @@ export const DeleteGroupParams = zod.object({
 })
 
 export const DeleteGroupResponse = zod.void()
+
+
+/**
+ * @summary Remove a group member and prevent them from rejoining until restored
+ */
+export const removeGroupMemberPathWalletAddressMin = 25;
+export const removeGroupMemberPathWalletAddressMax = 42;
+
+
+
+export const RemoveGroupMemberParams = zod.object({
+  "conversationId": zod.coerce.string(),
+  "walletAddress": zod.coerce.string().min(removeGroupMemberPathWalletAddressMin).max(removeGroupMemberPathWalletAddressMax)
+})
+
+export const RemoveGroupMemberResponse = zod.void()
+
+
+/**
+ * @summary List members removed from a group
+ */
+export const ListRemovedGroupMembersParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const ListRemovedGroupMembersResponseItem = zod.object({
+  "walletAddress": zod.string(),
+  "removedAt": zod.coerce.date()
+})
+export const ListRemovedGroupMembersResponse = zod.array(ListRemovedGroupMembersResponseItem)
+
+
+/**
+ * @summary Restore a removed member's eligibility to rejoin
+ */
+export const restoreGroupMemberPathWalletAddressMin = 25;
+export const restoreGroupMemberPathWalletAddressMax = 42;
+
+
+
+export const RestoreGroupMemberParams = zod.object({
+  "conversationId": zod.coerce.string(),
+  "walletAddress": zod.coerce.string().min(restoreGroupMemberPathWalletAddressMin).max(restoreGroupMemberPathWalletAddressMax)
+})
+
+export const RestoreGroupMemberResponse = zod.void()
+
+
+/**
+ * @summary Preview a group invite without joining
+ */
+export const previewGroupInviteBodyTokenMin = 32;
+export const previewGroupInviteBodyTokenMax = 128;
+
+
+
+export const PreviewGroupInviteBody = zod.object({
+  "token": zod.string().min(previewGroupInviteBodyTokenMin).max(previewGroupInviteBodyTokenMax)
+})
+
+export const PreviewGroupInviteResponse = zod.object({
+  "groupId": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "creatorAddress": zod.string(),
+  "creatorUsername": zod.string().nullable(),
+  "memberCount": zod.number().int()
+})
 
 
 /**
@@ -791,7 +863,8 @@ export const JoinGroupByInviteResponse = zod.object({
   "conversationId": zod.string(),
   "creatorAddress": zod.string(),
   "creatorUsername": zod.string().nullable(),
-  "canManage": zod.boolean()
+  "canManage": zod.boolean(),
+  "canJoin": zod.boolean()
 })
 
 

@@ -11,11 +11,15 @@ import {
   deleteGroup,
   getGetHermitMarketDataQueryKey,
   getWalletHermitBalance,
+  previewGroupInvite,
   joinGroup,
   joinGroupByInvite,
   listConversations,
   listGroups,
   useGetHermitMarketData,
+  useListRemovedGroupMembers,
+  useRemoveGroupMember,
+  useRestoreGroupMember,
   type Conversation,
   type Group,
 } from '@workspace/api-client-react';
@@ -45,6 +49,7 @@ function formatMarketCap(value: number | null | undefined) {
 export function InboxScreen() {
   const { wallet } = useSession(), c = useColors(), router = useRouter(), client = useQueryClient();
   const routeParams = useLocalSearchParams<{ groupInvite?: string }>();
+  const inviteToken = typeof routeParams.groupInvite === 'string' ? routeParams.groupInvite : '';
   const [section, setSection] = useState<MainSection>('chats');
   const [target, setTarget] = useState(''), [description, setDescription] = useState('');
   const [search, setSearch] = useState('');
@@ -64,6 +69,12 @@ export function InboxScreen() {
     retry: false,
   });
   const market = useGetHermitMarketData({ query: { queryKey: getGetHermitMarketDataQueryKey(), refetchInterval: 60_000, staleTime: 45_000, retry: 1 } });
+  const invitePreview = useQuery({
+    queryKey: ['mobile', 'group-invite-preview', inviteToken],
+    queryFn: () => previewGroupInvite({ token: inviteToken }),
+    enabled: Boolean(inviteToken),
+    retry: false,
+  });
   // Match the website’s fresh login scan for XRPL wallets; EVM wallets are not XRPL $HERMIT accounts.
   useQuery({
     queryKey: ['mobile', 'hermit-balance', wallet, 'fresh'],
@@ -87,18 +98,40 @@ export function InboxScreen() {
     finally { setBusy(false); }
   };
   useEffect(() => {
-    const token = routeParams.groupInvite;
-    if (!wallet || typeof token !== 'string' || !token || inviteHandled === token) return;
-    setInviteHandled(token);
-    void run(async () => {
-      const group = await joinGroupByInvite({ token, walletAddress: wallet });
-      await client.invalidateQueries({ queryKey: ['mobile', 'groups', wallet] });
-      await client.invalidateQueries({ queryKey: ['mobile', 'inbox', wallet] });
-      setSection('groups');
-      router.replace('/');
-      open(group.conversationId);
-    });
-  }, [wallet, routeParams.groupInvite, inviteHandled]);
+    if (!wallet || !inviteToken || inviteHandled === inviteToken || invitePreview.isLoading) return;
+    setInviteHandled(inviteToken);
+    router.replace('/');
+    if (invitePreview.isError || !invitePreview.data) {
+      setError(invitePreview.error ? errorText(invitePreview.error) : 'This invite is invalid or has been revoked.');
+      return;
+    }
+    const preview = invitePreview.data;
+    const alreadyJoined = groups.data?.find((group) => group.id === preview.groupId && group.isJoined);
+    const detail = `${preview.description || 'A Frogtown encrypted group.'}\n\n${preview.memberCount} members · Created by ${preview.creatorUsername ? `@${preview.creatorUsername}` : `${preview.creatorAddress.slice(0, 8)}…${preview.creatorAddress.slice(-6)}`}.\n\nExisting members’ devices may automatically share older encrypted messages after you join. Frogtown cannot read message contents.`;
+    const enter = () => {
+      if (alreadyJoined) {
+        setSection('groups');
+        open(alreadyJoined.conversationId);
+        return;
+      }
+      void run(async () => {
+        const group = await joinGroupByInvite({ token: inviteToken, walletAddress: wallet });
+        await client.invalidateQueries({ queryKey: ['mobile', 'groups', wallet] });
+        await client.invalidateQueries({ queryKey: ['mobile', 'inbox', wallet] });
+        setSection('groups');
+        open(group.conversationId);
+      });
+    };
+    const title = alreadyJoined ? `Open ${preview.name}?` : `Join ${preview.name}?`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(`${title}\n\n${detail}`)) enter();
+    } else {
+      Alert.alert(title, detail, [
+        { text: 'Not now', style: 'cancel' },
+        { text: alreadyJoined ? 'Open group' : 'Join group', onPress: enter },
+      ]);
+    }
+  }, [wallet, inviteToken, inviteHandled, invitePreview.isLoading, invitePreview.isError, invitePreview.data, invitePreview.error, groups.data]);
   const visibleChats = useMemo(() => (chats.data ?? []).filter((item) => `${item.title} ${item.type} ${item.otherWalletAddress ?? ''}`.toLowerCase().includes(search.trim().toLowerCase())), [chats.data, search]);
   const visibleGroups = useMemo(() => (groups.data ?? []).filter((item) => `${item.name} ${item.description}`.toLowerCase().includes(search.trim().toLowerCase())), [groups.data, search]);
   const currentQuery = isChats ? chats : groups;
@@ -174,7 +207,7 @@ export function InboxScreen() {
           if ('isJoined' in item) return <Panel>
             <Text style={[ui.subtitle, { color: c.foreground }]}>{item.name}</Text>
             <Label muted>{item.description || 'A community room'} · {item.memberCount} members</Label>
-            <Button secondary title={item.isJoined ? 'Open group' : 'Join group'} busy={busy} onPress={() => {
+            <Button secondary title={item.isJoined ? 'Open group' : item.canJoin ? 'Join group' : 'Access removed'} disabled={!item.isJoined && !item.canJoin} busy={busy} onPress={() => {
               if (item.isJoined) open(item.conversationId);
               else void run(async () => { const joined = await joinGroup(item.id, { walletAddress: wallet }); open(joined.conversationId); });
             }} />

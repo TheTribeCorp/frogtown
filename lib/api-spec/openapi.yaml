@@ -878,6 +878,104 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /conversations/{conversationId}/members/{walletAddress}:
+    delete:
+      operationId: removeGroupMember
+      tags: [groups]
+      summary: Remove a group member and prevent them from rejoining until restored
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: walletAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 25
+            maxLength: 42
+      responses:
+        "204":
+          description: Member removed and access revoked
+        "403":
+          description: Caller cannot manage the group or target is the group creator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /conversations/{conversationId}/removed-members:
+    get:
+      operationId: listRemovedGroupMembers
+      tags: [groups]
+      summary: List members removed from a group
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removed group members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RemovedGroupMember"
+  /conversations/{conversationId}/removed-members/{walletAddress}:
+    delete:
+      operationId: restoreGroupMember
+      tags: [groups]
+      summary: Restore a removed member's eligibility to rejoin
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: walletAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 25
+            maxLength: 42
+      responses:
+        "204":
+          description: Member may join the group again
+        "403":
+          description: Caller is not the group creator or a configured moderator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /groups/invite-preview:
+    post:
+      operationId: previewGroupInvite
+      tags: [groups]
+      summary: Preview a group invite without joining
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupInvitePreviewInput"
+      responses:
+        "200":
+          description: Public group details for a valid invite
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupInvitePreview"
+        "404":
+          description: Invite is invalid, revoked, or its group no longer exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /groups/{groupId}/invite:
     post:
       operationId: createGroupInvite
@@ -2082,7 +2180,9 @@ components:
           type: ["string", "null"]
         publicKey:
           type: ["string", "null"]
-      required: [walletAddress, username, publicKey]
+        isGroupCreator:
+          type: boolean
+      required: [walletAddress, username, publicKey, isGroupCreator]
     HistoryShareWorkItem:
       type: object
       properties:
@@ -2285,7 +2385,9 @@ components:
           type: ["string", "null"]
         canManage:
           type: boolean
-      required: [id, name, description, memberCount, onlineCount, isJoined, conversationId, creatorAddress, creatorUsername, canManage]
+        canJoin:
+          type: boolean
+      required: [id, name, description, memberCount, onlineCount, isJoined, conversationId, creatorAddress, creatorUsername, canManage, canJoin]
     GroupInput:
       type: object
       properties:
@@ -2327,6 +2429,39 @@ components:
           minLength: 25
           maxLength: 42
       required: [token, walletAddress]
+    GroupInvitePreviewInput:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 32
+          maxLength: 128
+      required: [token]
+    GroupInvitePreview:
+      type: object
+      properties:
+        groupId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        creatorAddress:
+          type: string
+        creatorUsername:
+          type: ["string", "null"]
+        memberCount:
+          type: integer
+      required: [groupId, name, description, creatorAddress, creatorUsername, memberCount]
+    RemovedGroupMember:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        removedAt:
+          type: string
+          format: date-time
+      required: [walletAddress, removedAt]
     TimelinePost:
       type: object
       properties:

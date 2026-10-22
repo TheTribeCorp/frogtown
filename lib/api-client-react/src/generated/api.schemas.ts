@@ -264,6 +264,7 @@ export interface ConversationKey {
   username: string | null;
   /** @nullable */
   publicKey: string | null;
+  isGroupCreator: boolean;
 }
 
 export interface HistoryShareWorkItem {
@@ -418,6 +419,7 @@ export interface Group {
   /** @nullable */
   creatorUsername: string | null;
   canManage: boolean;
+  canJoin: boolean;
 }
 
 export interface GroupInput {
@@ -458,6 +460,29 @@ export interface GroupInviteJoinInput {
      * @maxLength 42
      */
   walletAddress: string;
+}
+
+export interface GroupInvitePreviewInput {
+  /**
+     * @minLength 32
+     * @maxLength 128
+     */
+  token: string;
+}
+
+export interface GroupInvitePreview {
+  groupId: string;
+  name: string;
+  description: string;
+  creatorAddress: string;
+  /** @nullable */
+  creatorUsername: string | null;
+  memberCount: number;
+}
+
+export interface RemovedGroupMember {
+  walletAddress: string;
+  removedAt: string;
 }
 
 export interface TimelinePost {
