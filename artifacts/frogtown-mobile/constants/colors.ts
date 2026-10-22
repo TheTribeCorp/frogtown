@@ -54,6 +54,10 @@ const colors = {
     leaf: '#a5db76',
     mascotRed: '#e7463a',
     paper: '#fffdf7',
+    holderGreen: '#367d49',
+    holderGreenSurface: '#e5f1df',
+    holderGold: '#956b1c',
+    holderGoldSurface: '#f6edcf',
   },
 
   dark: {
@@ -80,6 +84,10 @@ const colors = {
     leaf: '#a5db76',
     mascotRed: '#ed5e55',
     paper: '#13241a',
+    holderGreen: '#84cf96',
+    holderGreenSurface: '#1e3b2a',
+    holderGold: '#e2c15e',
+    holderGoldSurface: '#42371c',
   },
 
   // Border radius (in px). Sync from the sibling web artifact's --radius

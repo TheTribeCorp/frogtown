@@ -23,6 +23,7 @@ import { readSecure } from '@/lib/storage';
 import { Button, Field, Label, Panel, ui } from './ui';
 import { MobileTimelineScreen } from './mobile-timeline';
 import { MobileQuestsScreen } from './mobile-quests';
+import { HermitHolderStar } from './hermit-holder-star';
 
 type MainSection = 'chats' | 'groups' | 'timeline' | 'quests';
 
@@ -124,7 +125,8 @@ export function InboxScreen() {
           return <Pressable accessibilityRole="button" accessibilityLabel={`Open ${item.title}`} onPress={() => open(item.id)}>
             <Panel>
               <View style={[ui.row, { justifyContent: 'space-between' }]}>
-                <Text style={[ui.subtitle, { color: c.foreground, flex: 1 }]} numberOfLines={1}>{item.title}</Text>
+                 <Text style={[ui.subtitle, { color: c.foreground, flexShrink: 1 }]} numberOfLines={1}>{item.title}</Text>
+                 {item.type === 'direct' && item.otherWalletAddress ? <HermitHolderStar walletAddress={item.otherWalletAddress} size={15} /> : null}
                 {item.unreadCount > 0 && <View style={{ backgroundColor: c.primary, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 16 }}><Text style={{ color: c.primaryForeground }}>{item.unreadCount}</Text></View>}
               </View>
               <Label muted>{item.directStatus === 'pending' ? (item.requesterAddress === wallet ? 'Waiting for request approval' : 'New private-message request') : item.type === 'group' ? `${item.memberCount} members · Encrypted group` : 'Private · End-to-end encrypted'}</Label>

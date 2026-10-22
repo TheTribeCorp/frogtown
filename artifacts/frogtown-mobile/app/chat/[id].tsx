@@ -11,6 +11,7 @@ import {
 } from '@workspace/api-client-react';
 import { useSession } from '@/providers/session';
 import { useColors } from '@/hooks/useColors';
+import { HermitHolderStar } from '@/components/hermit-holder-star';
 import { encryptMessage, safetyCode } from '@/lib/crypto';
 import { loadChat, shareGroupHistory, trustKeys } from '@/lib/chat';
 import { ensureIdentity, RecoveryRequired } from '@/lib/identity';
@@ -139,7 +140,10 @@ function ChatContent() {
         onViewableItemsChanged={onVisible} viewabilityConfig={viewability}
         ListEmptyComponent={!chat.isLoading ? <Label muted>No messages yet. Start the conversation.</Label> : null}
         renderItem={({ item }) => <View style={{ alignSelf: item.isMine ? 'flex-end' : 'flex-start', maxWidth: '88%', padding: 13, borderRadius: 17, backgroundColor: item.isMine ? c.primary : c.card, borderWidth: 1, borderColor: item.isMine ? c.primary : c.border }}>
-          {!item.isMine && <Text style={{ color: c.primary, fontFamily: 'Inter_600SemiBold', fontSize: 12, marginBottom: 5 }}>{item.senderUsername ? `@${item.senderUsername}` : `${item.senderAddress.slice(0, 7)}…${item.senderAddress.slice(-5)}`}</Text>}
+           {!item.isMine && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 5 }}>
+             <Text style={{ color: c.primary, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>{item.senderUsername ? `@${item.senderUsername}` : `${item.senderAddress.slice(0, 7)}…${item.senderAddress.slice(-5)}`}</Text>
+             <HermitHolderStar walletAddress={item.senderAddress} size={14} />
+           </View>}
           <Text selectable style={{ color: item.isMine ? c.primaryForeground : c.foreground, lineHeight: 21 }}>{item.text}</Text>
           <Text style={{ marginTop: 5, fontSize: 10, color: item.isMine ? c.primaryForeground : c.mutedForeground }}>{new Date(item.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{item.isMine ? item.isRead ? '  ✓✓ Read' : '  ✓ Sent' : ''}</Text>
         </View>}

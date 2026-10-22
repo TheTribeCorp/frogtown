@@ -34,6 +34,7 @@ import {
 } from '@workspace/api-client-react';
 import { useColors } from '@/hooks/useColors';
 import { Button, Field, Label, Panel } from '@/components/ui';
+import { HermitHolderStar } from '@/components/hermit-holder-star';
 import { errorText } from '@/lib/api';
 
 const POST_LIMIT = 5000;
@@ -136,7 +137,8 @@ function CommentRow({
 
   return <View style={{ borderTopWidth: 1, borderTopColor: c.border, paddingTop: 10, gap: 7 }}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-      <Text style={{ color: c.foreground, fontFamily: 'Inter_600SemiBold', flex: 1 }}>{comment.authorUsername ? `@${comment.authorUsername}` : shortAddress(comment.authorAddress)}</Text>
+      <Text numberOfLines={1} style={{ color: c.foreground, fontFamily: 'Inter_600SemiBold', flexShrink: 1 }}>{comment.authorUsername ? `@${comment.authorUsername}` : shortAddress(comment.authorAddress)}</Text>
+      <HermitHolderStar walletAddress={comment.authorAddress} size={14} />
       <Text style={{ color: c.mutedForeground, fontSize: 11 }}>{ageLabel(comment.createdAt)}</Text>
       {own ? <>
         <Pressable accessibilityRole="button" accessibilityLabel="Edit reply" onPress={() => { setDraft(comment.body); setEditing((value) => !value); setError(''); }}><Ionicons name="create-outline" size={18} color={c.mutedForeground} /></Pressable>
@@ -205,7 +207,10 @@ function PostCard({
         <Text style={{ color: c.primary, fontFamily: 'Inter_700Bold' }}>{post.authorAddress.slice(0, 2).toUpperCase()}</Text>
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={{ color: c.foreground, fontFamily: 'Inter_600SemiBold' }}>{post.authorUsername ? `@${post.authorUsername}` : shortAddress(post.authorAddress)}{post.authorAddress === walletAddress ? ' · you' : ''}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Text numberOfLines={1} style={{ color: c.foreground, fontFamily: 'Inter_600SemiBold', flexShrink: 1 }}>{post.authorUsername ? `@${post.authorUsername}` : shortAddress(post.authorAddress)}{post.authorAddress === walletAddress ? ' · you' : ''}</Text>
+          <HermitHolderStar walletAddress={post.authorAddress} size={15} />
+        </View>
         {post.authorUsername ? <Text style={{ color: c.mutedForeground, fontSize: 10 }}>{shortAddress(post.authorAddress)}</Text> : null}
       </View>
       <Text style={{ color: c.mutedForeground, fontSize: 11 }}>{ageLabel(post.createdAt)}</Text>

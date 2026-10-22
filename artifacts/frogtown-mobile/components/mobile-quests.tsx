@@ -30,6 +30,7 @@ import {
 } from '@workspace/api-client-react';
 import { useColors } from '@/hooks/useColors';
 import { Button, Field, Label, Panel } from '@/components/ui';
+import { HermitHolderStar } from '@/components/hermit-holder-star';
 import { errorText } from '@/lib/api';
 
 type Destination = 'chats' | 'groups' | 'timeline' | 'quests';
@@ -250,7 +251,13 @@ export function MobileQuestsScreen({ walletAddress, onNavigate }: Props) {
       <CardTitle eyebrow="Around the pond" title="Top 10 points" />
       {leaderboard.data?.items.slice(0, 10).map((entry) => <View key={entry.walletAddress} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, borderTopWidth: 1, borderTopColor: c.border }}>
         <Text style={{ width: 28, color: entry.rank === 1 ? c.secondary : c.mutedForeground, fontFamily: 'Inter_700Bold' }}>{String(entry.rank).padStart(2, '0')}</Text>
-        <View style={{ flex: 1 }}><Text style={{ color: c.foreground, fontFamily: 'Inter_600SemiBold' }}>{entry.username ? `@${entry.username}` : shortWallet(entry.walletAddress)}{entry.walletAddress === walletAddress ? ' · you' : ''}</Text><Text style={{ color: c.mutedForeground, fontSize: 11 }}>{entry.currentStreak} day streak{entry.frogBadgeEarned ? ' · Frog badge' : ''}</Text></View>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Text numberOfLines={1} style={{ color: c.foreground, fontFamily: 'Inter_600SemiBold', flexShrink: 1 }}>{entry.username ? `@${entry.username}` : shortWallet(entry.walletAddress)}{entry.walletAddress === walletAddress ? ' · you' : ''}</Text>
+            <HermitHolderStar walletAddress={entry.walletAddress} size={14} />
+          </View>
+          <Text style={{ color: c.mutedForeground, fontSize: 11 }}>{entry.currentStreak} day streak{entry.frogBadgeEarned ? ' · Frog badge' : ''}</Text>
+        </View>
         <Text style={{ color: c.primary, fontFamily: 'Inter_700Bold' }}>{entry.points.toLocaleString()}</Text>
       </View>)}
       {leaderboard.isError && <Label muted>Points standings are temporarily unavailable.</Label>}
@@ -276,7 +283,13 @@ export function MobileQuestsScreen({ walletAddress, onNavigate }: Props) {
       <Button title="Share invite link" onPress={() => void shareInvite()} />
       {!!notice && <Label>{notice}</Label>}
       {!!referrals.error && <Label muted>Referral information is temporarily unavailable.</Label>}
-      {referrals.data?.leaderboard.slice(0, 10).map((entry) => <View key={entry.walletAddress} style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: c.border, paddingTop: 8 }}><Text style={{ color: c.foreground }}>{entry.rank}. {entry.username ? `@${entry.username}` : shortWallet(entry.walletAddress)}</Text><Text style={{ color: c.primary }}>{entry.referralCount} invites</Text></View>)}
+      {referrals.data?.leaderboard.slice(0, 10).map((entry) => <View key={entry.walletAddress} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, borderTopWidth: 1, borderTopColor: c.border, paddingTop: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1 }}>
+          <Text numberOfLines={1} style={{ color: c.foreground, flexShrink: 1 }}>{entry.rank}. {entry.username ? `@${entry.username}` : shortWallet(entry.walletAddress)}</Text>
+          <HermitHolderStar walletAddress={entry.walletAddress} size={14} />
+        </View>
+        <Text style={{ color: c.primary }}>{entry.referralCount} invites</Text>
+      </View>)}
     </Panel>
 
     <Panel>
