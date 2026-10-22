@@ -37,8 +37,8 @@ bundle ID and Android package name are set; keep them stable.
 ### Android
 
 The Android APK is built on GitHub Actions and published as a GitHub Release.
-The website's Android download button points to the latest release asset, so the
-button becomes a working direct download after the first successful release.
+The website's Android download button stays disabled until a signed release
+has been installed and checked on a real Android phone.
 
 #### One-time signing setup
 
@@ -76,13 +76,17 @@ never commit the key or its password.
    Never paste these values into a chat, issue, commit, or workflow log.
 4. Sync the project changes to GitHub. In **Actions → Frogtown Android APK**,
    choose **Run workflow** and use `android-v1.0.0` as the first release tag.
-5. After the workflow succeeds, verify the APK is attached to the release. The
-   homepage download button uses:
+5. After the workflow succeeds, verify the APK is attached to the release with
+   its SHA-256 checksum. The stable direct-download URL is:
    `https://github.com/TheTribeCorp/frogtown/releases/latest/download/Frogtown.apk`
 6. Install the APK on a physical Android phone. Android will ask the user to
    allow installation from the browser. Test wallet return, private/group
    encrypted message send and receive, app restart/outbox recovery, and alerts.
    APK signing verification alone does not verify these device behaviors.
+7. Only after the installed-phone checks pass, set the public Vercel build
+   variable `VITE_ANDROID_APK_URL` to that stable download URL and redeploy the
+   website. This activates the homepage button without exposing a dead link
+   before the first build exists.
 
 Increment `android.versionCode` in `app.json` for every subsequent APK release.
 Keep the package ID and signing key unchanged. The APK is stored as a GitHub

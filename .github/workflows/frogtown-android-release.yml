@@ -19,6 +19,7 @@ concurrency:
 jobs:
   build:
     name: Build and publish signed Android APK
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -51,7 +52,6 @@ jobs:
 
       - name: Install Android build targets
         run: |
-          yes | sdkmanager --licenses >/dev/null
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-36" \
@@ -69,6 +69,10 @@ jobs:
           ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^android-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Use a release tag such as android-v1.0.0."
+            exit 1
+          fi
           missing=()
           for name in \
             ANDROID_RELEASE_KEYSTORE_BASE64 \
@@ -129,14 +133,18 @@ jobs:
           set -euo pipefail
           apk="app/build/outputs/apk/release/app-release.apk"
           test -s "$apk"
-          apksigner verify "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$apk"
           cp "$apk" "$RUNNER_TEMP/Frogtown.apk"
+          cd "$RUNNER_TEMP"
+          sha256sum Frogtown.apk > Frogtown.apk.sha256
 
       - name: Save APK build artifact
         uses: actions/upload-artifact@v4
         with:
           name: frogtown-android-apk
-          path: ${{ runner.temp }}/Frogtown.apk
+          path: |
+            ${{ runner.temp }}/Frogtown.apk
+            ${{ runner.temp }}/Frogtown.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -148,10 +156,14 @@ jobs:
           title="Frogtown Android ${RELEASE_TAG}"
           notes="Signed Frogtown Android APK. Install only if you trust this release. Future updates must use the same Frogtown signing key."
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/Frogtown.apk" --clobber
+            gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/Frogtown.apk" "$RUNNER_TEMP/Frogtown.apk.sha256" --clobber
           else
-            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/Frogtown.apk" \
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/Frogtown.apk" "$RUNNER_TEMP/Frogtown.apk.sha256" \
               --title "$title" \
               --notes "$notes" \
               --target "$GITHUB_SHA"
           fi
+
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$ANDROID_KEYSTORE_PATH"

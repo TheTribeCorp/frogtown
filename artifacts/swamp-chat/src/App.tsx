@@ -704,14 +704,22 @@ function WalletEntry() {
             </div>
             <div className="ft-entry-download-links" aria-label="Frogtown app downloads">
               <PwaInstallButton />
-              <a
+              {import.meta.env.VITE_ANDROID_APK_URL ? <a
                 className="ft-entry-download-button"
-                href="https://github.com/TheTribeCorp/frogtown/releases/latest/download/Frogtown.apk"
+                href={import.meta.env.VITE_ANDROID_APK_URL}
                 aria-label="Download the latest Frogtown Android APK"
               >
                 <Smartphone aria-hidden="true" />
                 <span><strong>Android APK</strong><small>Direct download</small></span>
-              </a>
+              </a> : <button
+                className="ft-entry-download-button"
+                type="button"
+                disabled
+                aria-label="Frogtown for Android — coming soon"
+              >
+                <Smartphone aria-hidden="true" />
+                <span><strong>Android app</strong><small>Coming soon</small></span>
+              </button>}
               <button
                 className="ft-entry-download-button"
                 type="button"

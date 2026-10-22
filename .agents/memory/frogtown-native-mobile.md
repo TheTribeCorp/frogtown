@@ -39,6 +39,12 @@ Keep the homepage's Android and iOS download buttons marked Coming soon until re
 
 **How to apply:** Activate a platform's download button only after its install link has been tested on a real device.
 
+Direct Android APK distribution is required while Play Store listing is deferred.
+
+**Why:** The user chose a remote signed APK build and a website download link rather than waiting for a Play Store listing.
+
+**How to apply:** Preserve the signing identity across updates, keep signing credentials out of the public repository, and distinguish build/signature checks from physical-phone verification.
+
 Keep shared React typings on one Expo-compatible resolution.
 
 **Why:** Expo's narrower React typing range and the web's broader range can resolve different nominal ref types after a package install, breaking otherwise valid web UI types.
