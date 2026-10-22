@@ -33,6 +33,12 @@ Do not call native push production-ready until an installed build has the correc
 
 **How to apply:** Separate code/bundle verification from credentialed iPhone/Android verification in release reports.
 
+Keep the homepage's Android and iOS download buttons marked Coming soon until real installable Frogtown builds or verified store links are available. Do not use Expo Go or JavaScript bundle exports as public app-download links.
+
+**Why:** The user chose to keep both buttons Coming soon until standalone builds exist.
+
+**How to apply:** Activate a platform's download button only after its install link has been tested on a real device.
+
 Keep shared React typings on one Expo-compatible resolution.
 
 **Why:** Expo's narrower React typing range and the web's broader range can resolve different nominal ref types after a package install, breaking otherwise valid web UI types.
