@@ -35,6 +35,8 @@ import { HermitHolderStar } from './hermit-holder-star';
 import { AndroidUpdateNotice } from './android-update-notice';
 
 type MainSection = 'chats' | 'groups' | 'timeline' | 'quests';
+type ConversationSectionRow = { rowType: 'section'; id: string; title: string; count: number };
+type InboxListItem = Conversation | Group | ConversationSectionRow;
 
 const sections: Array<{ id: MainSection; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
   { id: 'chats', label: 'Chats', icon: 'chatbubbles-outline' },
@@ -144,9 +146,24 @@ export function InboxScreen() {
   const visibleChats = useMemo(() => (chats.data ?? []).filter((item) => `${item.title} ${item.type} ${item.otherWalletAddress ?? ''}`.toLowerCase().includes(search.trim().toLowerCase())), [chats.data, search]);
   const visibleGroups = useMemo(() => (groups.data ?? []).filter((item) => `${item.name} ${item.description}`.toLowerCase().includes(search.trim().toLowerCase())), [groups.data, search]);
   const currentQuery = isChats ? chats : groups;
-  const selectedItems = isChats ? visibleChats : visibleGroups;
-  const incomingRequests = (chats.data ?? []).filter((item) =>
-    item.type === 'direct' && item.directStatus === 'pending' && item.requesterAddress !== wallet);
+  const selectedItems = useMemo<InboxListItem[]>(() => {
+    if (!isChats) return visibleGroups;
+    const incomingRequestIds = new Set((chats.data ?? [])
+      .filter((item) => item.type === 'direct' && item.directStatus === 'pending' && item.requesterAddress !== wallet)
+      .map((item) => item.id));
+    const unread = visibleChats.filter((item) => item.unreadCount > 0 || incomingRequestIds.has(item.id));
+    const read = visibleChats.filter((item) => item.unreadCount === 0 && !incomingRequestIds.has(item.id));
+    const rows: InboxListItem[] = [];
+    if (unread.length > 0) rows.push(
+      { rowType: 'section', id: 'unread-messages-section', title: 'Unread messages', count: unread.length },
+      ...unread,
+    );
+    if (read.length > 0) rows.push(
+      { rowType: 'section', id: 'read-messages-section', title: 'Read messages', count: read.length },
+      ...read,
+    );
+    return rows;
+  }, [isChats, visibleChats, visibleGroups, chats.data, wallet]);
 
   return <SafeAreaView style={[{ flex: 1, backgroundColor: c.background }, Platform.OS === 'web' && { paddingTop: 67, paddingBottom: 34 }]}>
     <View style={{ flex: 1 }}>
@@ -160,7 +177,7 @@ export function InboxScreen() {
           <Text accessibilityLabel={`$HERMIT market cap ${formatMarketCap(market.data?.marketCapUsd)}`} style={{ color: c.primary, fontFamily: 'Inter_700Bold', fontSize: 15 }}>{formatMarketCap(market.data?.marketCapUsd)}</Text>
         </View>
       </View>
-      {section === 'timeline' ? <MobileTimelineScreen walletAddress={wallet} /> : section === 'quests' ? <MobileQuestsScreen walletAddress={wallet} onNavigate={setSection} /> : <FlatList<Conversation | Group>
+      {section === 'timeline' ? <MobileTimelineScreen walletAddress={wallet} /> : section === 'quests' ? <MobileQuestsScreen walletAddress={wallet} onNavigate={setSection} /> : <FlatList<InboxListItem>
         style={{ flex: 1 }}
         data={selectedItems}
         keyExtractor={(item) => item.id}
@@ -171,11 +188,6 @@ export function InboxScreen() {
         ListHeaderComponent={<View style={{ gap: 12, marginBottom: 8 }}>
           <AndroidUpdateNotice />
           {backupNeeded && isChats && <Panel><Label>Keep your chats recoverable. Create an encrypted backup for this phone.</Label><Button secondary title="Create my recovery backup" onPress={() => router.push('/settings')} /></Panel>}
-          {isChats && incomingRequests.length > 0 && <Panel>
-            <Text style={[ui.subtitle, { color: c.foreground }]}>Private-message requests · {incomingRequests.length}</Text>
-            <Label>A member sent you a private-chat request. Open it to read their introduction and accept, decline, or block.</Label>
-            {incomingRequests.map((request) => <Button key={request.id} secondary title={`Review ${request.title}`} onPress={() => open(request.id)} />)}
-          </Panel>}
           <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: c.border, backgroundColor: c.card, borderRadius: 24, paddingHorizontal: 12 }}>
             <Ionicons name="search" size={18} color={c.mutedForeground} />
             <Field accessibilityLabel={isChats ? 'Search people or chats' : 'Search groups'} placeholder={isChats ? 'Find users or chats' : 'Find groups by name or description'} value={search} onChangeText={setSearch} style={{ flex: 1, minHeight: 46, borderWidth: 0, backgroundColor: 'transparent', paddingHorizontal: 9 }} />
@@ -189,7 +201,7 @@ export function InboxScreen() {
             {peopleSearch.data?.map((person) => <View key={person.walletAddress} style={[ui.row, { borderTopWidth: 1, borderTopColor: c.border, paddingTop: 9 }]}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <Text numberOfLines={1} style={{ color: c.foreground, fontFamily: 'Inter_600SemiBold', flexShrink: 1 }}>@{person.username}</Text>
+                  <Text numberOfLines={1} style={{ color: c.foreground, fontFamily: 'Inter_600SemiBold', flexShrink: 1 }}>{person.username ? `@${person.username}` : `${person.walletAddress.slice(0, 8)}…${person.walletAddress.slice(-6)}`}</Text>
                   <HermitHolderStar walletAddress={person.walletAddress} size={14} />
                 </View>
                 <Label muted>{`${person.walletAddress.slice(0, 8)}…${person.walletAddress.slice(-6)}`}</Label>
@@ -222,6 +234,9 @@ export function InboxScreen() {
         </View>}
         ListEmptyComponent={currentQuery.isLoading ? <ActivityIndicator color={c.primary} /> : <Panel><Label>{isChats ? 'No chats yet. Start with a username or join a group.' : 'No public groups match. Create the first one.'}</Label></Panel>}
         renderItem={({ item }) => {
+          if ('rowType' in item) return <View testID={`section-${item.id}`} style={{ paddingTop: 4, paddingBottom: 1 }}>
+            <Text style={{ color: item.id.startsWith('unread') ? c.primary : c.mutedForeground, fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' }}>{item.title} · {item.count}</Text>
+          </View>;
           if ('isJoined' in item) return <Panel>
             <Text style={[ui.subtitle, { color: c.foreground }]}>{item.name}</Text>
             <Label muted>{item.description || 'A community room'} · {item.memberCount} members</Label>
@@ -243,14 +258,15 @@ export function InboxScreen() {
               }} />
             </View>}
           </Panel>;
-          return <Pressable accessibilityRole="button" accessibilityLabel={`Open ${item.title}`} onPress={() => open(item.id)}>
+          const incomingRequest = item.type === 'direct' && item.directStatus === 'pending' && item.requesterAddress !== wallet;
+          return <Pressable accessibilityRole="button" accessibilityLabel={`${incomingRequest ? 'Review new message request from' : 'Open'} ${item.title}`} onPress={() => open(item.id)}>
             <Panel>
               <View style={[ui.row, { justifyContent: 'space-between' }]}>
                  <Text style={[ui.subtitle, { color: c.foreground, flexShrink: 1 }]} numberOfLines={1}>{item.title}</Text>
                  {item.type === 'direct' && item.otherWalletAddress ? <HermitHolderStar walletAddress={item.otherWalletAddress} size={15} /> : null}
-                {item.unreadCount > 0 && <View style={{ backgroundColor: c.primary, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 16 }}><Text style={{ color: c.primaryForeground }}>{item.unreadCount}</Text></View>}
+                {(item.unreadCount > 0 || incomingRequest) && <View style={{ backgroundColor: c.primary, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 16 }}><Text style={{ color: c.primaryForeground, fontSize: 10 }}>{item.unreadCount > 0 ? item.unreadCount : 'NEW'}</Text></View>}
               </View>
-              <Label muted>{item.directStatus === 'pending' ? (item.requesterAddress === wallet ? 'Waiting for request approval' : 'New private-message request') : item.type === 'group' ? `${item.memberCount} members · Encrypted group` : 'Private · End-to-end encrypted'}</Label>
+              <Label muted>{item.directStatus === 'pending' ? (item.requesterAddress === wallet ? 'Waiting for request approval' : 'New private-message request · Tap to review') : item.type === 'group' ? `${item.memberCount} members · Encrypted group` : 'Private · End-to-end encrypted'}</Label>
             </Panel>
           </Pressable>;
         }}

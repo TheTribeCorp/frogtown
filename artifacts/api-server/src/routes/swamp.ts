@@ -76,6 +76,7 @@ import {
   isWalletIdentity as isWalletAddress,
   isXrplWalletAddress as isXrplAddress,
   normalizeWalletIdentity as normalizeWalletAddress,
+  walletIdentityMatches,
 } from "../lib/wallet-identity";
 import {
   conversationMembersTable,
@@ -633,7 +634,7 @@ export function requireAuth(req: Request, res: Response) {
 }
 
 function requireMatchingWallet(sessionWallet: string, claimedWallet: string, res: Response) {
-  if (sessionWallet !== claimedWallet) {
+  if (!walletIdentityMatches(sessionWallet, claimedWallet)) {
     res.status(403).json({ error: "This wallet is not the authenticated wallet." });
     return false;
   }
@@ -1534,8 +1535,9 @@ router.get("/conversations", async (req, res) => {
   try {
     const sessionWallet = requireAuth(req, res);
     if (!sessionWallet) return;
-    const { walletAddress } = ListConversationsQueryParams.parse(req.query);
-    requireAddress(walletAddress);
+    const { walletAddress: rawWalletAddress } = ListConversationsQueryParams.parse(req.query);
+    requireAddress(rawWalletAddress);
+    const walletAddress = normalizeWalletAddress(rawWalletAddress);
     if (!requireMatchingWallet(sessionWallet, walletAddress, res)) return;
     const memberships = await db
       .select({
@@ -1678,7 +1680,8 @@ router.post("/conversations", async (req, res): Promise<void> => {
       res.status(400).json({ error: "The sender wallet address is invalid." });
       return;
     }
-    if (!requireMatchingWallet(sessionWallet, input.fromWalletAddress, res)) return;
+    const senderWalletAddress = normalizeWalletAddress(input.fromWalletAddress);
+    if (!requireMatchingWallet(sessionWallet, senderWalletAddress, res)) return;
     const recipientIdentifier = input.recipient.trim();
     let recipientWalletAddress: string;
     let recipientUsername: string | null = null;
@@ -1713,14 +1716,14 @@ router.post("/conversations", async (req, res): Promise<void> => {
       recipientWalletAddress = profile.walletAddress;
       recipientUsername = profile.username;
     }
-    if (recipientWalletAddress === input.fromWalletAddress) {
+    if (recipientWalletAddress === senderWalletAddress) {
       res.status(400).json({ error: "Choose a different user." });
       return;
     }
 
-    const requestedParticipants = new Set([recipientWalletAddress, input.fromWalletAddress]);
+    const requestedParticipants = new Set([recipientWalletAddress, senderWalletAddress]);
     const outcome = await db.transaction(async (transaction) => {
-      const pairKey = directPairLockKey(recipientWalletAddress, input.fromWalletAddress);
+      const pairKey = directPairLockKey(recipientWalletAddress, senderWalletAddress);
       await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${pairKey}, 0))`);
 
       const pairBlock = await transaction
@@ -1729,10 +1732,10 @@ router.post("/conversations", async (req, res): Promise<void> => {
         .where(or(
           and(
             eq(blockedWalletsTable.walletAddress, recipientWalletAddress),
-            eq(blockedWalletsTable.blockedWalletAddress, input.fromWalletAddress),
+            eq(blockedWalletsTable.blockedWalletAddress, senderWalletAddress),
           ),
           and(
-            eq(blockedWalletsTable.walletAddress, input.fromWalletAddress),
+            eq(blockedWalletsTable.walletAddress, senderWalletAddress),
             eq(blockedWalletsTable.blockedWalletAddress, recipientWalletAddress),
           ),
         ))
@@ -1815,7 +1818,7 @@ router.post("/conversations", async (req, res): Promise<void> => {
       await transaction.insert(conversationsTable).values(conversation);
       await transaction.insert(conversationMembersTable).values([
         { conversationId: conversation.id, walletAddress: recipientWalletAddress },
-        { conversationId: conversation.id, walletAddress: input.fromWalletAddress },
+        { conversationId: conversation.id, walletAddress: senderWalletAddress },
       ]);
       return { kind: "conversation" as const, conversation, created: true };
     });
@@ -1830,7 +1833,7 @@ router.post("/conversations", async (req, res): Promise<void> => {
     }
     if (outcome.created) {
       await publishConversationUpdated(
-        [recipientWalletAddress, input.fromWalletAddress],
+        [recipientWalletAddress, senderWalletAddress],
         { conversationId: outcome.conversation.id },
       );
     }
@@ -2488,7 +2491,8 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
     const { conversationId } = SendMessageParams.parse(req.params);
     const input = SendMessageBody.parse(req.body);
     requireAddress(input.senderAddress);
-    if (!requireMatchingWallet(sessionWallet, input.senderAddress, res)) return;
+    const senderWalletAddress = normalizeWalletAddress(input.senderAddress);
+    if (!requireMatchingWallet(sessionWallet, senderWalletAddress, res)) return;
     if (!input.body.trim()) {
       res.status(400).json({ error: "Message cannot be empty." });
       return;
@@ -2515,7 +2519,7 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
       .select({ walletAddress: conversationMembersTable.walletAddress })
       .from(conversationMembersTable)
       .where(eq(conversationMembersTable.conversationId, conversationId));
-    if (!memberships.some((member) => member.walletAddress === input.senderAddress)) {
+    if (!memberships.some((member) => member.walletAddress === senderWalletAddress)) {
       res.status(403).json({ error: "You are not a member of this conversation." });
       return;
     }
@@ -2527,7 +2531,7 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
         .where(eq(conversationMembersTable.conversationId, conversationId)))
         .map((member) => member.walletAddress)
       : memberships.map((member) => member.walletAddress);
-    if (!recipientWallets.includes(input.senderAddress)) {
+    if (!recipientWallets.includes(senderWalletAddress)) {
       res.status(403).json({ error: "Register this device’s encryption key before sending to the room." });
       return;
     }
@@ -2543,7 +2547,7 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
     const message = {
       id: input.messageId,
       conversationId,
-      senderAddress: input.senderAddress,
+      senderAddress: senderWalletAddress,
       body: input.body,
       sentAt: new Date(),
       encrypted: true,
@@ -2586,7 +2590,7 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
           return { kind: "unavailable" as const };
         }
         isRequest = current.directStatus === "pending";
-        if (isRequest && current.requesterAddress !== input.senderAddress) {
+        if (isRequest && current.requesterAddress !== senderWalletAddress) {
           return { kind: "not-accepted" as const };
         }
 
@@ -2599,7 +2603,7 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
           const previous = existingById[0];
           if (
             previous.conversationId !== conversationId
-            || previous.senderAddress !== input.senderAddress
+            || previous.senderAddress !== senderWalletAddress
             || previous.body !== input.body
           ) {
             throw new Error("Message ID is already in use.");
@@ -2631,7 +2635,7 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
         const previous = existing[0];
         if (!previous
           || previous.conversationId !== conversationId
-          || previous.senderAddress !== input.senderAddress
+          || previous.senderAddress !== senderWalletAddress
           || previous.body !== input.body) {
           throw new Error("Message ID is already in use.");
         }
@@ -2642,7 +2646,7 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
         .set({ lastMessage: "e2ee:v1:", lastMessageAt: message.sentAt })
         .where(eq(conversationsTable.id, conversationId));
       if (conversation?.type === "group") {
-        await recordDailyQuestActionInTransaction(transaction, input.senderAddress, "room_message", input.messageId);
+        await recordDailyQuestActionInTransaction(transaction, senderWalletAddress, "room_message", input.messageId);
       }
       return { kind: "saved" as const, message, created: true, isRequest };
     });
@@ -2670,7 +2674,7 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
       );
       await sendNewMessagePush(
         memberships.map((member) => member.walletAddress),
-        input.senderAddress,
+        senderWalletAddress,
         conversationId,
         outcome.message.id,
         req.get("origin")?.startsWith("https://")

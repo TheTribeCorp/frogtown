@@ -16,3 +16,9 @@ export function isWalletIdentity(value: string): boolean {
 export function normalizeWalletIdentity(value: string): string {
   return isEvmWalletAddress(value) ? value.toLowerCase() : value;
 }
+
+export function walletIdentityMatches(left: string, right: string): boolean {
+  return isWalletIdentity(left)
+    && isWalletIdentity(right)
+    && normalizeWalletIdentity(left) === normalizeWalletIdentity(right);
+}

@@ -934,12 +934,17 @@ function ChatList({
     if (!query) return true;
     return `${conversation.title} ${conversation.participantLabel}`.toLowerCase().includes(query);
   });
-  const incomingRequests = matchingConversations.filter((conversation) => (
+  const isIncomingRequest = (conversation: ChatConversation) => (
     conversation.type === 'direct'
     && conversation.directStatus === 'pending'
     && conversation.requesterAddress !== walletAddress
+  );
+  const unreadConversations = matchingConversations.filter((conversation) => (
+    conversation.unreadCount > 0 || isIncomingRequest(conversation)
   ));
-  const chats = matchingConversations.filter((conversation) => !incomingRequests.includes(conversation));
+  const readConversations = matchingConversations.filter((conversation) => (
+    conversation.unreadCount === 0 && !isIncomingRequest(conversation)
+  ));
   const renderConversation = (conversation: ChatConversation, request = false) => (
     <button
       key={conversation.id}
@@ -955,7 +960,9 @@ function ChatList({
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-medium">{conversation.title || conversation.participantLabel}</span>
             {conversation.encrypted && <LockKeyhole className="size-3 shrink-0 text-[hsl(var(--primary))]" />}
-            {conversation.unreadCount > 0 && <span className="ml-auto flex size-4 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--accent))] text-[9px] font-bold text-[hsl(var(--accent-foreground))]">{conversation.unreadCount}</span>}
+            {conversation.unreadCount > 0
+              ? <span className="ml-auto flex size-4 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--accent))] text-[9px] font-bold text-[hsl(var(--accent-foreground))]">{conversation.unreadCount}</span>
+              : request && <span className="ml-auto rounded-full bg-[hsl(var(--accent)/.16)] px-2 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-[hsl(var(--accent-foreground))]">New</span>}
           </div>
           <p className="mt-1 truncate text-xs text-[hsl(var(--muted-foreground))]">
             {request ? 'Encrypted message request' : conversation.lastMessage || 'No messages yet'}
@@ -975,8 +982,8 @@ function ChatList({
       {!loading && Boolean(error) && <div className="m-2 rounded-xl border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.06)] p-3 text-xs leading-5 text-[hsl(var(--destructive))]" data-testid="status-conversations-error">Unable to load your conversations. Try refreshing the page.</div>}
       {!loading && !error && conversations.length === 0 && <div className="m-2 rounded-xl border border-dashed border-[hsl(var(--border))] p-4 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="empty-conversations"><MessageCircle className="mb-3 size-4 text-[hsl(var(--primary))]" /><p>No conversations yet.</p><p className="mt-1">Start a private line or find a group room.</p><div className="mt-4 flex flex-wrap gap-2"><button onClick={onNewChat} className="rounded-lg bg-[hsl(var(--foreground))] px-3 py-2 font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))]" data-testid="button-empty-new-chat">New direct chat</button><Link href="/groups" className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 font-medium text-[hsl(var(--foreground))] hover:border-[hsl(var(--primary))]" data-testid="button-empty-browse-groups">Browse groups</Link></div></div>}
       {!loading && !error && conversations.length > 0 && matchingConversations.length === 0 && <div className="m-2 rounded-xl border border-dashed border-[hsl(var(--border))] p-4 text-xs leading-5 text-[hsl(var(--muted-foreground))]" data-testid="empty-search-chats"><Search className="mb-3 size-4 text-[hsl(var(--primary))]" /><p>No chats match “{search}”.</p><button onClick={() => setSearch('')} className="mt-2 font-medium text-[hsl(var(--primary))] hover:underline">Clear search</button></div>}
-      {!loading && !error && incomingRequests.length > 0 && <div className="pt-2"><p className="px-3 pb-1 mono text-[9px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">Message requests · {incomingRequests.length}</p>{incomingRequests.map((conversation) => renderConversation(conversation, true))}</div>}
-      {!loading && !error && chats.length > 0 && <div className="pt-2"><p className="px-3 pb-1 mono text-[9px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">Your chats</p>{chats.map((conversation) => renderConversation(conversation))}</div>}
+      {!loading && !error && unreadConversations.length > 0 && <div className="pt-2" data-testid="section-unread-conversations"><p className="px-3 pb-1 mono text-[9px] uppercase tracking-[.16em] text-[hsl(var(--primary))]">Unread messages · {unreadConversations.length}</p>{unreadConversations.map((conversation) => renderConversation(conversation, isIncomingRequest(conversation)))}</div>}
+      {!loading && !error && readConversations.length > 0 && <div className="pt-2" data-testid="section-read-conversations"><p className="px-3 pb-1 mono text-[9px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">Read messages · {readConversations.length}</p>{readConversations.map((conversation) => renderConversation(conversation))}</div>}
       {!loading && !error && blockedWallets.length > 0 && <div className="mt-4 border-t border-[hsl(var(--border))] px-2 pt-4" data-testid="blocked-wallets-list"><p className="px-3 pb-2 mono text-[9px] uppercase tracking-[.16em] text-[hsl(var(--muted-foreground))]">Blocked wallets</p>{blockedWallets.map((item) => <div key={item.blockedWalletAddress} className="flex items-center gap-2 rounded-xl px-3 py-2"><Ban className="size-3.5 shrink-0 text-[hsl(var(--muted-foreground))]" /><span className="mono min-w-0 flex-1 truncate text-[10px]">{shortAddress(item.blockedWalletAddress)}</span><button type="button" disabled={unblocking} onClick={() => onUnblock(item.blockedWalletAddress)} className="rounded-lg border border-[hsl(var(--border))] px-2 py-1 text-[9px] font-medium hover:border-[hsl(var(--primary))] disabled:opacity-50" data-testid={`button-unblock-${item.blockedWalletAddress}`}>Unblock</button></div>)}</div>}
     </div>
   </section>;
