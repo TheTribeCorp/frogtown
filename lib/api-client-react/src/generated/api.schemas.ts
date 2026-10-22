@@ -341,6 +341,7 @@ export interface Conversation {
   /** @nullable */
   otherWalletAddress: string | null;
   directMessagingBlocked: boolean;
+  canManageGroup: boolean;
 }
 
 export interface DirectConversationInput {
@@ -416,6 +417,7 @@ export interface Group {
   creatorAddress: string;
   /** @nullable */
   creatorUsername: string | null;
+  canManage: boolean;
 }
 
 export interface GroupInput {
@@ -430,6 +432,27 @@ export interface GroupInput {
 }
 
 export interface JoinGroupInput {
+  /**
+     * @minLength 25
+     * @maxLength 42
+     */
+  walletAddress: string;
+}
+
+export interface GroupInvite {
+  /**
+     * @minLength 32
+     * @maxLength 128
+     */
+  token: string;
+}
+
+export interface GroupInviteJoinInput {
+  /**
+     * @minLength 32
+     * @maxLength 128
+     */
+  token: string;
   /**
      * @minLength 25
      * @maxLength 42

@@ -645,6 +645,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+  /conversations/{conversationId}/messages/{messageId}:
+    delete:
+      operationId: deleteGroupMessage
+      tags: [conversations]
+      summary: Remove a group message as its room creator
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Group message and its shared encrypted copies were deleted
+        "403":
+          description: Caller is not an authorized room creator or moderator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /conversations/{conversationId}/read:
     post:
       operationId: markConversationRead
@@ -837,6 +858,81 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Group"
+  /groups/{groupId}:
+    delete:
+      operationId: deleteGroup
+      tags: [groups]
+      summary: Permanently delete a group and all of its message history
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Group and all associated encrypted history were permanently deleted
+        "403":
+          description: Caller is not the group creator or a configured moderator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /groups/{groupId}/invite:
+    post:
+      operationId: createGroupInvite
+      tags: [groups]
+      summary: Create or rotate a shareable group invite
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: New invite token; any previously issued token is revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupInvite"
+    delete:
+      operationId: revokeGroupInvite
+      tags: [groups]
+      summary: Revoke the active group invite
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Active invite revoked
+  /groups/join-by-invite:
+    post:
+      operationId: joinGroupByInvite
+      tags: [groups]
+      summary: Join a group using a shareable invite token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupInviteJoinInput"
+      responses:
+        "200":
+          description: Joined group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "404":
+          description: Invite is invalid, revoked, or its group no longer exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /timeline/posts:
     get:
       operationId: listTimelinePosts
@@ -2077,7 +2173,9 @@ components:
           type: ["string", "null"]
         directMessagingBlocked:
           type: boolean
-      required: [id, type, title, participantLabel, lastMessage, lastMessageAt, unreadCount, encrypted, memberCount, directStatus, requesterAddress, otherWalletAddress, directMessagingBlocked]
+        canManageGroup:
+          type: boolean
+      required: [id, type, title, participantLabel, lastMessage, lastMessageAt, unreadCount, encrypted, memberCount, directStatus, requesterAddress, otherWalletAddress, directMessagingBlocked, canManageGroup]
     DirectConversationInput:
       type: object
       properties:
@@ -2185,7 +2283,9 @@ components:
           type: string
         creatorUsername:
           type: ["string", "null"]
-      required: [id, name, description, memberCount, onlineCount, isJoined, conversationId, creatorAddress, creatorUsername]
+        canManage:
+          type: boolean
+      required: [id, name, description, memberCount, onlineCount, isJoined, conversationId, creatorAddress, creatorUsername, canManage]
     GroupInput:
       type: object
       properties:
@@ -2207,6 +2307,26 @@ components:
           minLength: 25
           maxLength: 42
       required: [walletAddress]
+    GroupInvite:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 32
+          maxLength: 128
+      required: [token]
+    GroupInviteJoinInput:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 32
+          maxLength: 128
+        walletAddress:
+          type: string
+          minLength: 25
+          maxLength: 42
+      required: [token, walletAddress]
     TimelinePost:
       type: object
       properties:

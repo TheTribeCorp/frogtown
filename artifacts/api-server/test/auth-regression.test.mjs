@@ -1605,6 +1605,133 @@ test("group discovery uses persisted counts and does not invent online presence"
   }
 });
 
+test("group creators and moderators control deletion, and invites safely join rooms", async () => {
+  const owner = randomWalletAddress();
+  const member = randomWalletAddress();
+  const stranger = randomWalletAddress();
+  await registerWalletKey(owner);
+  await registerWalletKey(member);
+
+  const created = await request("/api/groups", {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: { name: `Managed room ${randomUUID()}`, description: "", creatorAddress: owner },
+  });
+  assert.equal(created.status, 201);
+  const group = await created.json();
+  assert.equal(group.canManage, true);
+
+  const deniedDelete = await request(`/api/groups/${group.id}`, {
+    method: "DELETE",
+    cookie: sessionCookie(stranger),
+  });
+  assert.equal(deniedDelete.status, 403, "a non-creator without moderator access cannot delete a group");
+
+  const deniedInvite = await request(`/api/groups/${group.id}/invite`, {
+    method: "POST",
+    cookie: sessionCookie(stranger),
+  });
+  assert.equal(deniedInvite.status, 403, "only a creator or moderator can create an invite");
+
+  const firstInviteResponse = await request(`/api/groups/${group.id}/invite`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+  });
+  assert.equal(firstInviteResponse.status, 201);
+  const firstInvite = await firstInviteResponse.json();
+  assert.match(firstInvite.token, /^[A-Za-z0-9_-]{32,128}$/);
+
+  const priorMessageId = randomUUID();
+  const priorMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: { senderAddress: owner, messageId: priorMessageId, body: recipientEnvelope([owner]) },
+  });
+  assert.equal(priorMessage.status, 201);
+
+  const joined = await request("/api/groups/join-by-invite", {
+    method: "POST",
+    cookie: sessionCookie(member),
+    body: { token: firstInvite.token, walletAddress: member },
+  });
+  assert.equal(joined.status, 200);
+  assert.equal((await joined.json()).isJoined, true);
+  const historyShare = await request(`/api/conversations/${group.conversationId}/history-shares`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: { messageId: priorMessageId, recipientAddress: member, body: recipientEnvelope([member]) },
+  });
+  assert.equal(historyShare.status, 201);
+
+  const memberMessageId = randomUUID();
+  const memberMessage = await request(`/api/conversations/${group.conversationId}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(member),
+    body: { senderAddress: member, messageId: memberMessageId, body: recipientEnvelope([owner, member]) },
+  });
+  assert.equal(memberMessage.status, 201);
+  const unauthorizedMessageDelete = await request(`/api/conversations/${group.conversationId}/messages/${memberMessageId}`, {
+    method: "DELETE",
+    cookie: sessionCookie(stranger),
+  });
+  assert.equal(unauthorizedMessageDelete.status, 403, "a non-creator cannot delete another member's group message");
+  const ownerMessageDelete = await request(`/api/conversations/${group.conversationId}/messages/${memberMessageId}`, {
+    method: "DELETE",
+    cookie: sessionCookie(owner),
+  });
+  assert.equal(ownerMessageDelete.status, 204, "the room creator can delete another member's message");
+
+  const oldMessageDelete = await request(`/api/conversations/${group.conversationId}/messages/${priorMessageId}`, {
+    method: "DELETE",
+    cookie: sessionCookie(owner),
+  });
+  assert.equal(oldMessageDelete.status, 204);
+  const remainingShares = await request(`/api/conversations/${group.conversationId}/history-shares`, {
+    cookie: sessionCookie(member),
+  });
+  assert.equal(remainingShares.status, 200);
+  assert.equal((await remainingShares.json()).length, 0, "deleting a message also removes recipient-only encrypted history copies");
+
+  const secondInviteResponse = await request(`/api/groups/${group.id}/invite`, {
+    method: "POST",
+    cookie: sessionCookie(owner),
+  });
+  assert.equal(secondInviteResponse.status, 201);
+  const secondInvite = await secondInviteResponse.json();
+  assert.notEqual(secondInvite.token, firstInvite.token, "rotating an invite creates a new token");
+  const revokedInviteJoin = await request("/api/groups/join-by-invite", {
+    method: "POST",
+    cookie: sessionCookie(stranger),
+    body: { token: firstInvite.token, walletAddress: stranger },
+  });
+  assert.equal(revokedInviteJoin.status, 404, "rotated invite tokens are no longer redeemable");
+
+  const creatorGroupDelete = await request(`/api/groups/${group.id}`, {
+    method: "DELETE",
+    cookie: sessionCookie(owner),
+  });
+  assert.equal(creatorGroupDelete.status, 204);
+  const removedGroupJoin = await request("/api/groups/join-by-invite", {
+    method: "POST",
+    cookie: sessionCookie(stranger),
+    body: { token: secondInvite.token, walletAddress: stranger },
+  });
+  assert.equal(removedGroupJoin.status, 404, "deleting a room revokes its active invite");
+
+  const moderatorGroupResponse = await request("/api/groups", {
+    method: "POST",
+    cookie: sessionCookie(owner),
+    body: { name: `Moderator room ${randomUUID()}`, description: "", creatorAddress: owner },
+  });
+  assert.equal(moderatorGroupResponse.status, 201);
+  const moderatorGroup = await moderatorGroupResponse.json();
+  const moderatorDelete = await request(`/api/groups/${moderatorGroup.id}`, {
+    method: "DELETE",
+    cookie: sessionCookie(walletB),
+  });
+  assert.equal(moderatorDelete.status, 204, "a configured moderator can delete any group");
+});
+
 test("timeline post and comment bursts are limited per wallet, including concurrent requests", async () => {
   const wallet = randomWalletAddress();
   const cookie = sessionCookie(wallet);

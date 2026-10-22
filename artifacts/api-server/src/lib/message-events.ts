@@ -10,6 +10,7 @@ export type WalletEvent =
   | { type: "message.created"; conversationId: string; messageId: string; senderAddress: string; isRequest?: boolean }
   | { type: "message.read"; conversationId: string }
   | { type: "conversation.updated"; conversationId: string }
+  | { type: "conversation.deleted"; conversationId: string; recipientWallets: string[] }
   | { type: "wallet.encryption.reset"; walletAddress: string; resetAt: string };
 
 type WalletListener = (event: WalletEvent) => void;
@@ -53,6 +54,15 @@ async function relayNotification(payload: string): Promise<void> {
     if (data.type === "wallet.encryption.reset") {
       if (typeof data.walletAddress !== "string" || typeof data.resetAt !== "string") return;
       publishLocally([data.walletAddress], data);
+      return;
+    }
+    if (data.type === "conversation.deleted") {
+      if (
+        typeof data.conversationId !== "string"
+        || !Array.isArray(data.recipientWallets)
+        || !data.recipientWallets.every((wallet) => typeof wallet === "string")
+      ) return;
+      publishLocally(data.recipientWallets, data);
       return;
     }
     if (typeof data.conversationId !== "string") return;
@@ -149,6 +159,17 @@ export function publishConversationUpdated(
   event: Omit<Extract<WalletEvent, { type: "conversation.updated" }>, "type">,
 ): Promise<void> {
   return publishWalletEvent(walletAddresses, { ...event, type: "conversation.updated" });
+}
+
+export function publishConversationDeleted(
+  recipientWallets: string[],
+  conversationId: string,
+): Promise<void> {
+  return publishWalletEvent(recipientWallets, {
+    type: "conversation.deleted",
+    conversationId,
+    recipientWallets,
+  });
 }
 
 export function publishWalletEncryptionReset(

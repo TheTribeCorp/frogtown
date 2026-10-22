@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Platform, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Platform, Pressable, Share, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import {
   createDirectConversation,
+  createGroupInvite,
   createGroup,
+  deleteGroup,
   getGetHermitMarketDataQueryKey,
   getWalletHermitBalance,
   joinGroup,
+  joinGroupByInvite,
   listConversations,
   listGroups,
   useGetHermitMarketData,
@@ -41,11 +44,13 @@ function formatMarketCap(value: number | null | undefined) {
 
 export function InboxScreen() {
   const { wallet } = useSession(), c = useColors(), router = useRouter(), client = useQueryClient();
+  const routeParams = useLocalSearchParams<{ groupInvite?: string }>();
   const [section, setSection] = useState<MainSection>('chats');
   const [target, setTarget] = useState(''), [description, setDescription] = useState('');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [backupNeeded, setBackupNeeded] = useState(false);
+  const [inviteHandled, setInviteHandled] = useState<string | null>(null);
   const isChats = section === 'chats';
   const searchTerm = debouncedSearch.trim();
   const normalizedSearchTerm = searchTerm.replace(/^@/, '');
@@ -81,6 +86,19 @@ export function InboxScreen() {
     catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   };
+  useEffect(() => {
+    const token = routeParams.groupInvite;
+    if (!wallet || typeof token !== 'string' || !token || inviteHandled === token) return;
+    setInviteHandled(token);
+    void run(async () => {
+      const group = await joinGroupByInvite({ token, walletAddress: wallet });
+      await client.invalidateQueries({ queryKey: ['mobile', 'groups', wallet] });
+      await client.invalidateQueries({ queryKey: ['mobile', 'inbox', wallet] });
+      setSection('groups');
+      router.replace('/');
+      open(group.conversationId);
+    });
+  }, [wallet, routeParams.groupInvite, inviteHandled]);
   const visibleChats = useMemo(() => (chats.data ?? []).filter((item) => `${item.title} ${item.type} ${item.otherWalletAddress ?? ''}`.toLowerCase().includes(search.trim().toLowerCase())), [chats.data, search]);
   const visibleGroups = useMemo(() => (groups.data ?? []).filter((item) => `${item.name} ${item.description}`.toLowerCase().includes(search.trim().toLowerCase())), [groups.data, search]);
   const currentQuery = isChats ? chats : groups;
@@ -160,6 +178,19 @@ export function InboxScreen() {
               if (item.isJoined) open(item.conversationId);
               else void run(async () => { const joined = await joinGroup(item.id, { walletAddress: wallet }); open(joined.conversationId); });
             }} />
+            {item.canManage && <View style={{ gap: 8 }}>
+              <Button secondary title="Share invite link" busy={busy} onPress={() => void run(async () => {
+                const invite = await createGroupInvite(item.id);
+                const link = `https://www.frogtown.online/?groupInvite=${encodeURIComponent(invite.token)}`;
+                await Share.share({ message: `Join ${item.name} on Frogtown: ${link}\n\nOpen in Frogtown Mobile: frogtown://?groupInvite=${encodeURIComponent(invite.token)}` });
+              })} />
+              <Button secondary title="Delete group and history" busy={busy} onPress={() => {
+                const remove = () => void run(async () => { await deleteGroup(item.id); await client.invalidateQueries({ queryKey: ['mobile'] }); });
+                const message = `Permanently delete “${item.name}” and all group messages and shared encrypted history? This cannot be undone.`;
+                if (Platform.OS === 'web') { if (window.confirm(message)) remove(); }
+                else Alert.alert('Delete group permanently?', message, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete group', style: 'destructive', onPress: remove }]);
+              }} />
+            </View>}
           </Panel>;
           return <Pressable accessibilityRole="button" accessibilityLabel={`Open ${item.title}`} onPress={() => open(item.id)}>
             <Panel>

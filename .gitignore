@@ -2,6 +2,7 @@
 
 # compiled output
 dist
+/artifacts/frogtown-mobile/static-build/
 .vercel/
 tmp
 out-tsc

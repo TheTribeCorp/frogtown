@@ -33,6 +33,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trophy,
+  Trash2,
   Users,
   WalletCards,
   Wifi,
@@ -58,6 +59,9 @@ import {
   useBlockWallet,
   useCreateConversationHistoryShare,
   useCreateGroup,
+  useCreateGroupInvite,
+  useDeleteGroup,
+  useDeleteGroupMessage,
   useCreateWalletSession,
   useGetConversationEncryptionKeys,
   useGetCurrentWallet,
@@ -65,6 +69,8 @@ import {
   useGetWalletSession,
   useHealthCheck,
   useJoinGroup,
+  useRevokeGroupInvite,
+  joinGroupByInvite,
   useListConversationMessages,
   useListConversationHistoryShareWork,
   useListConversationHistoryShares,
@@ -242,6 +248,16 @@ function RealtimeBridge({ children }: { children: ReactNode }) {
           return;
         }
         if (!payload.conversationId) return;
+        if (payload.type === 'conversation.deleted') {
+          refreshConversationData();
+          void client.invalidateQueries({ queryKey: getListGroupsQueryKey({ walletAddress }) });
+          const selectedConversation = window.sessionStorage.getItem(`swamp-selected-conversation:${walletAddress}`);
+          if (selectedConversation === payload.conversationId) {
+            window.sessionStorage.removeItem(`swamp-selected-conversation:${walletAddress}`);
+            setLocation('/groups');
+          }
+          return;
+        }
         if (payload.type === 'conversation.updated') {
           refreshConversationData();
           return;
@@ -337,7 +353,17 @@ type DecryptedChatMessage = {
   recipientAddresses: string[];
 };
 
-function ChatMessageItem({ message, isGroup }: { message: DecryptedChatMessage; isGroup: boolean }) {
+function ChatMessageItem({
+  message,
+  isGroup,
+  canDelete,
+  onDelete,
+}: {
+  message: DecryptedChatMessage;
+  isGroup: boolean;
+  canDelete: boolean;
+  onDelete: () => void;
+}) {
   return (
     <div className={`flex ${message.isMine ? 'justify-end' : 'justify-start'}`} data-testid={`message-${message.id}`}>
       <div className={`flex max-w-[min(75%,520px)] flex-col ${message.isMine ? 'items-end' : 'items-start'}`}>
@@ -379,6 +405,11 @@ function ChatMessageItem({ message, isGroup }: { message: DecryptedChatMessage; 
             <span className="rounded-full bg-[hsl(var(--accent)/.12)] px-2 py-0.5 text-[hsl(var(--muted-foreground))]" data-testid={`message-history-pending-${message.id}`}>
               waiting for history share
             </span>
+          )}
+          {isGroup && canDelete && (
+            <button type="button" onClick={onDelete} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--destructive)/.08)] hover:text-[hsl(var(--destructive))]" aria-label="Delete group message" title="Delete this group message">
+              <Trash2 className="size-3" /> Delete
+            </button>
           )}
           {isGroup && message.recipientAddresses.length > 0 && !message.historyShared && (
             <details className="relative">
@@ -781,6 +812,7 @@ type ChatConversation = {
   requesterAddress: string | null;
   otherWalletAddress: string | null;
   directMessagingBlocked: boolean;
+  canManageGroup: boolean;
 };
 
 type BlockedWalletView = { walletAddress: string; blockedWalletAddress: string; createdAt: string | Date };
@@ -882,6 +914,20 @@ function MessagePane({
   const { walletAddress } = useWallet();
   const realtimeStatus = useContext(RealtimeContext);
   const client = useQueryClient();
+  const deleteGroupMessageMutation = useDeleteGroupMessage();
+  const [deleteMessageError, setDeleteMessageError] = useState('');
+  const deleteGroupMessage = (messageId: string) => {
+    if (!conversation || conversation.type !== 'group' || !conversation.canManageGroup) return;
+    if (!window.confirm('Delete this message for everyone in the group? This also removes any encrypted history copies.')) return;
+    setDeleteMessageError('');
+    deleteGroupMessageMutation.mutate({ conversationId: conversation.id, messageId }, {
+      onSuccess: () => {
+        void client.invalidateQueries({ queryKey: getListConversationMessagesQueryKey(conversation.id, params) });
+        void client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
+      },
+      onError: (error) => setDeleteMessageError(errorMessage(error, 'Could not delete this group message.')),
+    });
+  };
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState('');
   const [outboxError, setOutboxError] = useState('');
@@ -1596,7 +1642,8 @@ function MessagePane({
               <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Send the first end-to-end encrypted message.</p>
             </div>
           )}
-          {decryptedMessages.map((message) => <ChatMessageItem key={message.id} message={message} isGroup={conversation.type === 'group'} />)}
+          {deleteMessageError && <p className="self-center rounded-lg bg-[hsl(var(--destructive)/.08)] px-3 py-2 text-xs text-[hsl(var(--destructive))]" role="alert">{deleteMessageError}</p>}
+          {decryptedMessages.map((message) => <ChatMessageItem key={message.id} message={message} isGroup={conversation.type === 'group'} canDelete={conversation.canManageGroup} onDelete={() => deleteGroupMessage(message.id)} />)}
         </div>
       <div className="border-t border-[hsl(var(--border))] bg-[hsl(var(--card)/.45)] p-4 md:px-7">
         {outboxError && <p className="mb-3 rounded-lg border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.05)] px-3 py-2 text-xs leading-5 text-[hsl(var(--destructive))]" role="alert" data-testid="status-message-outbox-error">{outboxError}</p>}
@@ -1733,8 +1780,12 @@ function GroupsPage({ onOpenGroup }: { onOpenGroup: (conversationId: string) => 
   const groupsQuery = useListGroups(params, { query: { enabled: Boolean(walletAddress), queryKey: getListGroupsQueryKey(params), refetchInterval: 10000 } });
   const createGroup = useCreateGroup();
   const joinGroup = useJoinGroup();
+  const createInvite = useCreateGroupInvite();
+  const revokeInvite = useRevokeGroupInvite();
+  const deleteGroupMutation = useDeleteGroup();
   const [dialog, setDialog] = useState<'create' | null>(null);
   const [notice, setNotice] = useState<{ message: string; tone: 'error' | 'success' } | null>(null);
+  const [inviteLinks, setInviteLinks] = useState<Record<string, string>>({});
   const groups = groupsQuery.data ?? [];
   const join = (groupId: string) => {
     joinGroup.mutate({ groupId, data: { walletAddress } }, { onSuccess: (group) => { client.invalidateQueries({ queryKey: getListGroupsQueryKey(params) }); setNotice({ message: `Joined ${group.name}.`, tone: 'success' }); }, onError: (error) => setNotice({ message: errorMessage(error, 'Could not join that group.'), tone: 'error' }) });
@@ -1746,6 +1797,29 @@ function GroupsPage({ onOpenGroup }: { onOpenGroup: (conversationId: string) => 
     const description = String(form.get('description') ?? '').trim();
     if (name.length < 2) return;
     createGroup.mutate({ data: { name, description, creatorAddress: walletAddress } }, { onSuccess: () => { client.invalidateQueries({ queryKey: getListGroupsQueryKey(params) }); setDialog(null); setNotice({ message: 'Your room is ready in Frogtown.', tone: 'success' }); }, onError: (error) => setNotice({ message: errorMessage(error, 'Could not create this group.'), tone: 'error' }) });
+  };
+  const shareInvite = (groupId: string) => {
+    createInvite.mutate({ groupId }, {
+      onSuccess: ({ token }) => {
+        const inviteUrl = `${window.location.origin}/?groupInvite=${encodeURIComponent(token)}`;
+        setInviteLinks((current) => ({ ...current, [groupId]: inviteUrl }));
+        void navigator.clipboard?.writeText(inviteUrl)
+          .then(() => setNotice({ message: 'Invite link copied. Anyone with it can join this room.', tone: 'success' }))
+          .catch(() => setNotice({ message: 'Invite link is ready below. Copy it to share.', tone: 'success' }));
+      },
+      onError: (error) => setNotice({ message: errorMessage(error, 'Could not create an invite link.'), tone: 'error' }),
+    });
+  };
+  const removeGroup = (groupId: string, groupName: string) => {
+    if (!window.confirm(`Permanently delete “${groupName}” and all group messages and shared encrypted history? This cannot be undone.`)) return;
+    deleteGroupMutation.mutate({ groupId }, {
+      onSuccess: () => {
+        void client.invalidateQueries({ queryKey: getListGroupsQueryKey(params) });
+        void client.invalidateQueries({ queryKey: getListConversationsQueryKey(params) });
+        setNotice({ message: `“${groupName}” and its group history were permanently deleted.`, tone: 'success' });
+      },
+      onError: (error) => setNotice({ message: errorMessage(error, 'Could not delete this group.'), tone: 'error' }),
+    });
   };
   return (
     <AppShell title="Community rooms" eyebrow="the $HERMIT community / find your people">
@@ -1792,6 +1866,22 @@ function GroupsPage({ onOpenGroup }: { onOpenGroup: (conversationId: string) => 
                   </button>
                 )}
               </div>
+              {group.canManage && <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" onClick={() => shareInvite(group.id)} disabled={createInvite.isPending} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] px-3 text-xs font-medium hover:border-[hsl(var(--primary))] disabled:opacity-50" data-testid={`button-share-group-${group.id}`}>
+                  {createInvite.isPending ? <RefreshCw className="size-3 animate-spin" /> : <Copy className="size-3.5" />} Create invite link
+                </button>
+                <button type="button" onClick={() => removeGroup(group.id, group.name)} disabled={deleteGroupMutation.isPending} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[hsl(var(--destructive)/.25)] px-3 text-xs font-medium text-[hsl(var(--destructive))] hover:bg-[hsl(var(--destructive)/.06)] disabled:opacity-50" data-testid={`button-delete-group-${group.id}`}>
+                  <Trash2 className="size-3.5" /> Delete group
+                </button>
+                {inviteLinks[group.id] && <div className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background)/.55)] p-3">
+                  <label htmlFor={`group-invite-${group.id}`} className="mono text-[9px] uppercase tracking-[.12em] text-[hsl(var(--muted-foreground))]">Share this link · previous link was replaced</label>
+                  <div className="mt-2 flex gap-2">
+                    <input id={`group-invite-${group.id}`} readOnly value={inviteLinks[group.id]} className="min-w-0 flex-1 rounded-lg border border-[hsl(var(--input))] bg-[hsl(var(--card))] px-2 py-2 text-xs" onFocus={(event) => event.currentTarget.select()} />
+                    <button type="button" onClick={() => { void navigator.clipboard?.writeText(inviteLinks[group.id]).then(() => setNotice({ message: 'Invite link copied.', tone: 'success' })).catch(() => setNotice({ message: 'Select and copy the invite link.', tone: 'success' })); }} className="rounded-lg bg-[hsl(var(--foreground))] px-3 text-xs font-medium text-[hsl(var(--card))] hover:bg-[hsl(var(--primary))]">Copy</button>
+                  </div>
+                  <button type="button" onClick={() => revokeInvite.mutate({ groupId: group.id }, { onSuccess: () => { setInviteLinks((current) => { const next = { ...current }; delete next[group.id]; return next; }); setNotice({ message: 'The group invite was revoked.', tone: 'success' }); }, onError: (error) => setNotice({ message: errorMessage(error, 'Could not revoke the invite.'), tone: 'error' }) })} className="mt-2 text-[10px] font-medium text-[hsl(var(--destructive))] hover:underline">Revoke link</button>
+                </div>}
+              </div>}
             </article>
           ))}
         </div>
@@ -1925,6 +2015,31 @@ function HomePage() {
 function RouterView() {
   const { walletAddress } = useWallet();
   const [location, setLocation] = useLocation();
+  const client = useQueryClient();
+  const processedInvite = useRef<string | null>(null);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get('groupInvite');
+    if (!walletAddress || !token || processedInvite.current === token) return;
+    processedInvite.current = token;
+    void joinGroupByInvite({ token, walletAddress })
+      .then(async (group) => {
+        url.searchParams.delete('groupInvite');
+        window.history.replaceState(window.history.state, '', url.toString());
+        await Promise.all([
+          client.invalidateQueries({ queryKey: getListGroupsQueryKey({ walletAddress }) }),
+          client.invalidateQueries({ queryKey: getListConversationsQueryKey({ walletAddress }) }),
+        ]);
+        window.sessionStorage.setItem(`swamp-selected-conversation:${walletAddress}`, group.conversationId);
+        setLocation('/');
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent('swamp-select-conversation', { detail: group.conversationId })), 0);
+      })
+      .catch((error) => {
+        url.searchParams.delete('groupInvite');
+        window.history.replaceState(window.history.state, '', url.toString());
+        window.alert(errorMessage(error, 'This group invite is invalid or has been revoked.'));
+      });
+  }, [walletAddress, client, setLocation]);
   useEffect(() => {
     if (!walletAddress && location !== '/') {
       window.sessionStorage.setItem('frogtown-signin-return-to', location);

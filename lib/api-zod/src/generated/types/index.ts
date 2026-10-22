@@ -48,6 +48,8 @@ export * from './getWalletHermitBalanceParams';
 export * from './getWalletHermitTickParams';
 export * from './group';
 export * from './groupInput';
+export * from './groupInvite';
+export * from './groupInviteJoinInput';
 export * from './healthStatus';
 export * from './healthStatusDatabase';
 export * from './healthStatusStatus';

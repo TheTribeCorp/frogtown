@@ -54,6 +54,8 @@ import type {
   GetWalletHermitTickParams,
   Group,
   GroupInput,
+  GroupInvite,
+  GroupInviteJoinInput,
   HealthStatus,
   HermitMarketData,
   JoinGroupInput,
@@ -2528,6 +2530,82 @@ export const useSendMessage = <TError = ErrorType<unknown>,
       return useMutation(getSendMessageMutationOptions(options), queryClient);
     }
 
+export const getDeleteGroupMessageUrl = (conversationId: string,
+    messageId: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/messages/${messageId}`
+}
+
+/**
+ * @summary Remove a group message as its room creator
+ */
+export const deleteGroupMessage = async (conversationId: string,
+    messageId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteGroupMessageUrl(conversationId,messageId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteGroupMessageMutationKey = () => ['deleteGroupMessage'] as const;
+
+export const getDeleteGroupMessageMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGroupMessage>>, TError,DeleteGroupMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteGroupMessage>>, TError,DeleteGroupMessageMutationVariables, TContext> => {
+
+const mutationKey = getDeleteGroupMessageMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteGroupMessage>>, DeleteGroupMessageMutationVariables> = (props) => {
+          const {conversationId,messageId} = props ?? {};
+
+          return  deleteGroupMessage(conversationId,messageId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteGroupMessageMutationResult = NonNullable<Awaited<ReturnType<typeof deleteGroupMessage>>>
+
+    export type DeleteGroupMessageMutationError = ErrorType<ErrorResponse>
+    export type DeleteGroupMessageMutationVariables = {conversationId: string;messageId: string}
+
+    /**
+ * @summary Remove a group message as its room creator
+ */
+export const useDeleteGroupMessage = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGroupMessage>>, TError,DeleteGroupMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteGroupMessage>>,
+        TError,
+        DeleteGroupMessageMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteGroupMessageMutationOptions(options), queryClient);
+    }
+
 export const getMarkConversationReadUrl = (conversationId: string,) => {
 
 
@@ -3307,6 +3385,316 @@ export const useJoinGroup = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getJoinGroupMutationOptions(options), queryClient);
+    }
+
+export const getDeleteGroupUrl = (groupId: string,) => {
+
+
+
+
+  return `/api/groups/${groupId}`
+}
+
+/**
+ * @summary Permanently delete a group and all of its message history
+ */
+export const deleteGroup = async (groupId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteGroupUrl(groupId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteGroupMutationKey = () => ['deleteGroup'] as const;
+
+export const getDeleteGroupMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGroup>>, TError,DeleteGroupMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteGroup>>, TError,DeleteGroupMutationVariables, TContext> => {
+
+const mutationKey = getDeleteGroupMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteGroup>>, DeleteGroupMutationVariables> = (props) => {
+          const {groupId} = props ?? {};
+
+          return  deleteGroup(groupId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteGroupMutationResult = NonNullable<Awaited<ReturnType<typeof deleteGroup>>>
+
+    export type DeleteGroupMutationError = ErrorType<ErrorResponse>
+    export type DeleteGroupMutationVariables = {groupId: string}
+
+    /**
+ * @summary Permanently delete a group and all of its message history
+ */
+export const useDeleteGroup = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGroup>>, TError,DeleteGroupMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteGroup>>,
+        TError,
+        DeleteGroupMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteGroupMutationOptions(options), queryClient);
+    }
+
+export const getCreateGroupInviteUrl = (groupId: string,) => {
+
+
+
+
+  return `/api/groups/${groupId}/invite`
+}
+
+/**
+ * @summary Create or rotate a shareable group invite
+ */
+export const createGroupInvite = async (groupId: string, options?: Parameters<typeof customFetch>[1]): Promise<GroupInvite> => {
+
+  return customFetch<GroupInvite>(getCreateGroupInviteUrl(groupId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCreateGroupInviteMutationKey = () => ['createGroupInvite'] as const;
+
+export const getCreateGroupInviteMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGroupInvite>>, TError,CreateGroupInviteMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createGroupInvite>>, TError,CreateGroupInviteMutationVariables, TContext> => {
+
+const mutationKey = getCreateGroupInviteMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGroupInvite>>, CreateGroupInviteMutationVariables> = (props) => {
+          const {groupId} = props ?? {};
+
+          return  createGroupInvite(groupId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateGroupInviteMutationResult = NonNullable<Awaited<ReturnType<typeof createGroupInvite>>>
+
+    export type CreateGroupInviteMutationError = ErrorType<unknown>
+    export type CreateGroupInviteMutationVariables = {groupId: string}
+
+    /**
+ * @summary Create or rotate a shareable group invite
+ */
+export const useCreateGroupInvite = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGroupInvite>>, TError,CreateGroupInviteMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createGroupInvite>>,
+        TError,
+        CreateGroupInviteMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateGroupInviteMutationOptions(options), queryClient);
+    }
+
+export const getRevokeGroupInviteUrl = (groupId: string,) => {
+
+
+
+
+  return `/api/groups/${groupId}/invite`
+}
+
+/**
+ * @summary Revoke the active group invite
+ */
+export const revokeGroupInvite = async (groupId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRevokeGroupInviteUrl(groupId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeGroupInviteMutationKey = () => ['revokeGroupInvite'] as const;
+
+export const getRevokeGroupInviteMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeGroupInvite>>, TError,RevokeGroupInviteMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeGroupInvite>>, TError,RevokeGroupInviteMutationVariables, TContext> => {
+
+const mutationKey = getRevokeGroupInviteMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeGroupInvite>>, RevokeGroupInviteMutationVariables> = (props) => {
+          const {groupId} = props ?? {};
+
+          return  revokeGroupInvite(groupId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeGroupInviteMutationResult = NonNullable<Awaited<ReturnType<typeof revokeGroupInvite>>>
+
+    export type RevokeGroupInviteMutationError = ErrorType<unknown>
+    export type RevokeGroupInviteMutationVariables = {groupId: string}
+
+    /**
+ * @summary Revoke the active group invite
+ */
+export const useRevokeGroupInvite = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeGroupInvite>>, TError,RevokeGroupInviteMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeGroupInvite>>,
+        TError,
+        RevokeGroupInviteMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeGroupInviteMutationOptions(options), queryClient);
+    }
+
+export const getJoinGroupByInviteUrl = () => {
+
+
+
+
+  return `/api/groups/join-by-invite`
+}
+
+/**
+ * @summary Join a group using a shareable invite token
+ */
+export const joinGroupByInvite = async (groupInviteJoinInput: GroupInviteJoinInput, options?: Parameters<typeof customFetch>[1]): Promise<Group> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<Group>(getJoinGroupByInviteUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(groupInviteJoinInput)
+  }
+);}
+
+
+
+
+
+export const getJoinGroupByInviteMutationKey = () => ['joinGroupByInvite'] as const;
+
+export const getJoinGroupByInviteMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinGroupByInvite>>, TError,JoinGroupByInviteMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof joinGroupByInvite>>, TError,JoinGroupByInviteMutationVariables, TContext> => {
+
+const mutationKey = getJoinGroupByInviteMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinGroupByInvite>>, JoinGroupByInviteMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  joinGroupByInvite(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type JoinGroupByInviteMutationResult = NonNullable<Awaited<ReturnType<typeof joinGroupByInvite>>>
+    export type JoinGroupByInviteMutationBody = BodyType<GroupInviteJoinInput>
+    export type JoinGroupByInviteMutationError = ErrorType<ErrorResponse>
+    export type JoinGroupByInviteMutationVariables = {data: BodyType<GroupInviteJoinInput>}
+
+    /**
+ * @summary Join a group using a shareable invite token
+ */
+export const useJoinGroupByInvite = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinGroupByInvite>>, TError,JoinGroupByInviteMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof joinGroupByInvite>>,
+        TError,
+        JoinGroupByInviteMutationVariables,
+        TContext
+      > => {
+      return useMutation(getJoinGroupByInviteMutationOptions(options), queryClient);
     }
 
 export const getListTimelinePostsUrl = (params?: ListTimelinePostsParams,) => {

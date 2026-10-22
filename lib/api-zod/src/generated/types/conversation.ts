@@ -26,4 +26,5 @@ export interface Conversation {
   /** @nullable */
   otherWalletAddress: string | null;
   directMessagingBlocked: boolean;
+  canManageGroup: boolean;
 }

@@ -84,6 +84,17 @@ export const groupMembersTable = pgTable("swamp_group_members", {
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const groupInvitesTable = pgTable("swamp_group_invites", {
+  id: text("id").primaryKey(),
+  groupId: text("group_id").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  createdByAddress: text("created_by_address").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (table) => [
+  index("swamp_group_invites_group_active_idx").on(table.groupId, table.revokedAt),
+]);
+
 export const walletKeysTable = pgTable("swamp_wallet_keys", {
   walletAddress: text("wallet_address").primaryKey(),
   publicKey: text("public_key").notNull(),

@@ -13,6 +13,10 @@ import {
   CreateConversationHistoryShareParams,
   DeclineConversationRequestParams,
   CreateGroupBody,
+  CreateGroupInviteParams,
+  CreateGroupInviteResponse,
+  DeleteGroupMessageParams,
+  DeleteGroupParams,
   GetConversationEncryptionKeysParams,
   GetWalletHermitTickParams,
   GetWalletHermitTickQueryParams,
@@ -25,6 +29,8 @@ import {
   CreateLadyChainWalletSessionBody,
   CreateLadyChainWalletSessionResponse,
   JoinGroupBody,
+  JoinGroupByInviteBody,
+  JoinGroupByInviteResponse,
   JoinGroupParams,
   MarkConversationReadBody,
   MarkConversationReadParams,
@@ -48,7 +54,7 @@ import {
   WalletUserSearchResponse,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
-import { publishConversationUpdated, publishMessageCreated, publishMessageRead, publishWalletEncryptionReset, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
+import { publishConversationDeleted, publishConversationUpdated, publishMessageCreated, publishMessageRead, publishWalletEncryptionReset, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
 import {
   claimReferralDeviceInTransaction,
   createReferralInTransaction,
@@ -71,6 +77,7 @@ import {
   blockedWalletsTable,
   groupMembersTable,
   groupsTable,
+  groupInvitesTable,
   messagesTable,
   messageHistorySharesTable,
   walletKeysTable,
@@ -79,6 +86,7 @@ import {
 import { pushSubscriptionsTable, walletProfilesTable } from "@workspace/db/schema";
 import { isWebPushConfigured, sendNewMessagePush } from "../lib/web-push";
 import { readMobileSession } from "../lib/mobile-session";
+import { configuredModeratorWallets, requireModerator } from "../lib/moderator-auth";
 
 const router: IRouter = Router();
 
@@ -396,6 +404,7 @@ function serializeConversation(
     requesterAddress: row.requesterAddress ?? null,
     otherWalletAddress: row.type === "direct" ? otherWalletAddress : null,
     directMessagingBlocked: row.type === "direct" && directMessagingBlocked,
+    canManageGroup: false,
   };
 }
 
@@ -1532,6 +1541,12 @@ router.get("/conversations", async (req, res) => {
       .from(conversationsTable)
       .where(inArray(conversationsTable.id, memberships.map((row) => row.conversationId)))
       .orderBy(desc(conversationsTable.lastMessageAt), desc(conversationsTable.createdAt));
+    const groupRows = await db
+      .select({ conversationId: groupsTable.conversationId, creatorAddress: groupsTable.creatorAddress })
+      .from(groupsTable)
+      .where(inArray(groupsTable.conversationId, memberships.map((row) => row.conversationId)));
+    const groupCreatorsByConversation = new Map(groupRows.map((group) => [group.conversationId, group.creatorAddress]));
+    const isModerator = configuredModeratorWallets().has(walletAddress);
     const participantRows = await db
       .select({
         conversationId: conversationMembersTable.conversationId,
@@ -1622,6 +1637,8 @@ router.get("/conversations", async (req, res) => {
           ),
           ...(historyCleared ? { lastMessage: null, lastMessageAt: null } : {}),
           unreadCount: unreadCounts.get(row.id) ?? 0,
+          canManageGroup: row.type === "group"
+            && (groupCreatorsByConversation.get(row.id) === walletAddress || isModerator),
         };
       }));
   } catch {
@@ -2675,6 +2692,56 @@ router.post("/conversations/:conversationId/messages", async (req, res) => {
   }
 });
 
+function requireGroupManager(walletAddress: string, creatorAddress: string, res: Response, activity: string) {
+  if (walletAddress === creatorAddress) return true;
+  return requireModerator(walletAddress, res, activity);
+}
+
+async function joinGroupForWallet(groupId: string, walletAddress: string) {
+  const joined = await db.transaction(async (transaction) => {
+    const [group] = await transaction.select().from(groupsTable).where(eq(groupsTable.id, groupId)).limit(1);
+    if (!group) return null;
+    const [existing] = await transaction
+      .select({ groupId: groupMembersTable.groupId })
+      .from(groupMembersTable)
+      .where(and(eq(groupMembersTable.groupId, groupId), eq(groupMembersTable.walletAddress, walletAddress)))
+      .limit(1);
+    if (!existing) {
+      await transaction.insert(groupMembersTable).values({ groupId, walletAddress });
+      await transaction.insert(conversationMembersTable).values({
+        conversationId: group.conversationId,
+        walletAddress,
+      });
+    }
+    const members = await transaction
+      .select({ walletAddress: groupMembersTable.walletAddress })
+      .from(groupMembersTable)
+      .where(eq(groupMembersTable.groupId, groupId));
+    const memberCount = members.length;
+    await transaction.update(groupsTable)
+      .set({ memberCount, onlineCount: 0 })
+      .where(eq(groupsTable.id, groupId));
+    await transaction.update(conversationsTable)
+      .set({ memberCount, participantLabel: `${memberCount} members` })
+      .where(eq(conversationsTable.id, group.conversationId));
+    return { group, memberCount };
+  });
+  if (!joined) return null;
+  const [creatorProfile] = await db
+    .select({ username: walletProfilesTable.username })
+    .from(walletProfilesTable)
+    .where(eq(walletProfilesTable.walletAddress, joined.group.creatorAddress))
+    .limit(1);
+  return {
+    ...joined.group,
+    creatorUsername: creatorProfile?.username ?? null,
+    memberCount: joined.memberCount,
+    onlineCount: 0,
+    isJoined: true,
+    canManage: walletAddress === joined.group.creatorAddress || configuredModeratorWallets().has(walletAddress),
+  };
+}
+
 router.get("/groups", async (req, res) => {
   try {
     const sessionWallet = requireAuth(req, res);
@@ -2708,12 +2775,14 @@ router.get("/groups", async (req, res) => {
         .where(inArray(walletProfilesTable.walletAddress, creatorWallets))
       : [];
     const usernamesByWallet = new Map(creatorProfiles.map((profile) => [profile.walletAddress, profile.username]));
+    const moderators = configuredModeratorWallets();
     res.json(groups.map((group) => ({
       ...group,
       memberCount: countsByGroup.get(group.id) ?? 0,
       onlineCount: 0,
       isJoined: joined.has(group.id),
       creatorUsername: usernamesByWallet.get(group.creatorAddress) ?? null,
+      canManage: group.creatorAddress === walletAddress || moderators.has(walletAddress),
     })));
   } catch {
     res.status(400).json({ error: "Unable to load groups." });
@@ -2743,24 +2812,27 @@ router.post("/groups", async (req, res) => {
       onlineCount: 0,
       creatorAddress: input.creatorAddress,
     };
-    await db.insert(groupsTable).values(group);
-    await db.insert(groupMembersTable).values({ groupId, walletAddress: input.creatorAddress });
-    await db.insert(conversationsTable).values({
-      id: conversationId,
-      type: "group",
-      title: group.name,
-      participantLabel: "1 member",
-      encrypted: true,
-      memberCount: 1,
-    });
-    await db.insert(conversationMembersTable).values({
-      conversationId,
-      walletAddress: input.creatorAddress,
+    await db.transaction(async (transaction) => {
+      await transaction.insert(groupsTable).values(group);
+      await transaction.insert(groupMembersTable).values({ groupId, walletAddress: input.creatorAddress });
+      await transaction.insert(conversationsTable).values({
+        id: conversationId,
+        type: "group",
+        title: group.name,
+        participantLabel: "1 member",
+        encrypted: true,
+        memberCount: 1,
+      });
+      await transaction.insert(conversationMembersTable).values({
+        conversationId,
+        walletAddress: input.creatorAddress,
+      });
     });
     res.status(201).json({
       ...group,
       creatorUsername: creatorProfile?.username ?? null,
       isJoined: true,
+      canManage: true,
     });
   } catch {
     res.status(400).json({ error: "Group could not be created." });
@@ -2775,51 +2847,182 @@ router.post("/groups/:groupId/join", async (req, res) => {
     if (!sessionWallet) return;
     requireAddress(walletAddress);
     if (!requireMatchingWallet(sessionWallet, walletAddress, res)) return;
-    const group = await db.select().from(groupsTable).where(eq(groupsTable.id, groupId)).limit(1);
-    if (!group[0]) {
+    const group = await joinGroupForWallet(groupId, walletAddress);
+    if (!group) {
       res.status(404).json({ error: "Group not found." });
       return;
     }
-    const existing = await db
-      .select()
-      .from(groupMembersTable)
-      .where(
-        and(eq(groupMembersTable.groupId, groupId), eq(groupMembersTable.walletAddress, walletAddress)),
-      )
-      .limit(1);
-    if (!existing[0]) {
-      await db.insert(groupMembersTable).values({ groupId, walletAddress });
-      await db.insert(conversationMembersTable).values({
-        conversationId: group[0].conversationId,
-        walletAddress,
-      });
-    }
-    const members = await db
-      .select()
-      .from(groupMembersTable)
-      .where(eq(groupMembersTable.groupId, groupId));
-    await db
-      .update(groupsTable)
-      .set({ memberCount: members.length, onlineCount: 0 })
-      .where(eq(groupsTable.id, groupId));
-    await db
-      .update(conversationsTable)
-      .set({ memberCount: members.length, participantLabel: `${members.length} members` })
-      .where(eq(conversationsTable.id, group[0].conversationId));
-    const [creatorProfile] = await db
-      .select({ username: walletProfilesTable.username })
-      .from(walletProfilesTable)
-      .where(eq(walletProfilesTable.walletAddress, group[0].creatorAddress))
-      .limit(1);
-    res.json({
-      ...group[0],
-      creatorUsername: creatorProfile?.username ?? null,
-      memberCount: members.length,
-      onlineCount: 0,
-      isJoined: true,
-    });
+    res.json(group);
   } catch {
     res.status(400).json({ error: "Unable to join this group." });
+  }
+});
+
+router.post("/groups/join-by-invite", async (req, res) => {
+  try {
+    const sessionWallet = requireAuth(req, res);
+    const input = JoinGroupByInviteBody.parse(req.body);
+    if (!sessionWallet) return;
+    requireAddress(input.walletAddress);
+    if (!requireMatchingWallet(sessionWallet, input.walletAddress, res)) return;
+    if (!/^[A-Za-z0-9_-]{32,128}$/.test(input.token)) {
+      res.status(404).json({ error: "This group invite is invalid or no longer active." });
+      return;
+    }
+    const tokenHash = createHash("sha256").update(input.token).digest("hex");
+    const [invite] = await db.select({ groupId: groupInvitesTable.groupId })
+      .from(groupInvitesTable)
+      .where(and(eq(groupInvitesTable.tokenHash, tokenHash), isNull(groupInvitesTable.revokedAt)))
+      .limit(1);
+    if (!invite) {
+      res.status(404).json({ error: "This group invite is invalid or no longer active." });
+      return;
+    }
+    const group = await joinGroupForWallet(invite.groupId, input.walletAddress);
+    if (!group) {
+      res.status(404).json({ error: "This group invite is invalid or no longer active." });
+      return;
+    }
+    res.json(group);
+  } catch {
+    res.status(400).json({ error: "Unable to join this group invite." });
+  }
+});
+
+router.post("/groups/:groupId/invite", async (req, res) => {
+  try {
+    const sessionWallet = requireAuth(req, res);
+    const { groupId } = CreateGroupInviteParams.parse(req.params);
+    if (!sessionWallet) return;
+    const [group] = await db.select().from(groupsTable).where(eq(groupsTable.id, groupId)).limit(1);
+    if (!group) {
+      res.status(404).json({ error: "Group not found." });
+      return;
+    }
+    if (!requireGroupManager(sessionWallet, group.creatorAddress, res, "manage group invites")) return;
+    const token = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    await db.transaction(async (transaction) => {
+      await transaction.update(groupInvitesTable)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(groupInvitesTable.groupId, groupId), isNull(groupInvitesTable.revokedAt)));
+      await transaction.insert(groupInvitesTable).values({
+        id: randomUUID(),
+        groupId,
+        tokenHash,
+        createdByAddress: sessionWallet,
+      });
+    });
+    res.status(201).json(CreateGroupInviteResponse.parse({ token }));
+  } catch {
+    res.status(400).json({ error: "Could not create a group invite." });
+  }
+});
+
+router.delete("/groups/:groupId/invite", async (req, res) => {
+  try {
+    const sessionWallet = requireAuth(req, res);
+    const { groupId } = CreateGroupInviteParams.parse(req.params);
+    if (!sessionWallet) return;
+    const [group] = await db.select().from(groupsTable).where(eq(groupsTable.id, groupId)).limit(1);
+    if (!group) {
+      res.status(404).json({ error: "Group not found." });
+      return;
+    }
+    if (!requireGroupManager(sessionWallet, group.creatorAddress, res, "manage group invites")) return;
+    await db.update(groupInvitesTable)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(groupInvitesTable.groupId, groupId), isNull(groupInvitesTable.revokedAt)));
+    res.status(204).end();
+  } catch {
+    res.status(400).json({ error: "Could not revoke the group invite." });
+  }
+});
+
+router.delete("/groups/:groupId", async (req, res) => {
+  try {
+    const sessionWallet = requireAuth(req, res);
+    const { groupId } = DeleteGroupParams.parse(req.params);
+    if (!sessionWallet) return;
+    const [group] = await db.select().from(groupsTable).where(eq(groupsTable.id, groupId)).limit(1);
+    if (!group) {
+      res.status(404).json({ error: "Group not found." });
+      return;
+    }
+    if (!requireGroupManager(sessionWallet, group.creatorAddress, res, "delete groups")) return;
+    const recipientWallets = await db.transaction(async (transaction) => {
+      const [currentGroup] = await transaction.select().from(groupsTable).where(eq(groupsTable.id, groupId)).limit(1);
+      if (!currentGroup) return null;
+      const members = await transaction.select({ walletAddress: conversationMembersTable.walletAddress })
+        .from(conversationMembersTable)
+        .where(eq(conversationMembersTable.conversationId, currentGroup.conversationId));
+      await transaction.delete(groupInvitesTable).where(eq(groupInvitesTable.groupId, groupId));
+      await transaction.delete(messageHistorySharesTable).where(eq(messageHistorySharesTable.conversationId, currentGroup.conversationId));
+      await transaction.delete(messagesTable).where(eq(messagesTable.conversationId, currentGroup.conversationId));
+      await transaction.delete(conversationMembersTable).where(eq(conversationMembersTable.conversationId, currentGroup.conversationId));
+      await transaction.delete(groupMembersTable).where(eq(groupMembersTable.groupId, groupId));
+      await transaction.delete(conversationsTable).where(eq(conversationsTable.id, currentGroup.conversationId));
+      await transaction.delete(groupsTable).where(eq(groupsTable.id, groupId));
+      return members.map((member) => member.walletAddress);
+    });
+    if (!recipientWallets) {
+      res.status(404).json({ error: "Group not found." });
+      return;
+    }
+    await publishConversationDeleted(recipientWallets, group.conversationId);
+    res.status(204).end();
+  } catch {
+    res.status(400).json({ error: "Could not permanently delete this group." });
+  }
+});
+
+router.delete("/conversations/:conversationId/messages/:messageId", async (req, res) => {
+  try {
+    const sessionWallet = requireAuth(req, res);
+    const { conversationId, messageId } = DeleteGroupMessageParams.parse(req.params);
+    if (!sessionWallet) return;
+    const [group] = await db.select().from(groupsTable)
+      .where(eq(groupsTable.conversationId, conversationId)).limit(1);
+    if (!group) {
+      res.status(404).json({ error: "Group message not found." });
+      return;
+    }
+    if (!requireGroupManager(sessionWallet, group.creatorAddress, res, "delete group messages")) return;
+    const deleted = await db.transaction(async (transaction) => {
+      const [message] = await transaction.select({ id: messagesTable.id })
+        .from(messagesTable)
+        .where(and(eq(messagesTable.id, messageId), eq(messagesTable.conversationId, conversationId)))
+        .limit(1);
+      if (!message) return false;
+      await transaction.delete(messageHistorySharesTable).where(and(
+        eq(messageHistorySharesTable.conversationId, conversationId),
+        eq(messageHistorySharesTable.messageId, messageId),
+      ));
+      await transaction.delete(messagesTable).where(and(
+        eq(messagesTable.id, messageId),
+        eq(messagesTable.conversationId, conversationId),
+      ));
+      const [latest] = await transaction.select({ body: messagesTable.body, sentAt: messagesTable.sentAt })
+        .from(messagesTable)
+        .where(eq(messagesTable.conversationId, conversationId))
+        .orderBy(desc(messagesTable.sentAt))
+        .limit(1);
+      await transaction.update(conversationsTable)
+        .set({ lastMessage: latest?.body ?? null, lastMessageAt: latest?.sentAt ?? null })
+        .where(eq(conversationsTable.id, conversationId));
+      return true;
+    });
+    if (!deleted) {
+      res.status(404).json({ error: "Group message not found." });
+      return;
+    }
+    const members = await db.select({ walletAddress: conversationMembersTable.walletAddress })
+      .from(conversationMembersTable)
+      .where(eq(conversationMembersTable.conversationId, conversationId));
+    await publishConversationUpdated(members.map((member) => member.walletAddress), { conversationId });
+    res.status(204).end();
+  } catch {
+    res.status(400).json({ error: "Could not delete this group message." });
   }
 });
 

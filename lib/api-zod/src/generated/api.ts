@@ -373,7 +373,8 @@ export const ListConversationsResponseItem = zod.object({
   "directStatus": zod.enum(['pending', 'accepted', 'declined']),
   "requesterAddress": zod.string().nullable(),
   "otherWalletAddress": zod.string().nullable(),
-  "directMessagingBlocked": zod.boolean()
+  "directMessagingBlocked": zod.boolean(),
+  "canManageGroup": zod.boolean()
 })
 export const ListConversationsResponse = zod.array(ListConversationsResponseItem)
 
@@ -407,7 +408,8 @@ export const CreateDirectConversationResponse = zod.object({
   "directStatus": zod.enum(['pending', 'accepted', 'declined']),
   "requesterAddress": zod.string().nullable(),
   "otherWalletAddress": zod.string().nullable(),
-  "directMessagingBlocked": zod.boolean()
+  "directMessagingBlocked": zod.boolean(),
+  "canManageGroup": zod.boolean()
 })
 
 
@@ -431,7 +433,8 @@ export const AcceptConversationRequestResponse = zod.object({
   "directStatus": zod.enum(['pending', 'accepted', 'declined']),
   "requesterAddress": zod.string().nullable(),
   "otherWalletAddress": zod.string().nullable(),
-  "directMessagingBlocked": zod.boolean()
+  "directMessagingBlocked": zod.boolean(),
+  "canManageGroup": zod.boolean()
 })
 
 
@@ -455,7 +458,8 @@ export const DeclineConversationRequestResponse = zod.object({
   "directStatus": zod.enum(['pending', 'accepted', 'declined']),
   "requesterAddress": zod.string().nullable(),
   "otherWalletAddress": zod.string().nullable(),
-  "directMessagingBlocked": zod.boolean()
+  "directMessagingBlocked": zod.boolean(),
+  "canManageGroup": zod.boolean()
 })
 
 
@@ -519,6 +523,17 @@ export const SendMessageResponse = zod.object({
   "encrypted": zod.boolean(),
   "isRead": zod.boolean()
 })
+
+
+/**
+ * @summary Remove a group message as its room creator
+ */
+export const DeleteGroupMessageParams = zod.object({
+  "conversationId": zod.coerce.string(),
+  "messageId": zod.coerce.string()
+})
+
+export const DeleteGroupMessageResponse = zod.void()
 
 
 /**
@@ -647,7 +662,8 @@ export const ListGroupsResponseItem = zod.object({
   "isJoined": zod.boolean(),
   "conversationId": zod.string(),
   "creatorAddress": zod.string(),
-  "creatorUsername": zod.string().nullable()
+  "creatorUsername": zod.string().nullable(),
+  "canManage": zod.boolean()
 })
 export const ListGroupsResponse = zod.array(ListGroupsResponseItem)
 
@@ -677,7 +693,8 @@ export const CreateGroupResponse = zod.object({
   "isJoined": zod.boolean(),
   "conversationId": zod.string(),
   "creatorAddress": zod.string(),
-  "creatorUsername": zod.string().nullable()
+  "creatorUsername": zod.string().nullable(),
+  "canManage": zod.boolean()
 })
 
 
@@ -706,7 +723,75 @@ export const JoinGroupResponse = zod.object({
   "isJoined": zod.boolean(),
   "conversationId": zod.string(),
   "creatorAddress": zod.string(),
-  "creatorUsername": zod.string().nullable()
+  "creatorUsername": zod.string().nullable(),
+  "canManage": zod.boolean()
+})
+
+
+/**
+ * @summary Permanently delete a group and all of its message history
+ */
+export const DeleteGroupParams = zod.object({
+  "groupId": zod.coerce.string()
+})
+
+export const DeleteGroupResponse = zod.void()
+
+
+/**
+ * @summary Create or rotate a shareable group invite
+ */
+export const CreateGroupInviteParams = zod.object({
+  "groupId": zod.coerce.string()
+})
+
+export const createGroupInviteResponseTokenMin = 32;
+export const createGroupInviteResponseTokenMax = 128;
+
+
+
+export const CreateGroupInviteResponse = zod.object({
+  "token": zod.string().min(createGroupInviteResponseTokenMin).max(createGroupInviteResponseTokenMax)
+})
+
+
+/**
+ * @summary Revoke the active group invite
+ */
+export const RevokeGroupInviteParams = zod.object({
+  "groupId": zod.coerce.string()
+})
+
+export const RevokeGroupInviteResponse = zod.void()
+
+
+/**
+ * @summary Join a group using a shareable invite token
+ */
+export const joinGroupByInviteBodyTokenMin = 32;
+export const joinGroupByInviteBodyTokenMax = 128;
+
+export const joinGroupByInviteBodyWalletAddressMin = 25;
+export const joinGroupByInviteBodyWalletAddressMax = 42;
+
+
+
+export const JoinGroupByInviteBody = zod.object({
+  "token": zod.string().min(joinGroupByInviteBodyTokenMin).max(joinGroupByInviteBodyTokenMax),
+  "walletAddress": zod.string().min(joinGroupByInviteBodyWalletAddressMin).max(joinGroupByInviteBodyWalletAddressMax)
+})
+
+export const JoinGroupByInviteResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "memberCount": zod.number().int(),
+  "onlineCount": zod.number().int(),
+  "isJoined": zod.boolean(),
+  "conversationId": zod.string(),
+  "creatorAddress": zod.string(),
+  "creatorUsername": zod.string().nullable(),
+  "canManage": zod.boolean()
 })
 
 

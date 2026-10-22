@@ -17,4 +17,5 @@ export interface Group {
   creatorAddress: string;
   /** @nullable */
   creatorUsername: string | null;
+  canManage: boolean;
 }

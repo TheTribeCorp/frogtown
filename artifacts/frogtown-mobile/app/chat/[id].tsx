@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Crypto from 'expo-crypto';
 import {
   acceptConversationRequest, declineConversationRequest, blockWallet,
-  getConversationEncryptionKeys, listConversations, markConversationRead, sendMessage,
+  deleteGroupMessage, getConversationEncryptionKeys, listConversations, markConversationRead, sendMessage,
 } from '@workspace/api-client-react';
 import { useSession } from '@/providers/session';
 import { useColors } from '@/hooks/useColors';
@@ -36,6 +36,9 @@ function ChatContent() {
   const inbox = useQuery({ queryKey: ['mobile', 'inbox', wallet], queryFn: () => listConversations({ walletAddress: wallet }), enabled: !!wallet });
   const conversation = inbox.data?.find((item) => item.id === id);
   const group = conversation?.type === 'group';
+  useEffect(() => {
+    if (inbox.isFetched && !conversation) router.replace('/');
+  }, [inbox.isFetched, conversation, router]);
   useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
   const chat = useQuery({
     queryKey: ['mobile', 'messages', wallet, id],
@@ -96,6 +99,13 @@ function ChatContent() {
     catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   };
+  const removeGroupMessage = (messageId: string) => {
+    if (!group || !conversation?.canManageGroup) return;
+    const remove = () => void action(async () => { await deleteGroupMessage(id, messageId); });
+    const prompt = 'Delete this message for everyone in the group? Any encrypted history copies will also be removed.';
+    if (Platform.OS === 'web') { if (window.confirm(prompt)) remove(); }
+    else Alert.alert('Delete group message?', prompt, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: remove }]);
+  };
   const onVisible = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const visible = viewableItems.map((v) => v.item).filter((m) => m?.readable).sort((a, b) => Date.parse(b.sentAt) - Date.parse(a.sentAt))[0];
     if (!visible || !focusedRef.current || AppState.currentState !== 'active' || readPosition.current === visible.id) return;
@@ -146,6 +156,9 @@ function ChatContent() {
            </View>}
           <Text selectable style={{ color: item.isMine ? c.primaryForeground : c.foreground, lineHeight: 21 }}>{item.text}</Text>
           <Text style={{ marginTop: 5, fontSize: 10, color: item.isMine ? c.primaryForeground : c.mutedForeground }}>{new Date(item.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{item.isMine ? item.isRead ? '  ✓✓ Read' : '  ✓ Sent' : ''}</Text>
+           {group && conversation?.canManageGroup && <Pressable accessibilityRole="button" accessibilityLabel="Delete this group message for everyone" onPress={() => removeGroupMessage(item.id)} disabled={busy} style={{ paddingTop: 7 }}>
+             <Text style={{ color: c.secondary, fontSize: 11 }}>Delete for everyone</Text>
+           </Pressable>}
         </View>}
       />
       <View style={{ padding: 14, gap: 10, borderTopWidth: 1, borderTopColor: c.border, backgroundColor: c.card }}>
