@@ -74,10 +74,12 @@ never commit the key or its password.
    - `ANDROID_RELEASE_KEY_PASSWORD` — the key password
 
    Never paste these values into a chat, issue, commit, or workflow log.
-4. Sync the project changes to GitHub. In **Actions → Frogtown Android APK**,
-   choose **Run workflow** and use `android-v1.0.0` as the first release tag.
-5. After the workflow succeeds, verify the APK is attached to the release with
-   its SHA-256 checksum. The stable direct-download URL is:
+ 4. Sync the project changes to GitHub. In **Actions → Frogtown Android APK**,
+   choose **Run workflow** and use the version tag matching `app.json`, such as
+   `android-v1.0.2`.
+ 5. After the workflow succeeds, check the release for the arm64-v8a APK, the
+   armeabi-v7a APK, the universal fallback, and `Frogtown-android-sha256.txt`.
+   The stable direct-download URL for the universal APK is:
    `https://github.com/TheTribeCorp/frogtown/releases/latest/download/Frogtown.apk`
 6. Install the APK on a physical Android phone. Android will ask the user to
    allow installation from the browser. Test wallet return, private/group
