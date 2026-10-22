@@ -9,6 +9,12 @@ Keep the website while adding native iOS and Android apps.
 
 **How to apply:** Preserve existing web flows when building native features.
 
+The mobile app should include the website's features, not only chats and groups; Timeline and Daily Quests must be available to mobile members.
+
+**Why:** The user explicitly requested the website's properties on mobile after finding only chat and group options.
+
+**How to apply:** Check both native and web member experiences when adding product features; do not treat a chat-only mobile companion as feature-complete.
+
 Do not treat successful server-side manifest and bundle downloads as proof that Expo Go can launch on a physical device.
 
 **Why:** Native remote-update downloads can still fail before application code runs despite healthy HTTPS endpoints. Switching link schemes alone did not establish a working native connection.
