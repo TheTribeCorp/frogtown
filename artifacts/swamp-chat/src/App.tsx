@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, createContext, useContext, type ReactNode, type FormEvent } from 'react';
 import { MobileAuthApprovalGate } from './components/mobile-auth-approval';
+import { PwaInstallButton } from './components/pwa-install-button';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -702,6 +703,7 @@ function WalletEntry() {
               </a>
             </div>
             <div className="ft-entry-download-links" aria-label="Frogtown app downloads">
+              <PwaInstallButton />
               <button
                 className="ft-entry-download-button"
                 type="button"

@@ -293,6 +293,25 @@ button { cursor: pointer; }
 .ft-entry-download-button > span { display: flex; flex-direction: column; gap: 2px; }
 .ft-entry-download-button strong { font-size: 10px; font-weight: 600; }
 .ft-entry-download-button small { color: rgba(247, 249, 236, .65); font-size: 9px; }
+.ft-entry-web-install { width: min(100%, 280px); }
+.ft-entry-install-action { width: 100%; cursor: pointer; text-align: left; }
+.ft-entry-install-action:hover { border-color: rgba(181, 223, 137, .65); background: rgba(181, 223, 137, .14); }
+.ft-entry-install-action:focus-visible { outline: 2px solid var(--ft-leaf); outline-offset: 3px; }
+.ft-entry-install-guide {
+  max-width: 430px;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid rgba(181, 223, 137, .3);
+  border-radius: 13px;
+  color: rgba(247, 249, 236, .88);
+  background: rgba(8, 24, 15, .88);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.ft-entry-install-guide p { margin: 0 0 7px; }
+.ft-entry-install-guide ol { margin: 0; padding-left: 18px; }
+.ft-entry-install-guide li + li { margin-top: 5px; }
+.ft-entry-install-guide strong { color: var(--ft-leaf); }
 .ft-entry-art { min-height: 320px; position: relative; z-index: 1; flex: 1; margin-top: 6px; }
 .ft-entry-orbit { position: absolute; left: 48%; top: 50%; border: 1px solid rgba(188, 227, 146, .17); border-radius: 50%; transform: translate(-50%, -50%); }
 .ft-entry-orbit-one { width: 340px; height: 270px; transform: translate(-50%, -50%) rotate(-19deg); }
