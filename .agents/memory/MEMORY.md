@@ -13,3 +13,4 @@
 - [LadyChain wallet loading](frogtown-ladychain-wallet-loading.md) — keep AppKit off the initial page and prewarm on user intent; avoid forced chunks that cycle or duplicate dependencies.
 - [Native mobile security](frogtown-native-mobile.md) — keep the website; share browser wallet verification, not browser cookies or private keys; native push needs installed-build credentials.
 - [Web context singletons](frogtown-web-context-singletons.md) — native peer variants can split web context providers even when package versions match.
+- [Frogtown release permissions](frogtown-release-permissions.md) — publish verified Android builds through the connected GitHub identity when Actions cannot create releases.
