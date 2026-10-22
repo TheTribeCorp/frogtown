@@ -704,22 +704,22 @@ function WalletEntry() {
             </div>
             <div className="ft-entry-download-links" aria-label="Frogtown app downloads">
               <PwaInstallButton />
-              {import.meta.env.VITE_ANDROID_APK_URL ? <a
+              <a
                 className="ft-entry-download-button"
-                href={import.meta.env.VITE_ANDROID_APK_URL}
-                aria-label="Download the latest Frogtown Android APK"
+                href="https://github.com/TheTribeCorp/frogtown/releases/latest/download/Frogtown-arm64-v8a.apk"
+                aria-label="Download the recommended 64-bit Frogtown Android APK"
               >
                 <Smartphone aria-hidden="true" />
-                <span><strong>Android APK</strong><small>Direct download</small></span>
-              </a> : <button
-                className="ft-entry-download-button"
-                type="button"
-                disabled
-                aria-label="Frogtown for Android — coming soon"
-              >
-                <Smartphone aria-hidden="true" />
-                <span><strong>Android app</strong><small>Coming soon</small></span>
-              </button>}
+                <span><strong>Android APK · 64-bit</strong><small>Recommended · smaller download</small></span>
+              </a>
+              <div className="ft-entry-apk-alternates" aria-label="Other Android downloads">
+                <a href="https://github.com/TheTribeCorp/frogtown/releases/latest/download/Frogtown-armeabi-v7a.apk">
+                  32-bit Android
+                </a>
+                <a href="https://github.com/TheTribeCorp/frogtown/releases/latest/download/Frogtown.apk">
+                  Universal fallback
+                </a>
+              </div>
               <button
                 className="ft-entry-download-button"
                 type="button"

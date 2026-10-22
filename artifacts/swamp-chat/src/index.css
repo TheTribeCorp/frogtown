@@ -293,6 +293,17 @@ button { cursor: pointer; }
 .ft-entry-download-button > span { display: flex; flex-direction: column; gap: 2px; }
 .ft-entry-download-button strong { font-size: 10px; font-weight: 600; }
 .ft-entry-download-button small { color: rgba(247, 249, 236, .65); font-size: 9px; }
+.ft-entry-apk-alternates {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-left: 4px;
+  font-size: 10px;
+}
+.ft-entry-apk-alternates a { color: rgba(181, 223, 137, .9); text-decoration: underline; text-underline-offset: 2px; }
+.ft-entry-apk-alternates a:hover,
+.ft-entry-apk-alternates a:focus-visible { color: #fff; }
 .ft-entry-web-install { width: min(100%, 280px); }
 .ft-entry-install-action { width: 100%; cursor: pointer; text-align: left; }
 .ft-entry-install-action:hover { border-color: rgba(181, 223, 137, .65); background: rgba(181, 223, 137, .14); }

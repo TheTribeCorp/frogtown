@@ -85,10 +85,9 @@ never commit the key or its password.
    allow installation from the browser. Test wallet return, private/group
    encrypted message send and receive, app restart/outbox recovery, and alerts.
    APK signing verification alone does not verify these device behaviors.
-7. Only after the installed-phone checks pass, set the public Vercel build
-   variable `VITE_ANDROID_APK_URL` to that stable download URL and redeploy the
-   website. This activates the homepage button without exposing a dead link
-   before the first build exists.
+ 7. The homepage links directly to the smaller arm64 release by default and
+    also provides 32-bit and universal fallback downloads. These use GitHub's
+    stable `latest` asset URLs, so no Vercel download-link variable is needed.
 
 Increment `android.versionCode` in `app.json` for every subsequent APK release.
 Keep the package ID and signing key unchanged. The APK is stored as a GitHub
