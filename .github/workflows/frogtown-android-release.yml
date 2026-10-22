@@ -24,9 +24,11 @@ jobs:
     timeout-minutes: 45
     env:
       EXPO_PUBLIC_API_URL: https://www.frogtown.online
-      ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/frogtown-release-key.jks
       RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
+      - name: Set temporary signing path
+        run: echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/frogtown-release-key.jks" >> "$GITHUB_ENV"
+
       - name: Check out Frogtown
         uses: actions/checkout@v4
 
