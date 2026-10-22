@@ -108,6 +108,7 @@ jobs:
 
       - name: Run mobile and API regression checks
         run: |
+          pnpm run typecheck:libs
           pnpm --filter @workspace/frogtown-mobile run typecheck
           pnpm --filter @workspace/scripts exec tsx --test ../artifacts/frogtown-mobile/test/crypto.test.mjs
           pnpm --filter @workspace/api-server run test:auth
