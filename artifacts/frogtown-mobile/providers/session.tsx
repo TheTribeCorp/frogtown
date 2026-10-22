@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
@@ -139,13 +139,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!apiOrigin) throw new Error('Set EXPO_PUBLIC_API_URL before building Frogtown Mobile.');
     if (!walletAuthOrigin) throw new Error('The wallet sign-in website is not configured for this preview.');
     setError('');
-    const codeVerifier = randomSecret(Crypto.getRandomBytes);
-    const result = await createMobileAuthRequest({ codeChallenge: pkceChallenge(codeVerifier) });
-    const loginUrl = new URL(result.loginPath, walletAuthOrigin).toString();
-    if (new URL(loginUrl).origin !== walletAuthOrigin) throw new Error('The wallet sign-in URL was invalid.');
-    const next = { requestId: result.requestId, expiresAt: result.expiresAt, codeVerifier, loginUrl };
-    await writeSecure(PENDING_KEY, JSON.stringify(next)); pendingRef.current = next; setPending(next);
-    await WebBrowser.openBrowserAsync(loginUrl);
+    // The Expo web preview runs in a browser, where a window opened after an
+    // awaited API request is usually blocked as an unsolicited popup. Open a
+    // blank tab synchronously from the tap, then navigate it once the
+    // short-lived PKCE request has been created. Native builds still use the
+    // system browser through Expo WebBrowser.
+    let authWindow: Window | null = null;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      authWindow = window.open('about:blank', '_blank');
+      if (!authWindow) {
+        throw new Error('Allow pop-ups for this Frogtown preview, then try wallet sign-in again.');
+      }
+    }
+    try {
+      const codeVerifier = randomSecret(Crypto.getRandomBytes);
+      const result = await createMobileAuthRequest({ codeChallenge: pkceChallenge(codeVerifier) });
+      const loginUrl = new URL(result.loginPath, walletAuthOrigin).toString();
+      if (new URL(loginUrl).origin !== walletAuthOrigin) throw new Error('The wallet sign-in URL was invalid.');
+      const next = { requestId: result.requestId, expiresAt: result.expiresAt, codeVerifier, loginUrl };
+      await writeSecure(PENDING_KEY, JSON.stringify(next)); pendingRef.current = next; setPending(next);
+      if (authWindow) {
+        authWindow.opener = null;
+        authWindow.location.replace(loginUrl);
+      } else {
+        await WebBrowser.openBrowserAsync(loginUrl);
+      }
+    } catch (cause) {
+      authWindow?.close();
+      throw cause;
+    }
   };
   const signOut = async () => {
     const device = await readSecure(`frogtown.push.${wallet}`);
