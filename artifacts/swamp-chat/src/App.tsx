@@ -676,6 +676,30 @@ function WalletEntry() {
             <div className="ft-entry-spaces" aria-label="Frogtown spaces">
               <span>Private chats</span><span>Community rooms</span><span>Public timeline</span>
             </div>
+            <div className="ft-entry-social-links" aria-label="Frogtown community links">
+              <a
+                className="ft-entry-social-link"
+                href="https://t.me/hermitthefrogxrp"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Join Frogtown on Telegram"
+              >
+                <Send aria-hidden="true" />
+                <span>Join Telegram</span>
+                <ArrowUpRight aria-hidden="true" />
+              </a>
+              <a
+                className="ft-entry-social-link"
+                href="https://x.com/hermitthefrogxrp"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Follow Frogtown on X"
+              >
+                <span className="ft-entry-social-x" aria-hidden="true">𝕏</span>
+                <span>Follow on X</span>
+                <ArrowUpRight aria-hidden="true" />
+              </a>
+            </div>
           </div>
 
           <div className="ft-entry-art" aria-label="An illustrative private conversation in Frogtown">
