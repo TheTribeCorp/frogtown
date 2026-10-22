@@ -83,7 +83,7 @@ const colors = {
     forestDeep: '#091c12',
     leaf: '#a5db76',
     mascotRed: '#ed5e55',
-    paper: '#13241a',
+    paper: '#f4f7ed',
     holderGreen: '#84cf96',
     holderGreenSurface: '#1e3b2a',
     holderGold: '#e2c15e',

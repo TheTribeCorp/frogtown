@@ -90,9 +90,9 @@ function FrogtownMobileWelcome() {
                 contentFit="cover"
                 accessibilityLabel="Frogtown hooded frog mascot"
               />
-              <View style={styles.ledgerChip}>
+              <View style={[styles.ledgerChip, { backgroundColor: `${colors.forestDeep}f2`, borderColor: `${colors.leaf}70` }]}>
               <View style={[styles.liveDot, { backgroundColor: colors.mascotRed }]} />
-              <Text style={[styles.ledgerChipText, { color: colors.forest }]}>A new home for the community</Text>
+                <Text style={[styles.ledgerChipText, { color: colors.paper }]}>A new home for the community</Text>
               </View>
             </View>
             <View style={styles.heroFooter}>
@@ -263,9 +263,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(21, 61, 42, 0.1)',
   },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#e7463a' },
-  ledgerChipText: { fontSize: 10, fontFamily: 'Inter_600SemiBold', flexShrink: 1 },
+  ledgerChipText: { fontSize: 12, lineHeight: 16, fontFamily: 'Inter_600SemiBold', flexShrink: 1 },
   heroFooter: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 7 },
-  heroFooterText: { fontSize: 11, fontFamily: 'Inter_500Medium' },
+  heroFooterText: { fontSize: 12, fontFamily: 'Inter_500Medium' },
   intro: { marginTop: 28, marginBottom: 17 },
   sectionLabel: { fontSize: 9, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.8 },
   heading: { fontSize: 25, lineHeight: 30, fontFamily: 'Inter_700Bold', letterSpacing: -0.9, marginTop: 8 },
