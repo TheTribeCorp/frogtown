@@ -43,7 +43,7 @@ Direct Android APK distribution is required while Play Store listing is deferred
 
 **Why:** The user chose a remote signed APK build and a website download link rather than waiting for a Play Store listing.
 
-**How to apply:** Preserve the signing identity across updates, keep signing credentials out of the public repository, and distinguish build/signature checks from physical-phone verification.
+**How to apply:** Preserve the signing identity across updates, keep signing credentials out of the public repository, and distinguish build/signature checks from physical-phone verification. A permanent identity has been provisioned in GitHub Actions secrets; do not regenerate it when troubleshooting builds, because replacing it prevents in-place APK upgrades.
 
 Keep shared React typings on one Expo-compatible resolution.
 
