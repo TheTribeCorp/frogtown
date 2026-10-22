@@ -315,6 +315,7 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     ["/api/wallet/keys/reset", "POST", { publicKey: "not-a-key" }],
     ["/api/wallet/hermit-balance", "GET"],
     ["/api/wallets/" + walletA + "/hermit-tick?refresh=true", "GET"],
+    ["/api/wallets/search?q=frog", "GET"],
     ["/api/groups?walletAddress=" + walletA, "GET"],
     ["/api/groups", "POST", { name: "test", description: "", creatorAddress: walletA }],
     ["/api/groups/group-test/join", "POST", { walletAddress: walletA }],
@@ -343,6 +344,9 @@ test("wallet authentication and ownership guards reject unauthenticated or misma
     const response = await request(pathname, { method, body });
     assert.equal(response.status, 401, `${method} ${pathname} should require a wallet session`);
   }
+
+  const undersizedMemberSearch = await request("/api/wallets/search?q=abc", { cookie: validCookie });
+  assert.equal(undersizedMemberSearch.status, 400, "member search should reject terms shorter than a username");
 
   const retiredPurchaseRoutes = [
     ["/api/wallet/hermit-buy-quote?xrpAmount=1", "GET"],
@@ -2275,6 +2279,27 @@ test("wallet usernames are authenticated, unique, and resolve direct chats", asy
     body: { username: senderUsername },
   });
   assert.equal(senderProfile.status, 200);
+
+  const prefixSearch = await request(
+    `/api/wallets/search?q=${encodeURIComponent(senderUsername.slice(0, 12).toUpperCase())}`,
+    { cookie: sessionCookie(recipient) },
+  );
+  assert.equal(prefixSearch.status, 200);
+  const prefixResults = await prefixSearch.json();
+  assert.ok(prefixResults.some((profile) => profile.walletAddress === sender && profile.username === senderUsername));
+  assert.ok(prefixResults.every((profile) => profile.walletAddress !== recipient));
+
+  const addressSearch = await request(`/api/wallets/search?q=${encodeURIComponent(sender)}`, {
+    cookie: sessionCookie(recipient),
+  });
+  assert.equal(addressSearch.status, 200);
+  assert.equal((await addressSearch.json())[0]?.walletAddress, sender);
+
+  const selfSearch = await request(`/api/wallets/search?q=${updatedUsername}`, {
+    cookie: sessionCookie(recipient),
+  });
+  assert.equal(selfSearch.status, 200);
+  assert.deepEqual(await selfSearch.json(), []);
 
   const messageId = randomUUID();
   const sentMessage = await request(`/api/conversations/${conversation.id}/messages`, {

@@ -25,11 +25,13 @@ test('signed-in mobile timeline and daily-quest calls forward the wallet session
       body: JSON.stringify({ body: 'A test post from the authenticated mobile client.' }),
     });
     await customFetch('/api/gamification/check-in', { method: 'POST' });
+    await customFetch('/api/wallets/search?q=frogtown', { method: 'GET' });
 
     assert.deepEqual(requests.map(({ url, method }) => [url.pathname, method]), [
       ['/api/gamification/summary', 'GET'],
       ['/api/timeline/posts', 'POST'],
       ['/api/gamification/check-in', 'POST'],
+      ['/api/wallets/search', 'GET'],
     ]);
     for (const request of requests) {
       assert.equal(request.headers.get('authorization'), 'Bearer native-session-test-token');

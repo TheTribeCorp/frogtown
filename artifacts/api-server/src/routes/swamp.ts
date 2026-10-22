@@ -44,6 +44,8 @@ import {
   SaveWalletUsernameBody,
   SaveWalletUsernameResponse,
   UnblockWalletParams,
+  WalletUserSearchQuery,
+  WalletUserSearchResponse,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import { publishConversationUpdated, publishMessageCreated, publishMessageRead, publishWalletEncryptionReset, subscribeToWalletMessages, type WalletEvent } from "../lib/message-events";
@@ -902,6 +904,57 @@ router.get("/wallet/profile", async (req, res): Promise<void> => {
     walletAddress,
     username: profile?.username ?? null,
   }));
+});
+
+router.get("/wallets/search", async (req, res): Promise<void> => {
+  const sessionWallet = requireAuth(req, res);
+  if (!sessionWallet) return;
+  const parsedQuery = WalletUserSearchQuery.safeParse(req.query);
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: "Search with at least four username characters or a full wallet address." });
+    return;
+  }
+
+  const term = parsedQuery.data.q.trim().replace(/^@/, "");
+  try {
+    if (isWalletAddress(term)) {
+      const normalizedAddress = normalizeWalletAddress(term);
+      const matches = normalizedAddress === sessionWallet
+        ? []
+        : await db
+          .select({
+            walletAddress: walletProfilesTable.walletAddress,
+            username: walletProfilesTable.username,
+          })
+          .from(walletProfilesTable)
+          .where(eq(walletProfilesTable.walletAddress, normalizedAddress))
+          .limit(1);
+      res.json(WalletUserSearchResponse.parse(matches));
+      return;
+    }
+
+    const usernamePrefix = normalizeUsername(term);
+    if (!usernamePrefix) {
+      res.status(400).json({ error: "Search usernames must use 4–17 letters, numbers, or underscores." });
+      return;
+    }
+    const matches = await db
+      .select({
+        walletAddress: walletProfilesTable.walletAddress,
+        username: walletProfilesTable.username,
+      })
+      .from(walletProfilesTable)
+      .where(and(
+        sql`left(lower(${walletProfilesTable.username}), ${usernamePrefix.length}) = ${usernamePrefix}`,
+        ne(walletProfilesTable.walletAddress, sessionWallet),
+      ))
+      .orderBy(asc(walletProfilesTable.username))
+      .limit(10);
+    res.json(WalletUserSearchResponse.parse(matches));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not search Frogtown members");
+    res.status(500).json({ error: "Member search is temporarily unavailable." });
+  }
 });
 
 router.post("/wallet/referral-device", async (req, res): Promise<void> => {

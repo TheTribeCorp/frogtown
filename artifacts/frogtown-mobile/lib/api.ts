@@ -1,4 +1,4 @@
-import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
+import { customFetch, setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
@@ -21,5 +21,9 @@ setBaseUrl(apiOrigin || null);
 let token: string | null = null;
 setAuthTokenGetter(() => token);
 export function setSessionToken(value: string | null) { token = value; }
+export type WalletUserSearchResult = { walletAddress: string; username: string | null };
+export function searchWalletUsers(query: string) {
+  return customFetch<WalletUserSearchResult[]>(`/api/wallets/search?q=${encodeURIComponent(query)}`, { method: 'GET' });
+}
 export function errorText(error: unknown) { return error instanceof Error ? error.message : 'The request could not be completed.'; }
 export function statusOf(error: unknown) { return Number((error as { status?: number })?.status); }

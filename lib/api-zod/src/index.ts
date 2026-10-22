@@ -30,3 +30,4 @@ export type { TimelinePostsPage } from "./generated/types/timelinePostsPage";
 export type { TimelineCommentsPage } from "./generated/types/timelineCommentsPage";
 export type { TimelineReportInput } from "./generated/types/timelineReportInput";
 export type { TimelineReportResult } from "./generated/types/timelineReportResult";
+export * from "./user-search";
