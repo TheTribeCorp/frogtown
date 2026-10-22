@@ -68,9 +68,10 @@ async function registerWalletKey(walletAddress) {
   assert.ok([200, 201].includes(response.status), `wallet key registration should succeed, got ${response.status}`);
 }
 
-async function request(pathname, { method = "GET", cookie, body, origin } = {}) {
+async function request(pathname, { method = "GET", cookie, token, body, origin } = {}) {
   const headers = {};
   if (cookie) headers.cookie = cookie;
+  if (token) headers.authorization = `Bearer ${token}`;
   if (origin) headers.origin = origin;
   if (body !== undefined) headers["content-type"] = "application/json";
   return fetch(`${baseUrl}${pathname}`, {
@@ -250,6 +251,60 @@ test("native wallet approval is PKCE-bound, same-origin, single-use and separate
   assert.equal((await fetch(`${baseUrl}/api/wallet/me`, { headers: { authorization: `Bearer ${browserAsBearer}` } })).status, 401);
   const tampered = `${session.token.slice(0, -4)}AAAA`;
   assert.equal((await fetch(`${baseUrl}/api/wallet/me`, { headers: { authorization: `Bearer ${tampered}` } })).status, 401);
+});
+
+test("native members can find usernames, send private requests, and receive accepted replies", async () => {
+  const sender = randomWalletAddress(), recipient = randomWalletAddress();
+  const username = `frog_${randomUUID().replaceAll("-", "").slice(0, 10)}`;
+  const verifier = randomBytes(32).toString("base64url");
+  const createdAuth = await request("/api/mobile/auth/requests", {
+    method: "POST", body: { codeChallenge: createHash("sha256").update(verifier).digest("base64url") },
+  });
+  assert.equal(createdAuth.status, 201);
+  const { requestId } = await createdAuth.json();
+  assert.equal((await request(`/api/mobile/auth/requests/${requestId}/approve`, {
+    method: "POST", cookie: sessionCookie(sender), origin: baseUrl,
+  })).status, 200);
+  const exchange = await request("/api/mobile/auth/exchange", {
+    method: "POST", body: { requestId, codeVerifier: verifier },
+  });
+  assert.equal(exchange.status, 200);
+  const { token } = await exchange.json();
+  assert.equal((await request("/api/wallet/profile", {
+    method: "PUT", cookie: sessionCookie(recipient), body: { username },
+  })).status, 200);
+  for (const query of [username, `@${username}`, username.toUpperCase(), recipient]) {
+    const search = await request(`/api/wallets/search?q=${encodeURIComponent(query)}`, { token });
+    assert.equal(search.status, 200, `native search should accept ${query}`);
+    assert.ok((await search.json()).some((person) => person.walletAddress === recipient));
+  }
+  const created = await request("/api/conversations", {
+    method: "POST", token, body: { fromWalletAddress: sender, recipient: `@${username}` },
+  });
+  assert.equal(created.status, 201);
+  const conversation = await created.json();
+  const messageId = randomUUID();
+  const body = recipientEnvelope([sender, recipient]);
+  assert.equal((await request(`/api/conversations/${conversation.id}/messages`, {
+    method: "POST", token, body: { senderAddress: sender, messageId, body },
+  })).status, 201);
+  const recipientInbox = await request(`/api/conversations?walletAddress=${recipient}`, { cookie: sessionCookie(recipient) });
+  const incoming = (await recipientInbox.json()).find((item) => item.id === conversation.id);
+  assert.ok(incoming, "the first private message must be discoverable in the recipient's inbox");
+  assert.equal(incoming.directStatus, "pending");
+  assert.equal(incoming.unreadCount, 1);
+  const received = await request(`/api/conversations/${conversation.id}/messages?walletAddress=${recipient}`, { cookie: sessionCookie(recipient) });
+  assert.equal((await received.json()).find((item) => item.id === messageId)?.body, body);
+  assert.equal((await request(`/api/conversations/${conversation.id}/request/accept`, {
+    method: "POST", cookie: sessionCookie(recipient),
+  })).status, 200);
+  const replyId = randomUUID();
+  assert.equal((await request(`/api/conversations/${conversation.id}/messages`, {
+    method: "POST", cookie: sessionCookie(recipient),
+    body: { senderAddress: recipient, messageId: replyId, body },
+  })).status, 201);
+  const nativeHistory = await request(`/api/conversations/${conversation.id}/messages?walletAddress=${sender}`, { token });
+  assert.ok((await nativeHistory.json()).some((item) => item.id === replyId), "native polling must recover the recipient's reply");
 });
 
 test("native alert devices hide push tokens and cannot be revoked by another wallet", async () => {

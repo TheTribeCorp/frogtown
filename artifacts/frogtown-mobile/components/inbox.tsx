@@ -26,6 +26,7 @@ import {
 import { useSession } from '@/providers/session';
 import { useColors } from '@/hooks/useColors';
 import { errorText, searchWalletUsers } from '@/lib/api';
+import { memberSearchTerm } from '@/lib/member-search';
 import { readSecure } from '@/lib/storage';
 import { Button, Field, Label, Panel, ui } from './ui';
 import { MobileTimelineScreen } from './mobile-timeline';
@@ -57,14 +58,13 @@ export function InboxScreen() {
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [backupNeeded, setBackupNeeded] = useState(false);
   const [inviteHandled, setInviteHandled] = useState<string | null>(null);
   const isChats = section === 'chats';
-  const searchTerm = debouncedSearch.trim();
-  const normalizedSearchTerm = searchTerm.replace(/^@/, '');
+  const searchTerm = memberSearchTerm(debouncedSearch);
   const chats = useQuery({ queryKey: ['mobile', 'inbox', wallet], queryFn: () => listConversations({ walletAddress: wallet }), refetchInterval: 3000 });
   const groups = useQuery({ queryKey: ['mobile', 'groups', wallet], queryFn: () => listGroups({ walletAddress: wallet }), refetchInterval: 10_000 });
   const peopleSearch = useQuery({
-    queryKey: ['mobile', 'wallet-search', wallet, searchTerm.toLowerCase()],
-    queryFn: () => searchWalletUsers(searchTerm),
-    enabled: isChats && normalizedSearchTerm.length >= 4,
+    queryKey: ['mobile', 'wallet-search', wallet, searchTerm?.toLowerCase()],
+    queryFn: () => searchWalletUsers(searchTerm!),
+    enabled: isChats && Boolean(searchTerm),
     staleTime: 30_000,
     retry: false,
   });
@@ -91,6 +91,14 @@ export function InboxScreen() {
     return () => clearTimeout(timer);
   }, [search]);
   const open = (id: string) => router.push({ pathname: '/chat/[id]', params: { id } });
+  const openDirect = (conversation: Conversation) => {
+    // Seed the destination's inbox before navigating: the old cached list may
+    // not contain a just-created request until the next polling cycle.
+    client.setQueryData<Conversation[]>(['mobile', 'inbox', wallet], (previous = []) => [
+      conversation, ...previous.filter((item) => item.id !== conversation.id),
+    ]);
+    open(conversation.id);
+  };
   const run = async (operation: () => Promise<void>) => {
     setBusy(true); setError('');
     try { await operation(); await client.invalidateQueries({ queryKey: ['mobile'] }); }
@@ -136,6 +144,8 @@ export function InboxScreen() {
   const visibleGroups = useMemo(() => (groups.data ?? []).filter((item) => `${item.name} ${item.description}`.toLowerCase().includes(search.trim().toLowerCase())), [groups.data, search]);
   const currentQuery = isChats ? chats : groups;
   const selectedItems = isChats ? visibleChats : visibleGroups;
+  const incomingRequests = (chats.data ?? []).filter((item) =>
+    item.type === 'direct' && item.directStatus === 'pending' && item.requesterAddress !== wallet);
 
   return <SafeAreaView style={[{ flex: 1, backgroundColor: c.background }, Platform.OS === 'web' && { paddingTop: 67, paddingBottom: 34 }]}>
     <View style={{ flex: 1 }}>
@@ -159,12 +169,18 @@ export function InboxScreen() {
         onRefresh={() => void currentQuery.refetch()}
         ListHeaderComponent={<View style={{ gap: 12, marginBottom: 8 }}>
           {backupNeeded && isChats && <Panel><Label>Keep your chats recoverable. Create an encrypted backup for this phone.</Label><Button secondary title="Create my recovery backup" onPress={() => router.push('/settings')} /></Panel>}
+          {isChats && incomingRequests.length > 0 && <Panel>
+            <Text style={[ui.subtitle, { color: c.foreground }]}>Private-message requests · {incomingRequests.length}</Text>
+            <Label>A member sent you a private-chat request. Open it to read their introduction and accept, decline, or block.</Label>
+            {incomingRequests.map((request) => <Button key={request.id} secondary title={`Review ${request.title}`} onPress={() => open(request.id)} />)}
+          </Panel>}
           <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: c.border, backgroundColor: c.card, borderRadius: 24, paddingHorizontal: 12 }}>
             <Ionicons name="search" size={18} color={c.mutedForeground} />
             <Field accessibilityLabel={isChats ? 'Search people or chats' : 'Search groups'} placeholder={isChats ? 'Find users or chats' : 'Find groups by name or description'} value={search} onChangeText={setSearch} style={{ flex: 1, minHeight: 46, borderWidth: 0, backgroundColor: 'transparent', paddingHorizontal: 9 }} />
             {search.length > 0 && <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setSearch('')} style={{ padding: 6 }}><Ionicons name="close-circle" size={18} color={c.mutedForeground} /></Pressable>}
           </View>
-          {isChats && normalizedSearchTerm.length >= 4 && <Panel style={{ gap: 10 }}>
+          {isChats && search.trim().length > 0 && !memberSearchTerm(search) && <Label muted>Find members with 4–17 letters, numbers, or underscores, or paste a complete wallet address. Existing chats are still filtered below.</Label>}
+          {isChats && searchTerm && <Panel style={{ gap: 10 }}>
             <Text style={{ color: c.foreground, fontFamily: 'Inter_600SemiBold' }}>People</Text>
             {peopleSearch.isFetching && <ActivityIndicator color={c.primary} />}
             {peopleSearch.error && <Label muted>{errorText(peopleSearch.error)}</Label>}
@@ -180,7 +196,7 @@ export function InboxScreen() {
                 const chat = await createDirectConversation({ fromWalletAddress: wallet, recipient: person.walletAddress });
                 setSearch('');
                 setTarget('');
-                open(chat.id);
+                openDirect(chat);
               })} />
             </View>)}
             {!peopleSearch.isFetching && !peopleSearch.error && peopleSearch.data?.length === 0 && <Label muted>No matching users. You can still message an exact wallet address below.</Label>}
@@ -189,10 +205,10 @@ export function InboxScreen() {
             <Label>{isChats ? 'Message by username or wallet address' : 'Create a new community group'}</Label>
             <Field accessibilityLabel={isChats ? 'Username or wallet address' : 'Group name'} placeholder={isChats ? '@username or wallet address' : 'Group name'} value={target} onChangeText={setTarget} maxLength={isChats ? 43 : 60} />
             {!isChats && <Field placeholder="Group description" accessibilityLabel="Group description" value={description} onChangeText={setDescription} maxLength={500} />}
-            <Button title={isChats ? 'Open private chat' : 'Create group'} busy={busy} disabled={target.trim().length < (isChats ? 4 : 2)} onPress={() => void run(async () => {
+            <Button title={isChats ? 'Open private chat' : 'Create group'} busy={busy} disabled={isChats ? !memberSearchTerm(target) : target.trim().length < 2} onPress={() => void run(async () => {
               if (isChats) {
                 const chat = await createDirectConversation({ fromWalletAddress: wallet, recipient: target.trim().replace(/^@/, '') });
-                setTarget(''); open(chat.id);
+                setTarget(''); openDirect(chat);
               } else {
                 const group = await createGroup({ creatorAddress: wallet, name: target.trim(), description: description.trim() });
                 setTarget(''); setDescription(''); open(group.conversationId);

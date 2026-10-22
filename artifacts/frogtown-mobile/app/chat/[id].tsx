@@ -43,12 +43,14 @@ function ChatContent() {
     enabled: Boolean(wallet && group && conversation?.canManageGroup),
   });
   useEffect(() => {
-    if (!inbox.isFetched || conversation) return;
+    // A cached inbox can predate a newly created conversation. Only revoke
+    // access after a successful fresh response, never while a refetch is pending.
+    if (!inbox.isFetchedAfterMount || inbox.isFetching || inbox.isError || conversation) return;
     void client.removeQueries({ queryKey: ['mobile', 'messages', wallet, id] });
     void client.removeQueries({ queryKey: ['mobile', 'removed-group-members', wallet, id] });
     void removeConversationPending(wallet, id).catch(() => {});
     router.replace('/');
-  }, [inbox.isFetched, conversation, router, client, wallet, id]);
+  }, [inbox.isFetchedAfterMount, inbox.isFetching, inbox.isError, conversation, router, client, wallet, id]);
   useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
   const chat = useQuery({
     queryKey: ['mobile', 'messages', wallet, id],
@@ -142,8 +144,11 @@ function ChatContent() {
   }).current;
   if (!wallet) return <Redirect href="/" />;
   const incoming = conversation?.directStatus === 'pending' && conversation.requesterAddress !== wallet;
+  const outgoingRequest = conversation?.type === 'direct'
+    && conversation.directStatus === 'pending' && conversation.requesterAddress === wallet;
+  const awaitingApproval = outgoingRequest && Boolean(chat.data?.rows.length);
   const disabled = busy || !chat.data || !!chat.data.changed.length || incoming
-    || conversation?.directStatus === 'declined' || conversation?.directMessagingBlocked;
+    || awaitingApproval || conversation?.directStatus === 'declined' || conversation?.directMessagingBlocked;
   return <SafeAreaView style={{ flex: 1, backgroundColor: c.background }}>
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <View style={{ paddingHorizontal: 18, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.border, gap: 8 }}>
@@ -186,6 +191,9 @@ function ChatContent() {
           <Label>A member wants to send you private messages. You can accept, decline, or block them.</Label>
           <View style={ui.row}><View style={{ flex: 1 }}><Button title="Accept" busy={busy} onPress={() => void action(() => acceptConversationRequest(id))} /></View><View style={{ flex: 1 }}><Button secondary title="Decline" busy={busy} onPress={() => void action(() => declineConversationRequest(id))} /></View></View>
         </>}
+        {outgoingRequest && <Label>{awaitingApproval
+          ? 'Your introduction was sent to their private-message requests. They must accept before you can send more. “Sent” does not mean they have read it.'
+          : 'This is a new private-message request. Send one encrypted introduction; they must accept before you can continue chatting.'}</Label>}
         {conversation?.type === 'direct' && !!conversation.otherWalletAddress && <Pressable onPress={() => {
           const block = () => void action(async () => { await blockWallet({ blockedWalletAddress: conversation.otherWalletAddress! }); });
           if (Platform.OS === 'web') { if (window.confirm('Block this wallet from private messaging?')) block(); }
@@ -206,7 +214,7 @@ function ChatContent() {
              <HermitHolderStar walletAddress={item.senderAddress} size={14} />
            </View>}
           <Text selectable style={{ color: item.isMine ? c.primaryForeground : c.foreground, lineHeight: 21 }}>{item.text}</Text>
-          <Text style={{ marginTop: 5, fontSize: 10, color: item.isMine ? c.primaryForeground : c.mutedForeground }}>{new Date(item.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{item.isMine ? item.isRead ? '  ✓✓ Read' : '  ✓ Sent' : ''}</Text>
+          <Text style={{ marginTop: 5, fontSize: 10, color: item.isMine ? c.primaryForeground : c.mutedForeground }}>{new Date(item.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{item.isMine ? item.isRead ? '  ✓✓ Read' : outgoingRequest ? '  ✓ Request sent' : '  ✓ Sent' : ''}</Text>
            {group && conversation?.canManageGroup && <Pressable accessibilityRole="button" accessibilityLabel="Delete this group message for everyone" onPress={() => removeGroupMessage(item.id)} disabled={busy} style={{ paddingTop: 7 }}>
              <Text style={{ color: c.secondary, fontSize: 11 }}>Delete for everyone</Text>
            </Pressable>}
