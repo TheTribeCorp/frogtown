@@ -33,6 +33,19 @@ export default defineConfig({
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
+    {
+      name: 'frogtown-single-query-context',
+      apply: 'build',
+      generateBundle() {
+        const providers = [...this.getModuleIds()].filter((id) =>
+          /\/@tanstack\/react-query\/build\/(?:modern|legacy)\/QueryClientProvider\.[cm]?js(?:\?|$)/.test(id)
+          && this.getModuleInfo(id)?.isIncluded,
+        );
+        if (providers.length > 1) {
+          this.error('Multiple React Query contexts were bundled. Shared API hooks must use the app’s QueryClientProvider.');
+        }
+      },
+    },
     ...(process.env.NODE_ENV !== 'production' &&
     process.env.REPL_ID !== undefined
       ? [
@@ -57,7 +70,9 @@ export default defineConfig({
         'attached_assets',
       ),
     },
-    dedupe: ['react', 'react-dom'],
+    // Shared API hooks and wallet libraries must use the same query context
+    // as the web app, even when pnpm resolves different React peer variants.
+    dedupe: ['react', 'react-dom', '@tanstack/react-query'],
   },
   root: path.resolve(import.meta.dirname),
   build: {

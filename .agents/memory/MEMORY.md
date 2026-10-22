@@ -12,3 +12,4 @@
 - [Frogtown cross-chain identities](frogtown-cross-chain-identities.md) — Reauthenticate EVM account changes, clear wallet-scoped caches, and keep $HERMIT checks XRPL-only.
 - [LadyChain wallet loading](frogtown-ladychain-wallet-loading.md) — keep AppKit off the initial page and prewarm on user intent; avoid forced chunks that cycle or duplicate dependencies.
 - [Native mobile security](frogtown-native-mobile.md) — keep the website; share browser wallet verification, not browser cookies or private keys; native push needs installed-build credentials.
+- [Web context singletons](frogtown-web-context-singletons.md) — native peer variants can split web context providers even when package versions match.
