@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ActivityIndicator, Appearance, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -16,6 +17,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import '@/lib/api';
 import { SessionProvider } from '@/providers/session';
 import { NotificationNavigation } from '@/components/notification-navigation';
+import { useColors } from '@/hooks/useColors';
+import { readSecure } from '@/lib/storage';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -31,6 +34,7 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const c = useColors();
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -44,7 +48,21 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
-  if (!fontsLoaded && !fontError) return null;
+  useEffect(() => {
+    let mounted = true;
+    void readSecure('frogtown.theme.preference').then((value) => {
+      if (!mounted) return;
+      Appearance.setColorScheme(value === 'light' || value === 'dark' ? value : 'unspecified');
+    }).catch(() => undefined);
+    return () => { mounted = false; };
+  }, []);
+
+  if (!fontsLoaded && !fontError) return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: c.background }}>
+      <ActivityIndicator color={c.primary} />
+      <Text style={{ color: c.mutedForeground, fontSize: 13 }}>Loading Frogtown…</Text>
+    </View>
+  );
 
   return (
     <SafeAreaProvider>

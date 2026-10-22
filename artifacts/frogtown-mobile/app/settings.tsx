@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Linking, Platform, ScrollView, Switch, Text, View } from 'react-native';
+import { Appearance, Linking, Platform, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Redirect, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,7 +7,7 @@ import { listMobilePushDevices, revokeMobilePushDevice, getWalletProfile, saveWa
 import { useSession } from '@/providers/session';
 import { useColors } from '@/hooks/useColors';
 import { errorText } from '@/lib/api';
-import { readSecure, removeSecure } from '@/lib/storage';
+import { readSecure, removeSecure, writeSecure } from '@/lib/storage';
 import { RecoveryControls } from '@/components/recovery';
 import { Button, Field, Label, Panel, ui } from '@/components/ui';
 import { SessionGate } from '@/components/session-gate';
@@ -17,10 +17,17 @@ function SettingsContent() {
   const { wallet } = session;
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [username, setUsername] = useState('');
+  const [theme, setTheme] = useState<'system' | 'light' | 'dark'>('system');
   const devices = useQuery({ queryKey: ['mobile', 'devices', wallet], queryFn: () => listMobilePushDevices(), enabled: !!wallet });
   const profile = useQuery({ queryKey: ['mobile', 'profile', wallet], queryFn: () => getWalletProfile(), enabled: !!wallet });
   const blocked = useQuery({ queryKey: ['mobile', 'blocked', wallet], queryFn: () => listBlockedWallets(), enabled: !!wallet });
   useEffect(() => { void readSecure(`frogtown.push.${wallet}`).then(setDeviceId); }, [wallet]);
+  useEffect(() => {
+    void readSecure('frogtown.theme.preference').then((value) => {
+      if (value === 'light' || value === 'dark') setTheme(value);
+      else setTheme('system');
+    }).catch(() => setTheme('system'));
+  }, []);
   const run = async (operation: () => Promise<void>) => {
     setBusy(true); setError('');
     try { await operation(); } catch (cause) { setError(errorText(cause)); }
@@ -44,6 +51,23 @@ function SettingsContent() {
         <Button title="Update username" busy={busy} disabled={!/^[A-Za-z0-9_]{4,17}$/.test(username)} onPress={() => void run(async () => {
           await saveWalletUsername({ username }); setUsername(''); await client.invalidateQueries({ queryKey: ['mobile'] });
         })} />
+      </Panel>
+      <Panel>
+        <Text style={[ui.subtitle, { color: c.foreground }]}>Appearance</Text>
+        <Label muted>Choose a Frogtown theme or follow your phone setting.</Label>
+        <View style={[ui.row, { gap: 8 }]}>
+          {(['system', 'light', 'dark'] as const).map((option) => <Pressable
+            key={option}
+            accessibilityRole="button"
+            accessibilityState={{ selected: theme === option }}
+            onPress={() => {
+              setTheme(option);
+              Appearance.setColorScheme(option === 'system' ? 'unspecified' : option);
+              void writeSecure('frogtown.theme.preference', option).catch((cause) => setError(errorText(cause)));
+            }}
+            style={{ flex: 1, minHeight: 42, borderRadius: c.radius, borderWidth: 1, borderColor: theme === option ? c.primary : c.border, backgroundColor: theme === option ? c.muted : c.card, alignItems: 'center', justifyContent: 'center' }}
+          ><Text style={{ color: theme === option ? c.primary : c.mutedForeground, fontFamily: 'Inter_600SemiBold', textTransform: 'capitalize' }}>{option}</Text></Pressable>)}
+        </View>
       </Panel>
       <Panel>
         <View style={[ui.row, { justifyContent: 'space-between' }]}>
