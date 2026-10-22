@@ -307,6 +307,78 @@ test("native members can find usernames, send private requests, and receive acce
   assert.ok((await nativeHistory.json()).some((item) => item.id === replyId), "native polling must recover the recipient's reply");
 });
 
+test("LadyChain users can search, open, and reply to private chats across EVM address casing", async () => {
+  const sender = `0x${"ab".repeat(20)}`;
+  const senderMixedCase = `0x${[..."ab".repeat(20)].map((character, index) => index % 2 ? character.toUpperCase() : character).join("")}`;
+  const recipient = `0x${"cd".repeat(20)}`;
+  const recipientMixedCase = `0x${[..."cd".repeat(20)].map((character, index) => index % 2 ? character.toUpperCase() : character).join("")}`;
+  const username = `lady${randomUUID().replaceAll("-", "").slice(0, 10).toLowerCase()}`;
+
+  assert.notEqual(sender, senderMixedCase);
+  assert.notEqual(recipient, recipientMixedCase);
+  assert.equal((await request("/api/wallet/profile", {
+    method: "PUT", cookie: sessionCookie(recipient), body: { username },
+  })).status, 200);
+
+  const searchByAddress = await request(`/api/wallets/search?q=${encodeURIComponent(recipientMixedCase)}`, {
+    cookie: sessionCookie(sender),
+  });
+  assert.equal(searchByAddress.status, 200);
+  assert.equal((await searchByAddress.json())[0]?.walletAddress, recipient);
+
+  const created = await request("/api/conversations", {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { fromWalletAddress: senderMixedCase, recipient: recipientMixedCase },
+  });
+  assert.equal(created.status, 201, "a checksummed sender claim and recipient address should open the private conversation");
+  const conversation = await created.json();
+
+  const senderInbox = await request(`/api/conversations?walletAddress=${encodeURIComponent(senderMixedCase)}`, {
+    cookie: sessionCookie(sender),
+  });
+  assert.equal(senderInbox.status, 200);
+  assert.ok((await senderInbox.json()).some((item) => item.id === conversation.id));
+
+  const encryptedBody = recipientEnvelope([sender, recipient]);
+  const firstMessageId = randomUUID();
+  const firstMessage = await request(`/api/conversations/${conversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(sender),
+    body: { senderAddress: senderMixedCase, messageId: firstMessageId, body: encryptedBody },
+  });
+  assert.equal(firstMessage.status, 201, "the mixed-case sender address should be accepted when sending");
+
+  const recipientInbox = await request(`/api/conversations?walletAddress=${encodeURIComponent(recipientMixedCase)}`, {
+    cookie: sessionCookie(recipient),
+  });
+  assert.equal(recipientInbox.status, 200);
+  const incoming = (await recipientInbox.json()).find((item) => item.id === conversation.id);
+  assert.equal(incoming?.directStatus, "pending");
+  assert.equal(incoming?.unreadCount, 1);
+  assert.equal(incoming?.requesterAddress, sender);
+
+  assert.equal((await request(`/api/conversations/${conversation.id}/request/accept`, {
+    method: "POST", cookie: sessionCookie(recipient),
+  })).status, 200);
+  const replyId = randomUUID();
+  const reply = await request(`/api/conversations/${conversation.id}/messages`, {
+    method: "POST",
+    cookie: sessionCookie(recipient),
+    body: { senderAddress: recipientMixedCase, messageId: replyId, body: encryptedBody },
+  });
+  assert.equal(reply.status, 201, "the mixed-case recipient address should be accepted when replying");
+
+  const senderHistory = await request(
+    `/api/conversations/${conversation.id}/messages?walletAddress=${encodeURIComponent(senderMixedCase)}`,
+    { cookie: sessionCookie(sender) },
+  );
+  assert.equal(senderHistory.status, 200);
+  const messages = await senderHistory.json();
+  assert.ok(messages.some((item) => item.id === firstMessageId));
+  assert.ok(messages.some((item) => item.id === replyId), "the original sender should receive the reply in the same thread");
+});
+
 test("native alert devices hide push tokens and cannot be revoked by another wallet", async () => {
   const wallet = randomWalletAddress(), other = randomWalletAddress();
   const path = "/api/mobile/push/devices";

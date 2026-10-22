@@ -27,6 +27,7 @@ import { useSession } from '@/providers/session';
 import { useColors } from '@/hooks/useColors';
 import { errorText, searchWalletUsers } from '@/lib/api';
 import { memberSearchTerm } from '@/lib/member-search';
+import { isIncomingMessageRequest, splitInboxConversations } from '@/lib/inbox-sections';
 import { readSecure } from '@/lib/storage';
 import { Button, Field, Label, Panel, ui } from './ui';
 import { MobileTimelineScreen } from './mobile-timeline';
@@ -148,11 +149,7 @@ export function InboxScreen() {
   const currentQuery = isChats ? chats : groups;
   const selectedItems = useMemo<InboxListItem[]>(() => {
     if (!isChats) return visibleGroups;
-    const incomingRequestIds = new Set((chats.data ?? [])
-      .filter((item) => item.type === 'direct' && item.directStatus === 'pending' && item.requesterAddress !== wallet)
-      .map((item) => item.id));
-    const unread = visibleChats.filter((item) => item.unreadCount > 0 || incomingRequestIds.has(item.id));
-    const read = visibleChats.filter((item) => item.unreadCount === 0 && !incomingRequestIds.has(item.id));
+    const { unread, read } = splitInboxConversations(visibleChats, wallet);
     const rows: InboxListItem[] = [];
     if (unread.length > 0) rows.push(
       { rowType: 'section', id: 'unread-messages-section', title: 'Unread messages', count: unread.length },
@@ -258,7 +255,7 @@ export function InboxScreen() {
               }} />
             </View>}
           </Panel>;
-          const incomingRequest = item.type === 'direct' && item.directStatus === 'pending' && item.requesterAddress !== wallet;
+          const incomingRequest = isIncomingMessageRequest(item, wallet);
           return <Pressable accessibilityRole="button" accessibilityLabel={`${incomingRequest ? 'Review new message request from' : 'Open'} ${item.title}`} onPress={() => open(item.id)}>
             <Panel>
               <View style={[ui.row, { justifyContent: 'space-between' }]}>
